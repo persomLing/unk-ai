@@ -61,7 +61,6 @@ const MAX_STEPS = 60;
 const MAX_RECENT = 5;
 const REPEAT_LIMIT = 3;
 const MODEL_TIMEOUT = 60000;
-const DECISION_MAX_TOKENS = 1200;
 const TASK_KEY = 'agentTask';
 const AUDIT_KEY = 'agentAudit';
 const PAGE_MODE_REQUIRED = '请先开启“基于当前页”，再使用页面操作。';
@@ -1248,7 +1247,7 @@ export function createAgentSlot({
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const budget = {
         contextLength: profile.contextLength,
-        maxTokens: DECISION_MAX_TOKENS,
+        maxTokens: profile.maxTokens,
         tools,
       };
       let requestMessages;
@@ -1279,7 +1278,7 @@ export function createAgentSlot({
           tools,
           signal: controller.signal,
           temperature: 0,
-          maxTokens: DECISION_MAX_TOKENS,
+          maxTokens: profile.maxTokens,
           timeoutMs: limits.model,
         }), { phase: 'think', timeoutMs: limits.model, message: '模型响应超时，任务已停止。' });
         assertTask(task, owner);

@@ -198,9 +198,9 @@ export function createModelGateway({
         || (options.deadlineAt !== undefined && !Number.isFinite(options.deadlineAt))) {
         return Promise.reject(new TypeError('Model request timeout/deadline must be finite.'));
       }
-      const defaultTokens = purpose === 'answer' ? config.maxTokens
-        : purpose === 'agent-decision' ? 1200 : purpose === 'visual-decision' ? 80
-          : purpose === 'research-decision' ? 120 : purpose === 'suggestions' ? 420
+      const defaultTokens = ['answer', 'agent-decision', 'suggestions'].includes(purpose) ? config.maxTokens
+        : purpose === 'visual-decision' ? 80
+          : purpose === 'research-decision' ? 120
             : config.maxTokens ? Math.min(4000, config.maxTokens) : undefined;
       const defaultTemperature = purpose === 'compression' ? undefined
         : ['agent-decision', 'visual-decision', 'research-decision'].includes(purpose) ? 0 : config.temperature;

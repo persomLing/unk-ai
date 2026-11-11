@@ -542,7 +542,9 @@ export function fitAgentMessagesToBudget(messages, {
   const window = Number.isFinite(configuredWindow) && configuredWindow > 0
     ? Math.floor(configuredWindow) : 128000;
   const configuredOutput = Number(maxTokens);
-  const outputTokens = Number.isFinite(configuredOutput) && configuredOutput >= 0
+  // Missing output settings leave the service in charge. This fallback only
+  // reserves input space locally; it is never sent as a model output limit.
+  const outputTokens = Number.isFinite(configuredOutput) && configuredOutput > 0
     ? Math.ceil(configuredOutput) : 1200;
   const toolTokens = estimateTextTokens(JSON.stringify(tools));
   const headroom = Math.max(256, Math.ceil(window * 0.1));

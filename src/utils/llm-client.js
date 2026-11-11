@@ -966,7 +966,7 @@ async function agentDecision({
   apiKey,
   model,
   temperature,
-  maxTokens = 1200,
+  maxTokens,
   messages,
   tools = [],
   signal,
@@ -980,8 +980,8 @@ async function agentDecision({
     model,
     messages,
     stream: false,
-    max_tokens: maxTokens,
   };
+  if (maxTokens !== undefined && maxTokens !== null && maxTokens !== '') base.max_tokens = maxTokens;
   if (temperature !== undefined && temperature !== null && temperature !== '') {
     base.temperature = temperature;
   }

@@ -65,7 +65,7 @@ const html = `<!doctype html>
 <div class="layout"><aside class="toc" aria-label="操作手册目录"><p class="toc-title">阅读目录</p><nav>${headings.map(({ id, label }) => `<a href="#${id}">${escape(label)}</a>`).join('\n')}</nav>
 <details class="figure-index"><summary>图解索引 · ${figures.length} 张</summary>${figures.map(figure => `<a href="#figure-${figure.number}">图 ${figure.number} · ${escape(figure.alt)}</a>`).join('\n')}</details>
 <small>依据当前插件实现核对<br>更新于 ${escape(date)}<br>全部图片已嵌入，可离线打开<br>宽图与表格可横向滚动查看</small></aside>
-<article id="guide-content">${body}<p id="references">本阅读版正文与 ${figures.length} 幅图解均已嵌入文件，可独立打开。可编辑原文为项目 docs/USER-GUIDE.md；开发参考文档位于相邻目录。</p></article></div>
+<article id="guide-content">${body}<p id="references">本阅读版正文、样式与 ${figures.length} 幅图解均已嵌入文件，可独立打开。可编辑原文为项目 docs/USER-GUIDE.md。</p></article></div>
 </body></html>
 `;
 writeFileSync(resolve(docs, 'USER-GUIDE.html'), html);

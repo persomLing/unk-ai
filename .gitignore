@@ -4,6 +4,18 @@ dist/
 output/
 *.zip
 
+# Public repository: keep tests and internal documentation local
+/tests/
+/*.md
+!/README.md
+/docs/*
+!/docs/USER-GUIDE.md
+!/docs/USER-GUIDE.html
+!/docs/user-guide-reader.css
+!/docs/images/
+/docs/images/*
+!/docs/images/user-guide-*
+
 # Local browser and test artifacts
 .playwright-cli/
 .playwright/
