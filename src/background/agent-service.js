@@ -240,11 +240,11 @@ async function verifyAuthority(tab, taskId, origins, lease) {
   return settings;
 }
 
-function assessmentFailure(assessment, message) {
+function assessmentFailure(assessment, message, lease, settings) {
   if (assessment.level === 'blocked') return agentError('ERR_SAFETY_BLOCKED', assessment.reason || '这个动作被安全策略阻断。', {
     risk: 'blocked', reason: assessment.reason || '',
   });
-  if (needsApproval(assessment) && !approvalSatisfied(message)) return agentError('ERR_SAFETY_BLOCKED', assessment.reason || '这个动作需要用户确认。', {
+  if (needsApproval(assessment) && !approvalSatisfied(message, lease, settings)) return agentError('ERR_SAFETY_BLOCKED', assessment.reason || '这个动作需要用户确认。', {
     risk: 'confirm', reason: assessment.reason || '', requiresConfirmation: true,
   });
   return null;
@@ -254,7 +254,8 @@ function onAgentAuthorityChanged(changes, area) {
   if (area !== 'local' || (!changes.agentSettings && !changes.agentOriginGrants)) return;
   const setting = changes.agentSettings;
   const restricted = setting && (setting.newValue?.enabled !== true
-    || (setting.newValue?.strictMode === true && setting.oldValue?.strictMode !== true));
+    || (setting.newValue?.strictMode === true && setting.oldValue?.strictMode !== true)
+    || (setting.oldValue?.autoApprove === true && setting.newValue?.autoApprove !== true));
   const grants = changes.agentOriginGrants;
   // Capture running epochs synchronously, including activation still waiting
   // for its first session write. The runtime compares them again after ready().
@@ -585,10 +586,15 @@ function needsApproval(assessment) {
   return assessment.level === 'confirm';
 }
 
-function approvalSatisfied(message) {
-  return message?.approval?.confirmed === true
+function approvalSatisfied(message, lease, settings) {
+  runtime.check(lease);
+  const explicitlyApproved = message?.approval?.confirmed === true
     && typeof message.approval.actionId === 'string'
     && message.approval.actionId === message.actionId;
+  // Automatic authority originates in trusted settings at task activation,
+  // never in model arguments or a per-action "automatic" flag. Live settings
+  // can restrict the lease but cannot elevate it until explicit resume.
+  return explicitlyApproved || (lease.autoApprove === true && settings?.autoApprove === true && settings.strictMode !== true);
 }
 
 function checkExpectedUrl(message, tab) {
@@ -707,7 +713,7 @@ async function performAgentAction(message = {}, lease, diagnostic) {
     diagnostic?.check('target-permission', { status: 'completed' });
   }
   diagnostic?.check('approval');
-  if (needsApproval(assessment) && !approvalSatisfied(message)) {
+  if (needsApproval(assessment) && !approvalSatisfied(message, lease, settings)) {
     return agentError('ERR_SAFETY_BLOCKED', assessment.reason || '这个动作需要用户确认。', {
       risk: 'confirm',
       reason: assessment.reason || '',
@@ -727,7 +733,7 @@ async function performAgentAction(message = {}, lease, diagnostic) {
     uploadReferences: action.action === 'upload_reference_image'
       ? uploadRegistry.list({ taskId: message.taskId, epoch: lease.epoch, tabId: message.tabId, url: before.url, signal: lease.signal }) : [],
   });
-  const finalFailure = assessmentFailure(finalAssessment, message);
+  const finalFailure = assessmentFailure(finalAssessment, message, lease, currentSettings);
   if (finalFailure) return finalFailure;
   runtime.check(lease);
   activeSnapshot(message.tabId, message.snapshotId);
@@ -834,7 +840,7 @@ async function navigateAgentPage(message = {}, lease, diagnostic) {
     });
   }
   diagnostic?.check('approval');
-  if (needsApproval(assessment) && !approvalSatisfied(message)) {
+  if (needsApproval(assessment) && !approvalSatisfied(message, lease, settings)) {
     return agentError('ERR_SAFETY_BLOCKED', assessment.reason || '这个导航需要用户确认。', {
       risk: 'confirm',
       reason: assessment.reason || '',
@@ -848,7 +854,7 @@ async function navigateAgentPage(message = {}, lease, diagnostic) {
     checkExpectedUrl(message, before);
     const currentSettings = await verifyAuthority(before, message.taskId, [targetOrigin], lease);
     const finalFailure = assessmentFailure(assessAgentAction({ action: action.action, args: action.args,
-      elements: [], settings: currentSettings, currentUrl: before.url }), message);
+      elements: [], settings: currentSettings, currentUrl: before.url }), message, lease, currentSettings);
     if (finalFailure) return finalFailure;
     checkExpectedUrl({ expectedUrl: before.url }, await tabFor(message.tabId));
     runtime.check(lease);
@@ -1481,11 +1487,12 @@ export async function handleAgentMessage(message, sendResponse, { recordDiagnost
     let result;
     if (type === 'AGENT_START' || type === 'AGENT_RESUME') {
       const tab = await tabFor(message.tabId);
-      await controlFor(tab, message.taskId);
+      const { settings } = await controlFor(tab, message.taskId);
       const pendingScope = { taskId: message.taskId, tabId: message.tabId, origin: originOf(tab.url) };
       pendingTaskScopes.add(pendingScope);
       try {
-        const lease = await runtime.activate(message, { resume: type === 'AGENT_RESUME' });
+        const lease = await runtime.activate(message, { resume: type === 'AGENT_RESUME',
+          autoApprove: settings.autoApprove === true && settings.strictMode !== true });
         runtime.check(lease);
         const previousScope = taskScopes.get(message.taskId);
         if (previousScope?.epoch !== lease.epoch || previousScope.tabId !== message.tabId) {
@@ -1493,11 +1500,16 @@ export async function handleAgentMessage(message, sendResponse, { recordDiagnost
         } else previousScope.origins.add(pendingScope.origin);
         taskEpochs.set(message.taskId, lease.epoch);
         try {
-          await verifyAuthority(tab, message.taskId, [], lease);
+          const currentSettings = await verifyAuthority(tab, message.taskId, [], lease);
+          if (lease.autoApprove && (currentSettings.autoApprove !== true || currentSettings.strictMode === true)) {
+            throw Object.assign(new Error('自动批准权限在启动期间已收紧，请核对后继续。'), { code: 'ERR_TASK_PAUSED' });
+          }
           const uploadReferences = uploadRegistry.register({ taskId: message.taskId, epoch: lease.epoch, tabId: message.tabId,
             url: tab.url, referenceImages: message.referenceImages || [], signal: lease.signal });
           runtime.check(lease);
-          result = { ok: true, uploadReferences };
+          result = { ok: true, uploadReferences,
+            autoApprove: lease.autoApprove === true && currentSettings.autoApprove === true && currentSettings.strictMode !== true,
+            actionSequence: lease.task.actionSequence || 0 };
         } catch (error) {
           await pauseAgentTask(message, { expectedEpoch: lease.epoch }).catch(() => {});
           throw error;

@@ -5,7 +5,8 @@ const STATE_EXECUTION_ACTIONS = new Set(['click_element', 'type_text', 'select_o
 const EXECUTION_STATES = new Set(['not_started', 'started', 'verified', 'uncertain']);
 const STATES = new Set(['pending', 'in_progress', 'completed']);
 const text = (value, length = 200) => typeof value === 'string' ? value.trim().slice(0, length) : '';
-const integer = (value, fallback = 0, max = 200) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(max, Math.floor(Number(value)))) : fallback;
+const integer = (value, fallback = 0, max = Number.MAX_SAFE_INTEGER) => Number.isFinite(Number(value)) ? Math.max(0, Math.min(max, Math.floor(Number(value)))) : fallback;
+const stepLimit = (value, fallback) => value === 0 ? 0 : Number.isFinite(value) && value > 0 ? Math.max(1, integer(value)) : fallback;
 const identity = value => ({ taskId: text(value?.taskId), tabId: Number.isInteger(value?.tabId) ? value.tabId : -1,
   url: typeof value?.url === 'string' ? value.url.trim() : '', documentId: text(value?.documentId) });
 const scopeKey = value => JSON.stringify(identity(value));
@@ -14,6 +15,20 @@ const activeStep = state => state.plan.find(step => step.status === 'in_progress
 const stepFor = (state, id) => state.plan.find(step => step.id === id);
 const currentEvidence = (state, step) => state.evidence.filter(item => item.verified && item.stepVerified && item.stepId === step.id && item.stepTitle === step.title);
 const verifiedStep = (state, step) => currentEvidence(state, step).length > 0;
+
+/** Recent history stays bounded; each current goal may retain one older proof. */
+function retainTaskHistory(state) {
+  const recentEvidence = new Set(state.evidence.slice(-160));
+  const proofs = new Set(state.plan.map(step => currentEvidence(state, step).at(-1)).filter(Boolean));
+  state.evidence = state.evidence.filter(item => recentEvidence.has(item) || proofs.has(item));
+  const actionProofs = new Set(state.evidence.filter(item => item.verified && item.kind === 'action').map(item => item.actionId));
+  const pinnedActions = new Set([...proofs].filter(item => item.kind === 'action').map(item => item.actionId));
+  const recentOutcomes = new Set(state.outcomes.slice(-200));
+  // Keep an older pinned action with its proof. Evict resolved receipts when
+  // their proof expires, rather than restoring them as newly unverified work.
+  state.outcomes = state.outcomes.filter(item => (recentOutcomes.has(item) || pinnedActions.has(item.actionId))
+    && (!item.verified || actionProofs.has(item.actionId)));
+}
 
 // This flag is supplied by deterministic goal checks, never by model arguments.
 // Browsing facts and incidental scrolls can explain a task without advancing its writes.
@@ -31,9 +46,10 @@ function normalizedPlan(steps) {
 
 /** State only: callers own task leases, real observations, I/O and the hard wall-clock deadline. */
 export function createTaskProgress(config = {}) {
-  const requestedSteps = Math.max(1, integer(config.maxSteps, 12));
-  const hardMaxSteps = Math.max(1, integer(config.hardMaxSteps, requestedSteps));
-  const maxSteps = Math.min(requestedSteps, hardMaxSteps);
+  const requestedSteps = stepLimit(config.maxSteps, 12);
+  const hardMaxSteps = stepLimit(config.hardMaxSteps, requestedSteps);
+  // An unlimited hard budget has no soft step ceiling; safety/progress checks still apply.
+  const maxSteps = hardMaxSteps === 0 ? 0 : Math.min(requestedSteps || hardMaxSteps, hardMaxSteps);
   const executionRequired = config.executionRequired === true;
   return {
     version: VERSION, scope: { ...identity(config), epoch: 1 },
@@ -74,6 +90,7 @@ export function updateTaskPlan(state, input, scope) {
   const steps = normalizedPlan(input?.steps);
   if (!steps) return { accepted: false, ok: false, reason: 'invalid-plan' };
   state.plan = steps;
+  retainTaskHistory(state);
   state.replan.required = false;
   state.lastState = { kind: 'plan-updated' };
   return { accepted: true, ok: true, plan: taskProgressContext(state).plan };
@@ -120,7 +137,7 @@ export function recordTaskOutcome(state, input = {}) {
     outcome.failureKey = key;
     failureCount = failure.count;
   }
-  state.outcomes = [...state.outcomes, outcome].slice(-200);
+  state.outcomes.push(outcome);
   const mayHaveMutated = MUTATIONS.has(outcome.action) && (outcome.ok || outcome.uncertain
     || ['started', 'verified', 'uncertain'].includes(outcome.executionStatus));
   const contradictedState = outcome.action === 'verify_state' && !outcome.ok
@@ -132,6 +149,7 @@ export function recordTaskOutcome(state, input = {}) {
       && evidence.scopeKey === outcome.scopeKey && evidence.targetKey === outcome.targetKey) evidence.verified = false;
   }
   state.failures = state.failures.slice(-200);
+  retainTaskHistory(state);
   state.lastState = { kind: outcome.ok ? 'action-awaiting-verification' : 'action-failed', action: outcome.action, failureCount, errorCode: outcome.ok ? '' : outcome.errorCode, failureStage: outcome.failureStage };
   return { accepted: true, duplicate: false, failureCount, needsVerification: outcome.requiresVerification && (outcome.ok || outcome.uncertain) };
 }
@@ -174,7 +192,8 @@ export function recordTaskEvidence(state, input = {}) {
     changed, sequence: state.sequence };
   const progressed = !priorEvidence && (changed || input.kind === 'state') && (!state.executionRequired || executionEvidence(evidence));
   evidence.progressed = progressed;
-  state.evidence = [...state.evidence, evidence].slice(-160);
+  state.evidence.push(evidence);
+  retainTaskHistory(state);
   if (progressed) { state.progressVersion += 1; state.noProgressDecisions = 0; }
   state.lastState = { kind: input.kind === 'action' ? 'action-verified' : input.kind === 'state' ? 'state-verified' : 'reading-evidence', action: outcome?.action || '', evidenceId: evidence.id, changed };
   return { accepted: true, progressed, evidenceId: evidence.id };
@@ -185,7 +204,7 @@ export function assessTaskProgress(state, { step = 0, now = Date.now() } = {}) {
   if (state.deadline > 0 && now >= state.deadline) return result('stop', 'deadline');
   const current = scopeKey(state.scope);
   if (state.outcomes.some(item => item.scopeKey === current && item.uncertain && !item.verified)) return result('stop', 'action-unconfirmed');
-  if (step >= state.hardMaxSteps) return result('stop', 'hard-step-limit');
+  if (state.hardMaxSteps > 0 && step >= state.hardMaxSteps) return result('stop', 'hard-step-limit');
   const failures = state.failures.filter(item => item.scopeKey === current);
   const worst = Math.max(0, ...failures.map(item => item.count));
   if (worst >= 3) return result('stop', 'repeated-failure');
@@ -195,7 +214,7 @@ export function assessTaskProgress(state, { step = 0, now = Date.now() } = {}) {
     return result('replan', worst >= 2 ? 'repeated-failure' : 'no-progress');
   }
   if (stalled && state.replan.used && state.noProgressDecisions >= state.replan.baseline + 3) return result('stop', 'no-progress');
-  if (step >= state.maxSteps) {
+  if (state.hardMaxSteps > 0 && step >= state.maxSteps) {
     if (state.maxSteps >= state.hardMaxSteps) return result('stop', 'hard-step-limit');
     if (state.progressVersion <= state.lastExtensionProgressVersion || stalled) return result('stop', 'step-limit-no-progress');
     state.maxSteps = Math.min(state.hardMaxSteps, state.maxSteps + Math.max(1, Math.ceil(state.initialMaxSteps / 2)));
@@ -247,12 +266,12 @@ export function restoreTaskProgress(saved, config = {}) {
   const executionRequired = typeof config.executionRequired === 'boolean' ? config.executionRequired : savedOwnerMatches && saved.executionRequired === true;
   const state = createTaskProgress({ ...config, executionRequired });
   if (!saved || saved.version !== VERSION || scopeKey(saved.scope) !== scopeKey(state.scope)) return state;
-  state.scope.epoch = integer(saved.scope?.epoch, 1, 1000000) + 1;
+  state.scope.epoch = integer(saved.scope?.epoch, 1) + 1;
   state.plan = normalizedPlan(saved.plan) || [];
   if (Number.isInteger(saved.maxSteps) && saved.maxSteps >= state.maxSteps && saved.maxSteps <= state.hardMaxSteps) state.maxSteps = saved.maxSteps;
-  if (Number.isFinite(saved.deadline) && saved.deadline > 0) state.deadline = state.deadline > 0 ? Math.min(state.deadline, saved.deadline) : saved.deadline;
-  for (const key of ['decisionCount', 'noProgressDecisions', 'progressVersion', 'lastExtensionProgressVersion', 'extensions', 'sequence']) state[key] = integer(saved[key], 0, 1000000);
-  state.replan = { used: saved.replan?.used === true, required: saved.replan?.required === true, baseline: integer(saved.replan?.baseline, 0, 1000000) };
+  if (config.deadline !== 0 && Number.isFinite(saved.deadline) && saved.deadline > 0) state.deadline = state.deadline > 0 ? Math.min(state.deadline, saved.deadline) : saved.deadline;
+  for (const key of ['decisionCount', 'noProgressDecisions', 'progressVersion', 'lastExtensionProgressVersion', 'extensions', 'sequence']) state[key] = integer(saved[key]);
+  state.replan = { used: saved.replan?.used === true, required: saved.replan?.required === true, baseline: integer(saved.replan?.baseline) };
   state.decisions = (Array.isArray(saved.decisions) ? saved.decisions : []).filter(item => typeof item === 'string').slice(-200).map(item => text(item, 240));
   const current = scopeKey(state.scope);
   for (const item of (Array.isArray(saved.failures) ? saved.failures : []).slice(-200)) {
@@ -260,14 +279,14 @@ export function restoreTaskProgress(saved, config = {}) {
     const failure = { scopeKey: current, action: text(item.action, 60), targetKey: text(item.targetKey), errorCode: text(item.errorCode, 100), failureStage: text(item.failureStage, 80), count: integer(item.count) };
     failure.key = failureKey(failure); state.failures.push(failure);
   }
-  for (const item of (Array.isArray(saved.outcomes) ? saved.outcomes : []).slice(-200)) {
+  for (const item of (Array.isArray(saved.outcomes) ? saved.outcomes : []).slice(-208)) {
     if (item?.scopeKey !== current || !text(item.actionId)) continue;
     state.outcomes.push({ scopeKey: current, actionId: text(item.actionId), action: text(item.action, 60), targetKey: text(item.targetKey),
       ok: item.ok === true, uncertain: item.uncertain === true, verified: false, requiresVerification: item.requiresVerification !== false,
       executionStatus: EXECUTION_STATES.has(item.executionStatus) ? item.executionStatus : '',
-      errorCode: text(item.errorCode, 100), failureStage: text(item.failureStage, 80), stepId: text(item.stepId, 40), stepTitle: text(item.stepTitle, 160), sequence: integer(item.sequence, 0, 1000000) });
+      errorCode: text(item.errorCode, 100), failureStage: text(item.failureStage, 80), stepId: text(item.stepId, 40), stepTitle: text(item.stepTitle, 160), sequence: integer(item.sequence) });
   }
-  for (const item of (Array.isArray(saved.evidence) ? saved.evidence : []).slice(-160)) {
+  for (const item of (Array.isArray(saved.evidence) ? saved.evidence : []).slice(-168)) {
     if (item?.scopeKey !== current || item.verified !== true || !['action', 'reading', 'state'].includes(item.kind) || typeof item.key !== 'string') continue;
     // Keep URL identity complete while bounding only the evidence fingerprint.
     const prefix = `${item.kind}:${current}:`;
@@ -281,10 +300,11 @@ export function restoreTaskProgress(saved, config = {}) {
       stepId: text(item.stepId, 40), stepTitle: text(item.stepTitle, 160), snapshotId: text(item.snapshotId), verified: true,
       targetKey: text(item.targetKey), stepVerified: item.kind === 'action' || item.kind === 'state' || item.stepVerified === true,
       executionRelevant: typeof item.executionRelevant === 'boolean' ? item.executionRelevant : undefined,
-      progressed: item.progressed === true, changed: item.changed === true, sequence: integer(item.sequence, 0, 1000000) };
+      progressed: item.progressed === true, changed: item.changed === true, sequence: integer(item.sequence) };
     state.evidence.push(evidence);
     if (outcome) { outcome.verified = true; outcome.uncertain = false; }
   }
+  retainTaskHistory(state);
   // Restored history is context, not a fresh extension credit. Require new real evidence after resume.
   state.progressVersion = state.evidence.filter(item => item.verified && (item.progressed || item.changed)
     && (!state.executionRequired || executionEvidence(item))).length;

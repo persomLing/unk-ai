@@ -41,6 +41,7 @@ import { icon, hydrateIcons } from '../sidepanel/icons.js';
 import { createModelSelection, updateModelDraft } from './model-selection.js';
 import { installSettingsNavigation } from './settings-navigation.js';
 import { validateModelGeneration } from './model-validation.js';
+import { installAgentSettings } from './agent-settings.js';
 import { awaitWithTimeout } from '../utils/abortable.js';
 import { recordDiagnostic, getDiagnosticStatus, collectDiagnosticLogs, flushDiagnostics } from '../utils/diagnostic-log.js';
 import { installRuntimeDiagnostics } from '../utils/diagnostic-observer.js';
@@ -65,10 +66,6 @@ const reasoningEffortField = document.querySelector('#reasoning-effort-field');
 const storageLocation = document.querySelector('#storage-location');
 const storageStatus = document.querySelector('#storage-status');
 const storageFeedback = document.querySelector('#storage-feedback');
-const agentEnabled = document.querySelector('#agent-enabled');
-const agentStrict = document.querySelector('#agent-strict');
-const agentSiteList = document.querySelector('#agent-site-list');
-const agentSettingsFeedback = document.querySelector('#agent-settings-feedback');
 const setupBanner = document.querySelector('#setup-banner');
 const chooseDirectoryButton = document.querySelector('#choose-directory');
 const parametersModelName = document.querySelector('#parameters-model-name');
@@ -97,7 +94,6 @@ let savedRevision = 0;
 let hasSavedConfig = false;
 let disposed = false;
 let configBusy = false;
-let agentSettingsBusy = false;
 let diagnosticStatusVersion = 0;
 const diagnosticStatus = document.querySelector('#diagnostic-status');
 const diagnosticFeedback = document.querySelector('#diagnostic-feedback');
@@ -163,12 +159,6 @@ function setStorageFeedback(message, kind = '') {
   storageFeedback.className = `inline-feedback ${kind}`;
 }
 
-function setAgentFeedback(message, kind = '') {
-  agentSettingsFeedback.hidden = !message;
-  agentSettingsFeedback.textContent = message;
-  agentSettingsFeedback.className = `inline-feedback ${kind}`;
-}
-
 function setResearchFeedback(message, kind = '') {
   researchFeedback.hidden = !message;
   researchFeedback.textContent = message;
@@ -182,63 +172,8 @@ function setResearchLoading(loading) {
   detectResearchLabel.textContent = loading ? '检测中…' : '检测接口';
 }
 
-function agentEscape(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (character) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-  })[character]);
-}
-
-async function renderAgentSettings() {
-  const settings = await getAgentSettings();
-  agentEnabled.checked = settings.enabled;
-  agentStrict.checked = settings.strictMode;
-  const grants = await listOriginGrants();
-  if (!grants.length) {
-    agentSiteList.innerHTML = '<p class="agent-site-empty">还没有授权任何站点。</p>';
-    return;
-  }
-  agentSiteList.innerHTML = grants.map((grant) => `
-    <div class="agent-site-row">
-      <div>
-        <strong>${agentEscape(grant.origin)}</strong>
-        <small>${grant.scope === 'always' ? '始终允许' : '仅当前任务'}</small>
-      </div>
-      <button class="inline-action" type="button" data-agent-revoke="${agentEscape(grant.origin)}">撤销</button>
-    </div>
-  `).join('');
-  agentSiteList.querySelectorAll('[data-agent-revoke]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      button.disabled = true;
-      try {
-        await revokeOrigin(button.dataset.agentRevoke);
-        if (disposed) return;
-        setAgentFeedback('已撤销站点授权。', 'success');
-        await renderAgentSettings();
-      } catch (error) { if (!disposed) { button.disabled = false; setAgentFeedback(error.message || '撤销授权失败，请重试。', 'error'); } }
-    });
-  });
-}
-
-async function changeAgentSetting(field, input) {
-  if (agentSettingsBusy) return;
-  const requested = input.checked;
-  agentSettingsBusy = true;
-  agentEnabled.disabled = agentStrict.disabled = true;
-  try {
-    const saved = await saveAgentSettings({ [field]: requested });
-    if (disposed) return;
-    agentEnabled.checked = saved.enabled;
-    agentStrict.checked = saved.strictMode;
-    setAgentFeedback(`${field === 'enabled' ? '浏览器控制' : '严格模式'}已${requested ? '开启' : '关闭'}，立即生效。`, 'success');
-  } catch (error) {
-    if (!disposed) { input.checked = !requested; setAgentFeedback(error.message || '开关保存失败，请重试。', 'error'); }
-  } finally {
-    agentSettingsBusy = false;
-    if (!disposed) agentEnabled.disabled = agentStrict.disabled = false;
-  }
-}
-agentEnabled?.addEventListener('change', () => changeAgentSetting('enabled', agentEnabled));
-agentStrict?.addEventListener('change', () => changeAgentSetting('strictMode', agentStrict));
+const agentSettings = installAgentSettings({ root: document, getSettings: getAgentSettings, saveSettings: saveAgentSettings,
+  listGrants: listOriginGrants, revokeGrant: revokeOrigin, storageEvents: chrome.storage.onChanged });
 
 async function renderStorage() {
   void renderDiagnostics();
@@ -810,6 +745,7 @@ window.addEventListener('pagehide', () => {
   modelsController?.abort();
   researchController?.abort();
   navigation.dispose();
+  agentSettings.dispose();
 });
 
 try {
@@ -841,7 +777,7 @@ try {
   }
   renderDiscoveredModels();
   await renderStorage();
-  await renderAgentSettings();
+  await agentSettings.render();
 } catch (error) {
   setStatus(`无法读取已有设置：${error.message}`, 'error');
 } finally {

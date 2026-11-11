@@ -57,7 +57,7 @@ const STEP_ICONS = {
   error: 'info',
   info: 'info',
 };
-const MAX_STEPS = 60;
+const MAX_LOG_STEPS = 60;
 const MAX_RECENT = 5;
 const REPEAT_LIMIT = 3;
 const MODEL_TIMEOUT = 60000;
@@ -218,7 +218,7 @@ export function createAgentSlot({
     owner.runId = `agent:${task.id}:${++stored.epoch}`;
     owner.modelRun = modelGateway.createRun({
       runId: owner.runId, profile: task.recoveryModelProfile || stored.profile,
-      signal: owner.controller.signal, deadlineAt: task.deadline,
+      signal: owner.controller.signal, ...(task.deadline > 0 ? { deadlineAt: task.deadline } : {}),
     });
     owner.decisionCount = 0;
   }
@@ -305,6 +305,11 @@ export function createAgentSlot({
       expectedUrl: task.currentUrl, referenceImages: task.referenceImages || [] }), { phase: 'activate' });
     if (response?.error || !response?.ok) throw new Error(response?.message || '无法启动后台执行器。');
     task.uploadReferences = Array.isArray(response.uploadReferences) ? response.uploadReferences : [];
+    task.autoApprove = response.autoApprove === true;
+    task.actionSequence = Math.max(task.actionSequence || 0,
+      Number.isSafeInteger(response.actionSequence) && response.actionSequence >= 0 ? response.actionSequence : 0);
+    // Budgets belong to this execution window, just like the frozen model run.
+    task.budget = { maxSteps: task.settings.maxSteps, maxMinutes: task.settings.maxMinutes };
   }
 
   function armWatchdog() {
@@ -381,7 +386,7 @@ export function createAgentSlot({
       status: 'done',
     };
     state.task.steps.push(step);
-    if (state.task.steps.length > MAX_STEPS) state.task.steps.splice(0, state.task.steps.length - MAX_STEPS);
+    if (state.task.steps.length > MAX_LOG_STEPS) state.task.steps.splice(0, state.task.steps.length - MAX_LOG_STEPS);
     if (state.turn) {
       appendAgentStep(state.turn, step);
       Promise.resolve(updateTurn?.({ ...state.turn }, { signal: state.owner?.controller.signal })).catch(() => {});
@@ -605,9 +610,10 @@ export function createAgentSlot({
     statusElement.innerHTML = `
       <span class="agent-status-dot ${escapeHtml(dot)}"></span>
       <span>${escapeHtml(label)}</span>
-      <span class="agent-step-count">第 ${task.step}/${task.maxSteps} 步</span>
+      <span class="agent-step-count">${task.maxSteps === 0 ? `第 ${task.step} 步 · 步数不限` : `第 ${task.step}/${task.maxSteps} 步`}</span>
       ${plan.length ? `<span class="agent-plan-status" title="${escapeHtml(currentStep?.title || '核对任务结果')}">目标 ${plan.filter(item => item.status === 'completed' && item.verified).length}/${plan.length}</span>` : ''}
-      ${task.settings?.strictMode ? '<span class="agent-strict">严格模式</span>' : ''}
+      ${task.settings?.strictMode ? '<span class="agent-strict">严格模式</span>' : task.autoApprove && task.settings?.autoApprove ? '<span class="agent-strict">自动批准</span>' : ''}
+      ${task.budget?.maxMinutes === 0 ? '<span class="agent-step-count">时长不限</span>' : ''}
     `;
   }
 
@@ -677,6 +683,7 @@ export function createAgentSlot({
     meta = [],
     image = '',
     checkbox = '',
+    checkboxChecked = false,
     buttons = [],
     focusValue = '',
   }) {
@@ -695,7 +702,7 @@ export function createAgentSlot({
         <div><span>${escapeHtml(item.label)}</span><strong>${escapeHtml(item.value)}</strong></div>
       `).join('')}</div>` : ''}
       ${safeImage ? `<img class="agent-card-shot" src="${escapeHtml(safeImage)}" alt="当前页面截图" />` : ''}
-      ${checkbox ? `<label class="agent-card-check"><input id="agent-strict-mode" type="checkbox" />${escapeHtml(checkbox)}</label>` : ''}
+      ${checkbox ? `<label class="agent-card-check"><input id="agent-strict-mode" type="checkbox" ${checkboxChecked ? 'checked' : ''} />${escapeHtml(checkbox)}</label>` : ''}
       <div class="agent-card-actions">${buttons.map((button, index) => `
         <button class="agent-button ${escapeHtml(button.kind || 'secondary')}" type="button" data-choice="${index}">${escapeHtml(button.label)}</button>
       `).join('')}</div>
@@ -755,8 +762,11 @@ export function createAgentSlot({
       tone: 'info',
       eyebrow: 'PERMISSION',
       title: '开启浏览器控制？',
-      body: 'UNK AI 可以读取当前网页、点击和输入。高危动作会逐次询问，你不允许的操作不会执行，随时可以停止或接管。',
-      checkbox: '严格模式：每个页面动作都需要确认',
+      body: settings.autoApprove
+        ? '你已在设置中选择自动批准：授权站点内的提交、删除、上传等操作会直接执行。新站点仍需授权，随时可以停止或接管。'
+        : 'UNK AI 可以读取当前网页、点击和输入。提交、删除、上传等风险动作会逐次询问，随时可以停止或接管。',
+      checkbox: '严格模式：点击、输入、选择和导航等动作都需确认',
+      checkboxChecked: settings.strictMode,
       buttons: [
         { label: '开启并继续', value: 'enable', kind: 'primary' },
         { label: '取消', value: 'cancel' },
@@ -765,9 +775,10 @@ export function createAgentSlot({
     });
     assertTask(task, owner);
     if (!value || value.choice !== 'enable') return false;
-    settings = await waitTask(task, () => saveAgentSettings({ enabled: true, strictMode: Boolean(value.strictMode) }), { phase: 'authorizing' });
+    settings = await waitTask(task, () => saveAgentSettings({ enabled: true, strictMode: Boolean(value.strictMode),
+      autoApprove: settings.autoApprove && !value.strictMode }), { phase: 'authorizing' });
     task.settings = settings;
-    addStep('info', '已开启浏览器控制', settings.strictMode ? '严格模式已开启' : '高危动作需要确认');
+    addStep('info', '已开启浏览器控制', settings.strictMode ? '严格模式已开启' : settings.autoApprove ? '自动批准已开启：授权站点内风险动作直接执行' : '风险动作需要确认');
     return true;
   }
 
@@ -907,7 +918,7 @@ export function createAgentSlot({
       await activateExecution(task, true);
       assertTask(task, owner);
       task.status = 'running';
-      task.deadline = Date.now() + task.settings.maxMinutes * 60000;
+      task.deadline = task.budget.maxMinutes === 0 ? 0 : Date.now() + task.budget.maxMinutes * 60000;
       task.pendingProgress = task.progress ? taskProgressCheckpoint(task.progress) : task.savedProgress;
       task.progress = null;
       startModelRun(task, owner);
@@ -1226,6 +1237,7 @@ export function createAgentSlot({
       regionData,
       step: state.task.step,
       maxSteps: state.task.maxSteps,
+      approvalMode: task.settings.strictMode ? 'strict' : task.autoApprove && task.settings.autoApprove ? 'automatic' : 'standard',
       taskProgress: task.progress ? taskProgressContext(task.progress) : null,
       planningRequired: task.planningRequired === true,
       supportsVision: profile.supportsVision === true,
@@ -1336,6 +1348,7 @@ export function createAgentSlot({
       taskId: task.id,
       expectedUrl: observation.url,
       actionId,
+      actionSequence: task.actionSequence,
       diagnosticContext: diagnosticContext(task, owner),
       approval: { confirmed: Boolean(approved), actionId },
     };
@@ -1376,7 +1389,7 @@ export function createAgentSlot({
     let reusableObservation = null;
     try {
       while (state.task === task && state.owner === owner && task.status === 'running' && !state.cancelled) {
-        if (Date.now() > task.deadline) {
+        if (task.deadline > 0 && Date.now() > task.deadline) {
           await finishTask('任务超时。', 'failed', task, 'timeout');
           break;
         }
@@ -1415,7 +1428,8 @@ export function createAgentSlot({
           task.progress = restoreTaskProgress(task.pendingProgress,
             { taskId: task.id, tabId: task.tabId, url: observation.url,
               documentId: observation.documentId || task.pendingProgress?.scope?.documentId || task.startDocumentId || '',
-              maxSteps: Math.min(task.maxSteps || 12, task.settings.maxSteps), hardMaxSteps: task.settings.maxSteps, deadline: task.deadline,
+              maxSteps: task.budget.maxSteps === 0 ? 0 : Math.min(task.maxSteps || 12, task.budget.maxSteps),
+              hardMaxSteps: task.budget.maxSteps, deadline: task.deadline,
               executionRequired: task.planningRequired === true });
           // An explicit resume starts the existing bounded time window; it does not increase the step cap.
           task.progress.deadline = task.deadline;
@@ -1691,7 +1705,11 @@ export function createAgentSlot({
           }
         }
         let approved = false;
-        if (assessment.level === 'confirm') {
+        const automatic = task.autoApprove && task.settings.autoApprove && !task.settings.strictMode;
+        if (assessment.level === 'confirm' && automatic) {
+          addStep('approval', '按自动批准模式执行', actionLabel(action.action, action.args, observation.elements));
+          render();
+        } else if (assessment.level === 'confirm') {
           setPhase('wait');
           approved = await askApproval({ action: action.action, args: action.args, observation, assessment });
           if (state.task !== task || state.owner !== owner || task.status !== 'running') return;
@@ -1712,7 +1730,7 @@ export function createAgentSlot({
         if (state.task !== task || state.owner !== owner || task.status !== 'running') return;
 
         setPhase('act');
-        const actionId = makeId('act');
+        const actionId = `${task.id}:${++task.actionSequence}`;
         let result;
         try {
           result = await executeAction(action.action, action.args, observation, actionId, approved);
@@ -1891,14 +1909,16 @@ export function createAgentSlot({
       const enabled = await ensureControlEnabled(task);
       if (!enabled) { await abortPreparation('已取消浏览器控制。', task); return false; }
       task.maxSteps = Math.min(12, task.settings.maxSteps);
-      const granted = await ensureOrigin(task, origin, '任务将在这个站点观察页面并执行你确认过的动作。');
+      const granted = await ensureOrigin(task, origin, task.settings.autoApprove
+        ? '自动批准模式：任务将在这个站点观察页面，提交、删除、上传等风险动作会直接执行。'
+        : '任务将在这个站点观察页面，风险动作会在你确认后执行。');
       if (!granted) { await abortPreparation('未获得站点授权。', task); return false; }
       const active = await waitTask(task, () => queryActiveTab(), { phase: 'locate' });
       if (active?.id !== tab.id || active?.url !== tab.url) throw new Error('授权期间页面已变化，任务未开始。请核对页面后重试。');
       await activateExecution(task);
       assertTask(task, owner);
       task.status = 'running';
-      task.deadline = Date.now() + task.settings.maxMinutes * 60000;
+      task.deadline = task.budget.maxMinutes === 0 ? 0 : Date.now() + task.budget.maxMinutes * 60000;
       task.progress = createTaskProgress({ taskId: task.id, tabId: task.tabId, url: task.currentUrl, documentId: task.startDocumentId || '',
         maxSteps: task.maxSteps, hardMaxSteps: task.settings.maxSteps, deadline: task.deadline, executionRequired: task.planningRequired === true });
       startModelRun(task, owner);

@@ -196,6 +196,9 @@ h1 { margin: 0 0 9px; color: var(--ink); font-size: 27px; line-height: 1.2; font
 .storage-hint { margin-top: 12px; }
 .agent-settings-panel { display: flex; flex-direction: column; gap: 12px; }
 .agent-settings-panel .settings-details { margin-top: 0; }
+.agent-settings-panel .agent-approval-field { margin: 4px 0 0; }
+.agent-budget-settings { padding-top: 14px; border-top: 1px solid var(--line); }
+.agent-budget-settings .field-row { margin-bottom: 0; }
 .agent-site-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-top: 10px; }
 .agent-site-heading strong { color: var(--ink); font-size: 12px; font-weight: 600; }
 .agent-site-heading span { color: var(--muted); font-size: 10px; }

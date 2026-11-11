@@ -187,21 +187,51 @@
           <section id="agent-section" class="form-section" data-settings-section aria-labelledby="agent-settings-title">
             <div class="section-heading">
               <span class="section-symbol"><i data-icon="shield"></i></span>
-              <div><h2 id="agent-settings-title">浏览器控制 <span class="section-badge">即时生效</span></h2><p>允许 Agent 操作网页；站点授权可单独撤销。</p></div>
+              <div><h2 id="agent-settings-title">浏览器控制 <span class="section-badge">自动保存</span></h2><p>选择操作确认方式与任务预算；站点授权可单独撤销。</p></div>
             </div>
             <div class="agent-settings-panel">
               <label class="toggle-card" for="agent-enabled">
                 <span><strong>允许浏览器控制</strong><small>关闭后停止 Agent 页面操作，不影响普通问答与页面阅读</small></span>
                 <span class="switch"><input id="agent-enabled" type="checkbox" role="switch" /><i></i></span>
               </label>
-              <label class="toggle-card" for="agent-strict">
-                <span><strong>逐次确认页面动作</strong><small>严格模式：每次页面动作执行前都由你确认</small></span>
-                <span class="switch"><input id="agent-strict" type="checkbox" role="switch" /><i></i></span>
-              </label>
+              <div class="field agent-approval-field">
+                <label for="agent-approval-mode">操作确认方式</label>
+                <select id="agent-approval-mode" aria-describedby="agent-approval-description">
+                  <option value="standard">标准确认</option>
+                  <option value="strict">逐次确认（严格模式）</option>
+                  <option value="automatic">自动批准操作</option>
+                </select>
+                <p id="agent-approval-description" class="hint" role="status">常规浏览操作直接执行；提交、删除、上传等操作会先请你确认。</p>
+              </div>
+              <div class="agent-budget-settings">
+                <div class="field-row">
+                  <div class="field">
+                    <label for="agent-max-steps">任务总步数</label>
+                    <select id="agent-max-steps" aria-describedby="agent-budget-description">
+                      <option value="20">20 步</option>
+                      <option value="40">40 步</option>
+                      <option value="100">100 步</option>
+                      <option value="200">200 步</option>
+                      <option value="0">不限制</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="agent-max-minutes">任务总时长</label>
+                    <select id="agent-max-minutes" aria-describedby="agent-budget-description">
+                      <option value="5">5 分钟</option>
+                      <option value="15">15 分钟</option>
+                      <option value="30">30 分钟</option>
+                      <option value="60">60 分钟</option>
+                      <option value="0">不限制</option>
+                    </select>
+                  </div>
+                </div>
+                <p id="agent-budget-description" class="hint">新任务或继续任务时生效。“不限制”取消任务总预算，单次请求超时、无进展检测与停止功能仍然有效。</p>
+              </div>
               <div class="agent-site-heading"><strong>已授权站点</strong><span>撤销后不再允许新的页面动作</span></div>
               <div id="agent-site-list" class="agent-site-list"></div>
               <div id="agent-settings-feedback" class="inline-feedback" role="status" hidden></div>
-              <details class="settings-details"><summary>需要你接管的操作<i data-icon="chevron-down"></i></summary><p>Agent 不会自动输入密码、CVV 或 PIN，不执行支付、下单或注销。验证码与登录需要你接管。</p></details>
+              <details class="settings-details"><summary>需要你接管的操作<i data-icon="chevron-down"></i></summary><p>Agent 不会自动输入密码、CVV 或 PIN，不执行支付或下单。验证码与登录需要你接管。</p></details>
             </div>
           </section>
 

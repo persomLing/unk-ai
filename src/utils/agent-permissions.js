@@ -1,7 +1,20 @@
 const SETTINGS_KEY = 'agentSettings';
+const SETTINGS_LOCK = 'unk-ai-agent-settings';
 const GRANTS_KEY = 'agentOriginGrants';
 const GRANTS_LOCK = 'unk-ai-agent-origin-grants';
 let grantWrites = Promise.resolve();
+let settingsWrites = Promise.resolve();
+
+// Serialize the entire settings read/merge/write across extension contexts.
+// UI timeouts only stop waiting; the lock lasts until storage actually settles.
+function mutateSettings(operation) {
+  const pending = settingsWrites.catch(() => {}).then(() => {
+    const locks = globalThis.navigator?.locks;
+    return locks?.request ? locks.request(SETTINGS_LOCK, operation) : operation();
+  });
+  settingsWrites = pending.catch(() => {});
+  return pending;
+}
 
 /**
  * Grants share one stored object, so the entire read/change/write must run
@@ -22,6 +35,7 @@ function mutateGrants(operation) {
 export const DEFAULT_AGENT_SETTINGS = Object.freeze({
   enabled: false,
   strictMode: false,
+  autoApprove: false,
   captureEvidence: true,
   maxSteps: 20,
   maxMinutes: 5,
@@ -36,9 +50,12 @@ function storageArea() {
   return area;
 }
 
-function clamp(value, minimum, maximum, fallback) {
+function taskLimit(value, minimum, maximum, fallback) {
+  if ((typeof value !== 'number' && typeof value !== 'string') || (typeof value === 'string' && !value.trim())) return fallback;
   const number = Number(value);
   if (!Number.isFinite(number)) return fallback;
+  // Zero is an explicit, serializable choice; missing and malformed values are not unlimited.
+  if (number === 0) return 0;
   return Math.min(maximum, Math.max(minimum, Math.round(number)));
 }
 
@@ -47,9 +64,10 @@ export function normalizeAgentSettings(value) {
   return {
     enabled: input.enabled === true,
     strictMode: input.strictMode === true,
+    autoApprove: input.autoApprove === true && input.strictMode !== true,
     captureEvidence: input.captureEvidence !== false,
-    maxSteps: clamp(input.maxSteps, 5, 40, DEFAULT_AGENT_SETTINGS.maxSteps),
-    maxMinutes: clamp(input.maxMinutes, 1, 30, DEFAULT_AGENT_SETTINGS.maxMinutes),
+    maxSteps: taskLimit(input.maxSteps, 5, 1000, DEFAULT_AGENT_SETTINGS.maxSteps),
+    maxMinutes: taskLimit(input.maxMinutes, 1, 1440, DEFAULT_AGENT_SETTINGS.maxMinutes),
   };
 }
 
@@ -89,10 +107,13 @@ export async function getAgentSettings() {
 }
 
 export async function saveAgentSettings(patch) {
-  const current = await getAgentSettings();
-  const next = normalizeAgentSettings({ ...current, ...(patch || {}) });
-  await storageArea().set({ [SETTINGS_KEY]: next });
-  return next;
+  const requested = { ...(patch || {}) };
+  return mutateSettings(async () => {
+    const current = await getAgentSettings();
+    const next = normalizeAgentSettings({ ...current, ...requested });
+    await storageArea().set({ [SETTINGS_KEY]: next });
+    return next;
+  });
 }
 
 function normalizeGrants(value) {
