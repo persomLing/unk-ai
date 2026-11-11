@@ -1,0 +1,73 @@
+.export-paper {
+  --ink: #24332c;
+  --muted: #69766e;
+  --teal: #20685d;
+  --teal-dark: #1b594f;
+  --surface: #fff;
+  --surface-alt: #f3f6f3;
+  --line: #dfe6df;
+  display: block;
+  box-sizing: border-box;
+  width: 800px;
+  max-width: none;
+  margin: 0;
+  padding: 44px 48px 40px;
+  border: 0;
+  background: #fff;
+  color: #24332c;
+  color-scheme: light;
+  font: 15px/1.8 "Segoe UI", "Microsoft YaHei", "PingFang SC", sans-serif;
+  text-align: left;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  isolation: isolate;
+}
+.export-paper *, .export-paper *::before, .export-paper *::after { box-sizing: border-box; animation: none !important; transition: none !important; }
+.export-paper .export-heading { margin: 0 0 30px; padding-bottom: 22px; border-bottom: 2px solid #dfe6df; }
+.export-paper .export-brand { margin: 0 0 10px; color: #20685d; font-size: 11px; font-weight: 700; letter-spacing: 2px; }
+.export-paper .export-title { margin: 0 0 8px; color: #1d2d24; font-size: 27px; font-weight: 700; line-height: 1.4; }
+.export-paper .export-meta { margin: 0; color: #69766e; font-size: 12px; }
+.export-paper .export-turn { margin: 0 0 30px; padding: 0 0 28px; border-bottom: 1px solid #e5ebe5; }
+.export-paper .export-turn:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+.export-paper .export-turn-label { margin: 0 0 12px; color: #849188; font-size: 11px; font-weight: 600; }
+.export-paper .export-question { margin: 0 0 22px; padding: 16px 19px; border: 1px solid #dee7dd; border-radius: 12px; background: #f1f6ee; }
+.export-paper .export-role { margin: 0 0 8px; color: #20685d; font-size: 12px; font-weight: 700; }
+.export-paper .export-question-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.export-paper .export-answer { margin: 0; }
+.export-paper .export-markdown { color: #24332c; font-size: 15px; line-height: 1.8; overflow: visible; }
+.export-paper .export-markdown > :first-child { margin-top: 0; }
+.export-paper .export-markdown > :last-child { margin-bottom: 0; }
+.export-paper .export-markdown p { margin: 0 0 12px; }
+.export-paper .export-markdown h1, .export-paper .export-markdown h2, .export-paper .export-markdown h3,
+.export-paper .export-markdown h4, .export-paper .export-markdown h5, .export-paper .export-markdown h6 {
+  color: #23362a; margin: 22px 0 10px; font-weight: 650; line-height: 1.5;
+}
+.export-paper .export-markdown h1 { font-size: 24px; }
+.export-paper .export-markdown h2 { font-size: 21px; }
+.export-paper .export-markdown h3 { font-size: 18px; }
+.export-paper .export-markdown h4, .export-paper .export-markdown h5, .export-paper .export-markdown h6 { font-size: 16px; }
+.export-paper .export-markdown ul, .export-paper .export-markdown ol { margin: 8px 0 14px; padding-left: 25px; }
+.export-paper .export-markdown li { margin: 5px 0; }
+.export-paper .export-markdown blockquote { margin: 14px 0; padding: 8px 16px; border-left: 3px solid #91aa98; color: #55665a; background: #f5f8f4; }
+.export-paper .export-markdown pre { display: block; margin: 14px 0; padding: 14px 16px; border: 1px solid #e0e6e1; border-radius: 8px; background: #f4f6f5; color: #25372b; white-space: pre-wrap; overflow: visible; max-height: none; word-break: break-word; }
+.export-paper .export-markdown code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px; overflow-wrap: anywhere; }
+.export-paper .export-markdown :not(pre) > code { padding: 1px 4px; border-radius: 4px; background: #eef2ef; color: #245c43; }
+.export-paper .export-markdown pre code { display: block; padding: 0; white-space: pre-wrap; line-height: 1.65; background: transparent; color: #25372b; }
+.export-paper .hljs-keyword, .export-paper .hljs-selector-tag, .export-paper .hljs-literal { color: #8450a2; }
+.export-paper .hljs-string, .export-paper .hljs-regexp, .export-paper .hljs-attr { color: #227748; }
+.export-paper .hljs-title, .export-paper .hljs-function, .export-paper .hljs-built_in { color: #225da5; }
+.export-paper .hljs-number, .export-paper .hljs-symbol { color: #9c5e20; }
+.export-paper .hljs-comment, .export-paper .hljs-quote { color: #79867e; }
+.export-paper .md-table-scroll { display: block; width: 100%; margin: 14px 0; overflow: visible; border: 0; border-radius: 0; }
+.export-paper table { width: 100%; min-width: 0; table-layout: fixed; border-collapse: collapse; font-size: 12px; }
+.export-paper th, .export-paper td { padding: 8px 10px; border: 1px solid #dce4dd; color: #2e3e33; white-space: normal; overflow-wrap: anywhere; vertical-align: top; text-align: left; }
+.export-paper th { background: #edf3ec; font-weight: 650; }
+.export-paper a { color: #236e5a; text-decoration: underline; overflow-wrap: anywhere; }
+.export-paper hr { margin: 20px 0; border: 0; border-top: 1px solid #dfe6df; }
+.export-paper img { display: block; max-width: 100%; max-height: 480px; width: auto; height: auto; object-fit: contain; margin: 12px 0; }
+.export-paper .katex-display { margin: 16px 0; overflow: visible; max-width: 100%; }
+.export-paper .export-attachment, .export-paper .export-image-placeholder { display: block; margin: 9px 0; color: #65736a; font-size: 12px; white-space: normal; overflow-wrap: anywhere; }
+.export-paper .export-status { margin: 0 0 12px; padding: 9px 12px; border-left: 3px solid #c3964f; background: #fbf6ed; color: #755324; font-size: 13px; white-space: pre-wrap; }
+.export-paper .export-sources { margin-top: 18px; padding-top: 12px; border-top: 1px solid #e4eae4; color: #6b776f; font-size: 11px; line-height: 1.7; }
+.export-paper .export-sources p { margin: 5px 0; }

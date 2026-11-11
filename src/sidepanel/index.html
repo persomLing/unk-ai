@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>UNK AI - 阅读与对话</title>
+    <link rel="icon" href="/icons/icon-32.png" />
+    <link rel="stylesheet" href="./style.css" />
+    <script src="/src/sidepanel/theme-boot.js"></script>
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <header class="app-header">
+        <h1 id="conversation-title" class="header-conversation-title" hidden></h1>
+        <div class="header-toolbar">
+        <div class="header-leading">
+          <button id="open-history" class="icon-button" type="button" aria-label="打开历史侧边栏" title="历史对话" aria-haspopup="dialog" aria-controls="history-drawer" aria-expanded="false"><i data-icon="sidebar"></i></button>
+          <div id="model-switcher" class="model-switcher">
+            <button id="model-trigger" class="model-trigger" type="button" aria-label="选择模型" aria-haspopup="listbox" aria-expanded="false">
+              <span id="model-display-name" class="model-display-name">选择模型</span>
+              <span id="effort-display-badge" class="effort-display-badge" hidden>默认</span>
+              <i class="model-chevron" data-icon="chevron-down"></i>
+            </button>
+            <div id="model-dropdown" class="model-dropdown" role="listbox" hidden></div>
+            <select id="chat-model" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+            <select id="chat-effort" class="sr-only" tabindex="-1" aria-hidden="true"></select>
+          </div>
+        </div>
+        <div class="header-trailing">
+          <button id="theme-toggle" class="icon-button" type="button" aria-label="切换明暗主题" title="切换明暗主题"><i data-icon="moon"></i></button>
+          <div class="conversation-export-control">
+            <button id="export-selected" class="icon-button" type="button" aria-label="导出当前对话" title="导出 Markdown、图片 / PDF 或诊断日志" aria-haspopup="menu" aria-controls="conversation-export-menu" aria-expanded="false" disabled><i data-icon="download"></i></button>
+            <div id="conversation-export-menu" class="conversation-export-menu" role="menu" aria-label="导出当前对话" hidden>
+              <button type="button" role="menuitem" data-conversation-export="document" tabindex="-1"><i data-icon="image"></i><span><strong>图片 / PDF</strong><small>选择问答回合后导出</small></span></button>
+              <button type="button" role="menuitem" data-conversation-export="markdown" tabindex="-1"><i data-icon="download"></i><span><strong>Markdown</strong><small>导出整段对话为 .md 文件</small></span></button>
+              <button type="button" role="menuitem" data-conversation-export="diagnostics" tabindex="-1"><i data-icon="file"></i><span><strong>诊断日志</strong><small>本对话 · 今天（北京时间）</small></span></button>
+            </div>
+          </div>
+          <button id="new-chat" class="icon-button" type="button" aria-label="新建对话" title="新对话" data-build="search-v2"><i data-icon="edit"></i></button>
+        </div>
+        </div>
+      </header>
+
+      <div id="conversation-stage" class="conversation-stage">
+      <main id="conversation-view" class="conversation-view">
+        <div id="setup-required" class="setup-required" hidden></div>
+        <div class="conversation-status">
+          <span id="storage-badge" class="storage-badge"><i data-icon="history"></i><span>临时对话 · 浏览器</span></span>
+          <button id="save-conversation" class="save-conversation" type="button" hidden><i data-icon="folder"></i><span>保存到本地</span></button>
+        </div>
+
+        <section id="welcome" class="welcome" aria-labelledby="welcome-title">
+          <div class="welcome-header">
+            <div class="welcome-mark" aria-hidden="true"><i data-icon="asterisk"></i></div>
+            <span class="eyebrow">阅读 · 提问 · 探索</span>
+            <h1 id="welcome-title">今天想了解什么？</h1>
+            <p>直接提问，或挑一个感兴趣的话题。</p>
+          </div>
+          <div id="welcome-chips" class="welcome-chips-container" aria-label="快捷启发灵感">
+            <div class="welcome-start">
+              <button id="welcome-primary" class="welcome-chip welcome-primary" type="button" data-action="focus-input">
+                <span class="welcome-action-icon"><i data-icon="message"></i></span>
+                <span class="welcome-action-copy"><strong>直接提问</strong><small>在下方写下你的问题</small></span>
+                <span class="welcome-action-arrow"><i data-icon="arrow-right"></i></span>
+              </button>
+            </div>
+          </div>
+          <span class="welcome-footnote"><i data-icon="lock"></i>对话本地保存 · 使用你配置的模型</span>
+        </section>
+
+        <div id="messages" class="messages" aria-live="polite" aria-label="对话消息" hidden></div>
+        <div id="scroll-latest" class="scroll-latest" hidden>
+          <button class="scroll-latest-button" type="button" aria-label="滚动到最新消息">
+            <i class="scroll-latest-arrow" data-icon="arrow-down"></i>
+            <span class="scroll-latest-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          </button>
+        </div>
+      </main>
+      <nav id="turn-navigator" class="turn-navigator" aria-label="对话轮次定位" hidden></nav>
+      <aside id="turn-preview" class="turn-preview" role="dialog" aria-label="轮次预览" hidden></aside>
+      </div>
+
+      <footer class="composer-area">
+        <section id="agent-panel" class="agent-panel" hidden aria-label="浏览器任务">
+          <header class="agent-panel-header">
+            <div class="agent-panel-title">
+              <span class="agent-panel-mark"><i data-icon="globe"></i></span>
+              <div class="agent-panel-copy">
+                <span class="agent-eyebrow">BROWSER AGENT</span>
+                <strong id="agent-goal">准备执行</strong>
+                <span id="agent-origin" class="agent-origin"></span>
+              </div>
+            </div>
+            <div class="agent-panel-actions">
+              <button id="agent-takeover" class="agent-text-button" type="button" hidden>接管</button>
+              <button id="agent-stop" class="agent-text-button danger" type="button" hidden>停止</button>
+              <button id="agent-close" class="icon-button agent-close" type="button" aria-label="关闭任务面板" title="关闭任务面板"><i data-icon="close"></i></button>
+            </div>
+          </header>
+          <div id="agent-status" class="agent-status"></div>
+          <div id="agent-steps" class="agent-steps" aria-live="polite"></div>
+          <div id="agent-interaction" class="agent-interaction" hidden></div>
+        </section>
+        <div id="queue-bar" class="queue-bar" hidden aria-live="polite">
+          <div class="queue-leading">
+            <span class="queue-icon"><i data-icon="history"></i></span>
+            <span class="queue-tag">排队中</span>
+            <span class="queue-preview" id="queue-preview"></span>
+          </div>
+          <button id="queue-recall" class="queue-recall-btn" type="button" aria-label="撤回到对话框重新编辑" title="撤回排队消息到输入框">
+            <i data-icon="rewind"></i>
+            <span>撤回</span>
+          </button>
+        </div>
+        <div id="composer" class="composer">
+          <div id="selection-chip" class="selection-chip" hidden>
+            <span class="selection-chip-icon"><i data-icon="quote"></i></span>
+            <span class="selection-chip-copy">
+              <strong id="selection-chip-title">已选择 1 项</strong>
+              <small id="selection-chip-preview"></small>
+            </span>
+            <button id="clear-selection" class="selection-chip-close" type="button" aria-label="取消选中内容" title="取消选中内容"><i data-icon="close"></i></button>
+          </div>
+          <div id="context-chip" class="context-chip" hidden></div>
+          <div id="article-quote-draft" hidden></div>
+          <div id="attachment-list" class="attachment-list" aria-label="待发送附件" hidden></div>
+          <div id="composer-page-control" class="composer-page-control" hidden>
+            <div class="composer-page-source-row">
+            <label id="composer-page-pill" class="composer-page-pill" title="开启后，每次提问都会读取当前页并结合页面回答；关闭后普通提问">
+              <span id="composer-page-icon" class="page-pill-icon" aria-hidden="true"><i data-icon="globe"></i></span>
+              <span id="composer-page-mode" class="page-pill-mode">基于当前页</span>
+              <span id="composer-page-name" class="page-pill-name">当前网页</span>
+              <span class="page-pill-toggle"><input id="composer-page-toggle" type="checkbox" role="switch" aria-label="基于当前页回答" aria-describedby="composer-page-status" checked /><span class="pill-slider"></span></span>
+            </label>
+            </div>
+            <span id="composer-page-status" class="composer-page-status" role="status" hidden></span>
+          </div>
+          <div id="pasted-text-list" class="pasted-text-list" hidden></div>
+          <textarea id="message-input" rows="1" maxlength="200000" placeholder="输入消息…" aria-label="输入消息"></textarea>
+          <div id="composer-page-choice" class="composer-page-choice" role="group" aria-labelledby="composer-page-choice-text" hidden>
+            <span id="composer-page-choice-text"></span>
+            <div class="composer-page-choice-actions">
+              <button type="button" data-page-choice="page">读取当前页并发送</button>
+              <button type="button" data-page-choice="plain">按普通问题发送</button>
+            </div>
+          </div>
+          <div id="composer-mode-hint" class="composer-mode-hint" role="status" hidden></div>
+          <div class="composer-toolbar">
+            <div class="composer-leading">
+              <div class="attach-control">
+                <button id="attach-button" class="composer-icon-button" type="button" aria-label="添加图片或文档" title="添加图片或文档" aria-expanded="false"><i data-icon="plus"></i></button>
+                <div id="attach-menu" class="attach-menu" role="menu" hidden>
+                  <button type="button" role="menuitem" data-attach-kind="image"><span class="attach-menu-icon"><i data-icon="image"></i></span><span><strong>上传图片</strong><small>也可以直接粘贴截图</small></span></button>
+                  <button type="button" role="menuitem" data-attach-kind="document"><span class="attach-menu-icon"><i data-icon="file"></i></span><span><strong>文档</strong><small>TXT、Markdown、CSV、JSON、DOCX、PDF</small></span></button>
+                </div>
+                <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
+                <input id="document-input" type="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yaml,.yml,.log,.docx,.pdf" multiple hidden />
+              </div>
+
+            </div>
+            <div id="composer-modes" class="composer-modes" role="group" aria-label="页面能力" hidden>
+              <button id="agent-toggle" class="composer-mode-button agent-toggle" type="button" aria-label="页面操作" aria-pressed="false" title="在授权后点击、输入和导航"><i data-icon="globe"></i><span>页面操作</span></button>
+              <div id="composer-reading-controls" class="composer-reading-controls" hidden>
+                <button id="composer-reading-depth" class="composer-mode-button reading-depth-trigger" type="button" aria-label="页面阅读强度" aria-haspopup="menu" aria-controls="composer-reading-menu" aria-expanded="false" title="按资料缺口自动选择读取方式" data-tooltip="按资料缺口自动选择读取方式">
+                  <i data-icon="sparkles"></i><span id="composer-reading-depth-label">自动</span><i class="reading-chevron" data-icon="chevron-down"></i>
+                </button>
+                <div id="composer-reading-menu" class="composer-reading-menu" role="menu" aria-label="页面阅读强度" hidden>
+                  <span class="reading-menu-heading" aria-hidden="true">读取方式</span>
+                  <button type="button" role="menuitemradio" data-reading-mode="auto" aria-checked="true" tabindex="-1"><i data-icon="sparkles"></i><span><strong>自动</strong><small>按资料缺口选择补读方式</small></span><i class="reading-option-check" data-icon="check"></i></button>
+                  <button type="button" role="menuitemradio" data-reading-mode="basic" aria-checked="false" tabindex="-1"><i data-icon="article"></i><span><strong>基础</strong><small>读取页面正文，快速回答</small></span><i class="reading-option-check" data-icon="check"></i></button>
+                  <button type="button" role="menuitemradio" data-reading-mode="deep" aria-checked="false" tabindex="-1"><i data-icon="scan"></i><span><strong>深入</strong><small>补充页面结构，仔细核验</small></span><i class="reading-option-check" data-icon="check"></i></button>
+                </div>
+                <button id="composer-network-allowed" class="composer-mode-button network-reading-toggle" type="button" aria-label="允许本站读取接口数据" aria-pressed="false" aria-describedby="composer-network-note" title="允许在需要时读取本站接口数据" data-tooltip="允许在需要时读取本站接口数据">
+                  <i data-icon="network"></i><span id="composer-network-label">接口</span><span class="network-state-dot" aria-hidden="true"></span>
+                </button>
+                <span id="composer-network-note" class="sr-only" role="status"></span>
+              </div>
+            </div>
+            <div class="composer-trailing">
+              <div id="context-control" class="context-control">
+                <button id="context-meter-button" class="context-meter-button" type="button" aria-label="会话整理，查看容量与压缩详情" aria-expanded="false" aria-controls="context-popover" title="会话整理 · 查看容量与压缩详情" data-tooltip="会话整理 · 查看容量与压缩详情">
+                  <i data-icon="layers"></i>
+                  <span id="context-meter-label" class="sr-only">0%</span>
+                  <span class="context-attention-dot" aria-hidden="true"></span>
+                </button>
+                <div id="context-popover" class="context-popover" hidden>
+                  <div class="context-popover-header">
+                    <span class="context-popover-title">会话整理</span>
+                    <span id="context-model-name" class="context-model-name"></span>
+                  </div>
+                  <p class="context-help">整理较早记录，为后续对话留出空间。</p>
+                  <div class="context-percent-row">
+                    <strong id="context-used-percent">0% 已用</strong>
+                    <span id="context-remaining-percent">（剩余 100%）</span>
+                  </div>
+                  <div id="context-token-count" class="context-token-count">已用 0 Tokens，共 128k</div>
+                  <div class="context-progress" aria-hidden="true"><i id="context-progress-bar"></i></div>
+                  <small id="context-threshold-label">达到 90% 自动整理较早记录</small>
+                  <div id="context-summary-row" class="context-summary-row" hidden>
+                    <span>已整理较早记录 <time id="context-summary-time"></time></span>
+                    <span id="context-summary-count" class="context-summary-count"></span>
+                    <p id="context-summary-preview"></p>
+                  </div>
+                  <div id="context-page-row" class="context-page-row" hidden>
+                    <span class="context-page-heading"><i data-icon="article"></i>已读取页面</span>
+                    <strong id="context-page-title"></strong>
+                    <p id="context-page-detail"></p>
+                  </div>
+                  <button id="context-compress-button" class="context-compress-button" type="button">立即整理</button>
+                </div>
+              </div>
+              <button id="send-message" class="send-button" type="button" aria-label="发送消息" title="发送消息" disabled><i data-icon="arrow-up"></i></button>
+              <button id="stop-generation" class="send-button stop-button" type="button" aria-label="停止生成" title="停止生成" hidden><i data-icon="stop"></i></button>
+            </div>
+          </div>
+        </div>
+      </footer>
+
+      <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+      <aside id="history-drawer" class="history-drawer" aria-label="历史会话与导航" aria-hidden="true" inert>
+        <header class="drawer-brand">
+          <div class="drawer-brand-lockup">
+            <img class="drawer-brand-icon" src="/icons/icon-32.png" alt="" />
+            <div>
+              <strong>UNK AI</strong>
+              <span>阅读与思考空间</span>
+            </div>
+          </div>
+          <button id="close-history" class="icon-button" type="button" aria-label="关闭侧边栏" title="关闭"><i data-icon="close"></i></button>
+        </header>
+        <div class="history-search-bar">
+          <i data-icon="search" class="history-search-icon"></i>
+          <input type="search" id="history-search-input" class="history-search-input" placeholder="搜索历史会话" aria-label="搜索历史会话" autocomplete="off" />
+          <button type="button" id="history-search-clear" class="history-search-clear" aria-label="清空搜索" hidden><i data-icon="close"></i></button>
+        </div>
+        <div class="ho-toolbar">
+          <button id="history-view" class="ho-view-trigger" type="button" aria-label="对话视图" aria-haspopup="menu" aria-expanded="false" aria-controls="history-view-menu"><span data-view-label>按分组</span><i data-icon="chevron-down"></i></button>
+          <span id="history-count">0</span>
+          <button id="history-new-chat" class="history-new-chat" type="button"><i data-icon="plus"></i>新对话</button>
+          <button id="history-manage" class="ho-icon" type="button" aria-label="管理对话" aria-haspopup="menu" aria-expanded="false" title="新建分组、选择多个"><i data-icon="ellipsis"></i></button>
+          <button id="history-select-visible" class="ho-select-visible" type="button" hidden>全选当前</button>
+          <button id="history-selection-done" class="ho-selection-done" type="button" hidden>完成</button>
+        </div>
+        <div id="history-list" class="history-list"></div>
+        <div id="history-feedback" class="ho-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></div>
+        <div id="history-batch" class="ho-batch" role="group" aria-label="批量操作" hidden></div>
+        <footer class="drawer-footer">
+          <button id="open-settings" class="drawer-settings" type="button"><i data-icon="settings"></i><span>设置</span></button>
+          <span class="drawer-storage-note"><i data-icon="lock"></i>本地保存</span>
+        </footer>
+      </aside>
+      <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
+    </div>
+
+    <script type="module" src="./sidepanel.js"></script>
+  </body>
+</html>

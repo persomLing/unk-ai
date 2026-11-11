@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="870" height="1300" viewBox="0 0 870 1300" role="img" aria-labelledby="title desc">
+  <title id="title">图 16：联网回答如何使用与说明来源证据</title>
+  <desc id="desc">提交问题后，模型结合已有资料决定直接回答或按需搜索公开网页。搜索摘要与已读取正文分别标记，模型按缺口在预算内读取、复用和核对资料，最终依据已有资料作答并说明未核实部分。来源图标不等于正文已读，权限拒绝、必要工具失败、超时或停止不伪装成成功。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#20685d"/></marker>
+  </defs>
+  <g font-family="Microsoft YaHei, PingFang SC, sans-serif">
+    <rect width="870" height="1300" rx="20" fill="#f6f8f5"/>
+    <text x="30" y="47" font-size="28" fill="#243e33" font-weight="700">联网回答：先判断，再按需核对资料</text>
+    <text x="30" y="82" font-size="18" fill="#64776e">搜索提供线索，读取补充正文；来源状态说明本轮实际获得了什么。</text>
+
+    <rect x="250" y="114" width="370" height="86" rx="14" fill="#20685d"/>
+    <text x="435" y="166" text-anchor="middle" font-size="23" fill="#fff" font-weight="650">提交问题</text>
+    <path d="M435 207 V232" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="35" y="242" width="800" height="104" rx="14" fill="#eef5ef" stroke="#cfded5"/>
+    <text x="435" y="281" text-anchor="middle" font-size="21" fill="#243e33" font-weight="650">模型结合已有资料，判断是否需要联网</text>
+    <text x="435" y="319" text-anchor="middle" font-size="18" fill="#64776e">根据问题和资料缺口选择后续步骤，不要求每个问题都搜索。</text>
+    <path d="M435 346 V370 H150 V387 M435 370 H575 V387" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M150 376 V387" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="35" y="397" width="230" height="146" rx="14" fill="#fff" stroke="#cfded5"/>
+    <text x="150" y="439" text-anchor="middle" font-size="21" fill="#243e33" font-weight="650">直接回答</text>
+    <text x="150" y="479" text-anchor="middle" font-size="18" fill="#64776e">
+      <tspan x="150">已有资料足够时</tspan>
+      <tspan x="150" dy="28">不强制搜索</tspan>
+    </text>
+    <rect x="315" y="397" width="520" height="146" rx="14" fill="#fff" stroke="#cfded5"/>
+    <text x="337" y="439" font-size="21" fill="#243e33" font-weight="650">按需搜索公开网页</text>
+    <text x="337" y="479" font-size="18" fill="#64776e">
+      <tspan x="337">先找相关线索，再判断需要读取哪些页面。</tspan>
+      <tspan x="337" dy="28">搜索结果可以包含标题、链接和摘要。</tspan>
+    </text>
+    <path d="M575 549 V571" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="315" y="581" width="520" height="181" rx="14" fill="#eef5ef" stroke="#cfded5"/>
+    <text x="337" y="618" font-size="21" fill="#243e33" font-weight="650">分清两种来源状态</text>
+    <rect x="337" y="636" width="226" height="105" rx="10" fill="#fff" stroke="#cfded5"/>
+    <text x="355" y="668" font-size="20" fill="#243e33" font-weight="650">搜索摘要</text>
+    <text x="355" y="698" font-size="18" fill="#64776e">
+      <tspan x="355">只有标题和片段</tspan>
+      <tspan x="355" dy="26">尚未读取正文</tspan>
+    </text>
+    <rect x="579" y="636" width="234" height="105" rx="10" fill="#fff" stroke="#cfded5"/>
+    <text x="597" y="668" font-size="20" fill="#243e33" font-weight="650">已读取正文</text>
+    <text x="597" y="698" font-size="18" fill="#64776e">
+      <tspan x="597">按实际读取内容</tspan>
+      <tspan x="597" dy="26">标明截断与缺口</tspan>
+    </text>
+    <path d="M575 768 V790" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="315" y="800" width="520" height="122" rx="14" fill="#fff" stroke="#cfded5"/>
+    <text x="337" y="840" font-size="21" fill="#243e33" font-weight="650">按缺口读取，在预算内继续核对</text>
+    <text x="337" y="878" font-size="18" fill="#64776e">已有正文可复用；额度不足时结束补充。</text>
+    <path d="M150 549 V954 M575 928 V954" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M150 943 V954" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="35" y="964" width="800" height="112" rx="14" fill="#eef5ef" stroke="#cfded5"/>
+    <text x="57" y="1006" font-size="21" fill="#243e33" font-weight="650">依据已有资料完成回答</text>
+    <text x="57" y="1044" font-size="18" fill="#64776e">未核实的部分明确说明；没有读取的页面不声称已读。</text>
+
+    <rect x="35" y="1110" width="800" height="156" rx="14" fill="#fff" stroke="#cfded5"/>
+    <rect x="35" y="1126" width="5" height="124" rx="2.5" fill="#20685d"/>
+    <text x="57" y="1148" font-size="21" fill="#243e33" font-weight="650">看证据状态，不只看来源图标</text>
+    <text x="57" y="1185" font-size="18" fill="#64776e">
+      <tspan x="57">来源图标或数量不代表正文已读；展开查看摘要、正文和截断。</tspan>
+      <tspan x="57" dy="28">权限拒绝、必要工具失败、超时或停止保留可见状态。</tspan>
+      <tspan x="57" dy="28">预算正常耗尽可用已有资料收尾；失败不会伪装成成功。</tspan>
+    </text>
+  </g>
+</svg>

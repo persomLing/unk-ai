@@ -1,0 +1,73 @@
+{
+  "manifest_version": 3,
+  "name": "UNK AI - 阅读与对话",
+  "version": "0.18.2",
+  "author": "shiyu",
+  "description": "在当前网页旁进行私密、专注的 AI 阅读与对话。",
+  "default_locale": "zh_CN",
+  "permissions": [
+    "sidePanel",
+    "storage",
+    "activeTab",
+    "scripting",
+    "downloads",
+    "contextMenus",
+    "tabs",
+    "debugger"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*",
+    "file:///*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content/aria-snapshot-bundle.js",
+        "content/extractor.js",
+        "content/content.js",
+        "content/page-selection.js",
+        "content/figure-picker.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "打开 UNK AI",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/index.html"
+  },
+  "options_ui": {
+    "page": "src/options/index.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+U"
+      },
+      "description": "打开或关闭 UNK AI 侧边栏"
+    }
+  }
+}

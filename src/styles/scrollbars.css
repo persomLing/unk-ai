@@ -1,0 +1,40 @@
+/* Shared by extension pages only. Keep native scroll geometry and input behavior. */
+:root {
+  --scrollbar-thumb-color: #bdc8c1;
+  --scrollbar-width: 5px;
+  --scrollbar-height: 5px;
+}
+
+[data-theme="dark"] { --scrollbar-thumb-color: #52625a; }
+
+/* Reset on each element to keep a hovered parent from lighting nested scrollers.
+   Resolve interaction on the element: scrollbar pseudo-elements do not reliably
+   match an ancestor :hover selector in Chromium. */
+* { --scrollbar-visible-color: transparent; }
+*:hover,
+*:focus-visible { --scrollbar-visible-color: var(--scrollbar-thumb-color); }
+
+/* Do not mix non-auto scrollbar-color/width with these WebKit rules:
+   newer Chromium would override them, while Chrome 120 needs this path. */
+*::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-height);
+}
+
+*::-webkit-scrollbar-track,
+*::-webkit-scrollbar-corner { background: transparent; }
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-visible-color);
+  border-radius: 999px;
+}
+
+/* Touch cannot hover; keyboard focus and system contrast keep scrolling discoverable. */
+@media (hover: none), (pointer: coarse), (forced-colors: active) {
+  * { --scrollbar-visible-color: var(--scrollbar-thumb-color); }
+}
+
+@media (forced-colors: active) {
+  :root { --scrollbar-thumb-color: CanvasText; }
+  [data-theme="dark"] { --scrollbar-thumb-color: CanvasText; }
+}

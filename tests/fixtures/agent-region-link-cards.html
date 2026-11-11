@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="UTF-8">
+<title>Linked merchant cards scanner fixture</title>
+<style>body{font:16px system-ui;margin:24px;background:#f6f8fb}main{max-width:1000px}.space-y-2>a{display:block;color:inherit;text-decoration:none;margin:8px 0}.card{padding:20px;background:white;border:1px solid #ccd6e0;border-radius:8px}.identity{display:flex;gap:12px}.grid{display:grid;grid-template-columns:2fr 1fr 1fr;gap:16px}.hidden{display:none}svg{width:20px;height:20px}#result{white-space:pre-wrap}</style>
+<main aria-label="模型商家主区">
+  <h1>gpt-6-astra</h1>
+  <ul><li>全部</li><li>价格从低到高</li><li>最新</li></ul>
+  <nav aria-label="网站菜单"><div id="menu"></div></nav>
+  <div id="merchants" class="space-y-2" aria-label="商家卡片"></div>
+</main>
+<pre id="result"></pre>
+<script>
+  for (let index = 0; index < 24; index++) {
+    const card = document.createElement('a');
+    card.className = 'block no-underline'; card.href = '/models/' + (11035 + index);
+    card.innerHTML = `<div class="card"><div><div class="grid"><div><div class="identity"><span><svg><title>OpenAI</title><circle cx="10" cy="10" r="9" fill="#15aa94"/></svg></span><span class="hidden">HIDDEN_NAME</span><span>${index === 0 ? 'GETAPI' : '真实商家 ' + (index + 1)}</span><span aria-label="店铺信用分:500">信用分500</span></div><div>gpt-6-astra</div><p>稳定的模型转发服务</p></div><div><span>输入价格</span><span>¥1.98/M</span></div><div><span>缓存命中率</span><span>79.8%</span></div></div></div></div>`;
+    document.querySelector('#merchants').appendChild(card);
+  }
+  for (const name of ['主页', '模型', '文档']) {
+    const link = document.createElement('a'); link.href = '#'; link.style.display = 'block'; link.innerHTML = `<span>${name}</span>`; document.querySelector('#menu').appendChild(link);
+  }
+</script>
+<script src="../../src/content/agent-scanner.js"></script>
+<script>
+  try {
+    const scan = __unkAiAgentScanner.scan('fixture', { taskId: 'fixture', epoch: 1 });
+    const region = scan.elements.find(item => item.readable && item.name === '商家卡片');
+    const main = scan.elements.find(item => item.readable && item.name === '模型商家主区');
+    if (!region || !main) throw new Error('Controlled card or main region missing');
+    const read = __unkAiAgentScanner.readRegion('fixture', main.id, { taskId: 'fixture', epoch: 1,
+      expiresAt: Date.now() + 20000, frameUrl: location.href, pageUrl: location.href, regionId: main.id, query: '缓存命中率' });
+    if (!read.ok || read.regionReading.rows.length !== 24 || read.regionReading.totalRows !== 24) throw new Error('24 linked cards not recovered');
+    const first = read.regionReading.rows[0];
+    if (first.label !== 'GETAPI' || first.labelSource !== 'visible-text' || first.truncated) throw new Error('Merchant leaf identity failed');
+    if (!/缓存命中率\s*79\.8%/.test(first.text) || /OpenAI|HIDDEN_NAME/.test(first.text)) throw new Error('Value or excluded text failed');
+    if (read.regionReading.truncated || !read.regionReading.queryMatched) throw new Error('Unexpected incomplete result');
+    window.fixtureResult = { ok: true, scan: scan.metrics, read: read.metrics, rows: read.regionReading.rows.length, firstRow: first };
+  } catch (error) { window.fixtureResult = { ok: false, error: error.message, stack: error.stack }; }
+  document.querySelector('#result').textContent = JSON.stringify(window.fixtureResult, null, 2);
+</script>
+</html>

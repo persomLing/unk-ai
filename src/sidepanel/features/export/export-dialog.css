@@ -1,0 +1,71 @@
+.export-dialog {
+  width: min(580px, calc(100vw - 24px));
+  max-width: none;
+  height: min(800px, calc(100dvh - 32px));
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 24px 90px #13291f30;
+  overflow: hidden;
+}
+.export-dialog[open] { display: flex; flex-direction: column; }
+.export-dialog::backdrop { background: #15251e66; backdrop-filter: blur(3px); }
+.export-dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 22px 22px 8px; flex: 0 0 auto; }
+.export-eyebrow { font-size: 10px; color: var(--teal); letter-spacing: 2px; }
+.export-dialog-header h2 { margin: 5px 0 0; font-size: 21px; font-weight: 650; }
+.export-dialog-header .icon-button { align-self: flex-start; }
+.export-conversation-title { margin: 0; padding: 0 22px 18px; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 0 auto; }
+.export-tabs { display: flex; gap: 4px; padding: 4px; margin: 0 22px 14px; border-radius: 9px; background: var(--surface-alt); flex: 0 0 auto; }
+.export-tabs button { flex: 1; border: 0; border-radius: 6px; background: transparent; color: var(--muted); padding: 9px 6px; font-size: 12px; }
+.export-tabs button[aria-selected="true"] { background: var(--surface); color: var(--teal); box-shadow: var(--shadow-xs); font-weight: 600; }
+.export-dialog-body { min-height: 100px; flex: 1; overflow: auto; overscroll-behavior: contain; padding: 0 22px; }
+.export-selection-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 1px 10px; font-size: 11px; color: var(--muted); }
+.export-selection-toolbar label, .export-include { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
+.export-dialog input[type="checkbox"], .export-dialog input[type="radio"] { accent-color: var(--teal); flex: 0 0 auto; width: 15px; height: 15px; margin: 0; }
+.export-turn-list { display: flex; flex-direction: column; gap: 8px; }
+.export-turn-option { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; cursor: pointer; transition: border-color .15s, background .15s; }
+.export-turn-option:has(input:checked) { border-color: color-mix(in srgb, var(--teal) 40%, var(--line)); background: var(--teal-soft); }
+.export-turn-option input { margin-top: 2px !important; }
+.export-turn-option > span { min-width: 0; }
+.export-turn-option strong { font-size: 12px; font-weight: 550; line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.export-turn-option small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: 11px; color: var(--muted); line-height: 1.65; margin-top: 5px; overflow-wrap: anywhere; }
+.export-snapshot-note { margin: 12px 0 16px; color: var(--muted); font-size: 10px; line-height: 1.7; }
+.export-settings { padding: 14px 22px 0; border-top: 1px solid var(--line); flex: 0 0 auto; }
+.export-include { font-size: 12px; color: var(--ink-secondary); }
+.export-format { display: flex; gap: 8px; padding: 0; margin: 14px 0 8px; border: 0; min-width: 0; }
+.export-format label { display: flex; flex: 1; min-width: 0; cursor: pointer; position: relative; }
+.export-format input { position: absolute; opacity: 0; }
+.export-format label > span { display: grid; grid-template-columns: 20px 1fr; gap: 2px 7px; align-items: center; flex: 1; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; }
+.export-format .icon { grid-row: span 2; width: 17px; height: 17px; color: var(--muted); }
+.export-format strong { font-size: 11px; font-weight: 550; }
+.export-format small { font-size: 10px; color: var(--muted); }
+.export-format input:checked + span { background: var(--teal-soft); border-color: var(--teal); color: var(--teal); }
+.export-format input:checked + span .icon { color: var(--teal); }
+.export-format input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+.export-format-note { color: var(--muted); font-size: 10px; line-height: 1.6; margin: 0; min-height: 16px; }
+.export-feedback { color: var(--teal); font-size: 11px; line-height: 1.65; margin: 8px 0 0; overflow-wrap: anywhere; }
+.export-feedback.is-error { color: #b04c35; }
+.export-dialog-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 22px 20px; flex: 0 0 auto; }
+.export-dialog-footer .button { min-height: 36px; font-size: 12px; }
+.export-dialog-footer .button-primary { min-width: 112px; }
+.export-dialog button:disabled { opacity: .5; }
+.export-preview-viewport { padding: 12px 0; background: var(--surface-alt); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; min-height: 160px; }
+.export-preview-canvas { margin: 0 auto; position: relative; }
+.export-preview-canvas > .export-paper { position: absolute; inset: 0 auto auto 0; }
+@media (max-width: 380px) {
+  .export-dialog { width: calc(100vw - 12px); height: calc(100dvh - 16px); border-radius: 13px; }
+  .export-dialog-header { padding: 16px 14px 8px; }
+  .export-conversation-title { padding: 0 14px 12px; }
+  .export-tabs { margin: 0 14px 12px; }
+  .export-dialog-body { padding: 0 14px; }
+  .export-settings { padding: 12px 14px 0; }
+  .export-dialog-footer { padding: 12px 14px 16px; }
+}
+@media (max-height: 540px) {
+  .export-dialog { overflow-y: auto; }
+  .export-dialog-body { flex: 0 0 auto; overflow: visible; min-height: 0; }
+}

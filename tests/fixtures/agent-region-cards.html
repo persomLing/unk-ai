@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="UTF-8">
+<title>Agent region scanner fixture</title>
+<style>body{font:16px system-ui;margin:24px;background:#f6f8fb}main{max-width:1000px}#merchants{display:grid;gap:12px}.merchant{padding:16px;background:white;border:1px solid #ccd6e0;border-radius:8px}.hidden{display:none}#result{white-space:pre-wrap}</style>
+<main aria-label="模型商家页面">
+  <h1>模型商家</h1>
+  <ul aria-label="筛选"><li>全部</li><li>价格</li><li>评分</li></ul>
+  <section id="merchants" aria-label="商家卡片列表"></section>
+</main>
+<aside id="noise" aria-hidden="true"></aside>
+<pre id="result"></pre>
+<script>
+  const merchants = document.querySelector('#merchants');
+  for (let index = 0; index < 240; index++) {
+    const card = document.createElement('article');
+    card.className = 'merchant';
+    card.innerHTML = `<h2>商家 ${index + 1}</h2><p>缓存命中率 ${(80 + index / 20).toFixed(2)}%</p><button>详情</button><input value="SECRET_INPUT"><p class="hidden">SECRET_HIDDEN</p>`;
+    merchants.appendChild(card);
+  }
+  for (let index = 0; index < 8000; index++) {
+    const node = document.createElement('div'); node.textContent = 'NOISE'; document.querySelector('#noise').appendChild(node);
+  }
+</script>
+<script src="../../src/content/agent-scanner.js"></script>
+<script>
+  try {
+    const scan = __unkAiAgentScanner.scan('fixture-snapshot', { taskId: 'fixture', epoch: 1 });
+    const region = scan.elements.find(item => item.readable && item.name === '商家卡片列表');
+    const main = scan.elements.find(item => item.readable && item.regionKind === 'main' && item.name === '模型商家页面');
+    if (!region) throw new Error('Merchant region was not observed');
+    const read = element => __unkAiAgentScanner.readRegion('fixture-snapshot', element.id, {
+      taskId: 'fixture', epoch: 1, expiresAt: Date.now() + 20000, frameUrl: location.href, pageUrl: location.href,
+      regionId: element.id, query: '缓存命中率',
+    });
+    const result = read(region), mainResult = main && read(main);
+    if (!result.ok || result.regionReading.rows.length !== 200 || result.regionReading.totalRows !== 240 || !result.regionReading.truncated) throw new Error('Bounded list rows failed');
+    if (!mainResult?.ok || mainResult.regionReading.rows.length !== 200) throw new Error('Main region chose filter list instead of merchant cards');
+    if (/SECRET_INPUT|SECRET_HIDDEN|NOISE/.test(JSON.stringify(result.regionReading))) throw new Error('Excluded text leaked');
+    if (result.regionReading.rows[0].label !== '商家 1' || result.regionReading.rows[0].truncated) throw new Error('Row identity or truncation failed');
+    const unknown = __unkAiAgentScanner.readRegion('fixture-snapshot', region.id, {
+      taskId: 'fixture', epoch: 1, expiresAt: Date.now() + 20000, frameUrl: location.href, pageUrl: location.href,
+      regionId: region.id, query: '未知字段',
+    });
+    if (unknown.regionReading.rows.length || unknown.regionReading.queryMatched) throw new Error('Unknown field returned ranking rows');
+    window.fixtureResult = { ok: true, scan: scan.metrics, regionRead: result.metrics, rowCount: result.regionReading.rows.length,
+      totalRows: result.regionReading.totalRows, mainMatched: mainResult.regionReading.queryMatched, firstRow: result.regionReading.rows[0] };
+  } catch (error) { window.fixtureResult = { ok: false, error: error.message, stack: error.stack }; }
+  document.querySelector('#result').textContent = JSON.stringify(window.fixtureResult, null, 2);
+</script>
+</html>

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>设置 · UNK AI</title>
+    <link rel="icon" href="/icons/icon-32.png" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="settings-shell">
+      <header class="settings-header">
+        <a class="brand" href="/src/sidepanel/index.html" aria-label="返回 UNK AI">
+          <img src="/icons/icon-48.png" alt="" />
+          <span>UNK AI<span class="brand-caption">你的阅读与思考空间</span></span>
+        </a>
+        <div class="header-actions">
+          <span class="local-badge"><i data-icon="shield"></i><span>配置保存在此浏览器</span></span>
+          <button id="settings-theme" class="theme-button" type="button" aria-label="切换明暗主题" title="切换明暗主题"><i data-icon="moon"></i></button>
+        </div>
+      </header>
+
+      <div class="settings-layout">
+        <aside class="settings-sidebar" aria-label="设置导航">
+          <div class="nav-caption">偏好设置</div>
+          <nav class="settings-nav" aria-label="设置分区">
+            <a href="#connection-section" data-settings-nav="connection-section" aria-current="location"><i data-icon="plug"></i><span>连接服务</span></a>
+            <a href="#models-section" data-settings-nav="models-section"><i data-icon="sparkles"></i><span>模型库</span></a>
+            <a href="#parameters-section" data-settings-nav="parameters-section"><i data-icon="settings"></i><span>生成参数</span></a>
+            <a href="#research-section" data-settings-nav="research-section"><i data-icon="globe"></i><span>联网检索</span></a>
+            <a href="#storage-section" data-settings-nav="storage-section"><i data-icon="folder"></i><span>本地数据</span></a>
+            <a href="#agent-section" data-settings-nav="agent-section"><i data-icon="shield"></i><span>浏览器控制</span></a>
+          </nav>
+          <div class="sidebar-note"><i data-icon="lock"></i><p>使用你选择的模型服务。<br />配置与对话不经过我们的服务器。</p></div>
+        </aside>
+
+        <div class="settings-content">
+          <div class="intro">
+            <h1>设置</h1>
+            <p>连接常用模型，调整回答方式，管理你的本地数据。</p>
+          </div>
+          <div id="setup-banner" class="setup-banner" hidden>
+            <i data-icon="info"></i>
+            <div><strong>完成初始设置</strong><span>先选择对话保存位置，再添加一个模型。</span></div>
+            <a id="setup-action" href="#storage-section" class="setup-link">查看存储<i data-icon="arrow-right"></i></a>
+          </div>
+
+          <form id="settings-form" novalidate>
+            <section id="connection-section" class="form-section" data-settings-section aria-labelledby="connection-title">
+              <div class="section-heading">
+                <span class="section-symbol"><i data-icon="plug"></i></span>
+                <div><h2 id="connection-title">连接服务</h2><p>支持兼容 OpenAI Chat Completions 的模型服务。</p></div>
+              </div>
+              <div class="field">
+                <label for="endpoint-url">服务地址 <span>API Base URL · 必填</span></label>
+                <input id="endpoint-url" name="endpointUrl" type="url" placeholder="http://localhost:7864/v1" autocomplete="url" required aria-describedby="endpoint-hint" />
+                <p id="endpoint-hint" class="hint">通常填写到 <code>/v1</code>，也支持完整的 <code>/chat/completions</code> 地址。</p>
+              </div>
+              <div class="field">
+                <label for="api-key">API Key <span>本地服务可留空</span></label>
+                <div class="secret-field">
+                  <input id="api-key" name="apiKey" type="password" placeholder="输入服务商提供的密钥" autocomplete="off" spellcheck="false" aria-describedby="key-hint" />
+                  <button class="icon-button" id="toggle-key" type="button" aria-label="显示 API Key" title="显示 API Key"><i data-icon="eye"></i></button>
+                </div>
+                <p id="key-hint" class="hint">仅保存在当前浏览器，未使用系统级加密；不会随对话导出。</p>
+              </div>
+              <div class="section-action-row">
+                <span>填好连接信息，获取此服务可用的模型。</span>
+                <button id="load-models" class="inline-action" type="button"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">获取模型</span><i data-icon="arrow-right"></i></button>
+              </div>
+              <p id="load-models-feedback" class="inline-feedback" role="status" hidden></p>
+            </section>
+
+            <section id="models-section" class="form-section" data-settings-section aria-labelledby="models-title">
+              <div class="section-heading">
+                <span class="section-symbol"><i data-icon="sparkles"></i></span>
+                <div><h2 id="models-title">模型库</h2><p>添加常用模型；选中已添加的模型，可编辑它的生成参数。</p></div>
+              </div>
+              <div class="field">
+                <label for="model-select">从服务添加模型 <span>每次选择一个</span></label>
+                <div class="model-select-row">
+                  <select id="model-select" name="modelSelect" disabled>
+                    <option value="">请先获取模型列表</option>
+                  </select>
+                  <button id="add-model" class="inline-action" type="button" disabled><i data-icon="plus"></i>添加模型</button>
+                </div>
+                <div id="model-meta" class="model-meta" hidden></div>
+              </div>
+              <div id="model-library" class="model-library" aria-live="polite"></div>
+            </section>
+
+            <section id="parameters-section" class="form-section" data-settings-section aria-labelledby="parameters-title">
+              <div class="section-heading">
+                <span class="section-symbol"><i data-icon="settings"></i></span>
+                <div><h2 id="parameters-title">生成参数</h2><p>留空时跟随模型或服务商默认值。</p><span id="parameters-model-name" class="parameters-model-name" hidden></span></div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="context-length">上下文长度 <span>Tokens</span></label>
+                  <input id="context-length" name="contextLength" type="number" min="1" step="1" placeholder="模型默认" aria-describedby="context-length-hint" />
+                  <p id="context-length-hint" class="hint">一次请求可携带的内容总量，包含历史对话。</p>
+                </div>
+                <div class="field">
+                  <label for="max-tokens">最大输出 <span>Tokens</span></label>
+                  <input id="max-tokens" name="maxTokens" type="number" min="1" step="1" placeholder="模型默认" aria-describedby="max-tokens-hint" />
+                  <p id="max-tokens-hint" class="hint">单次回答可生成的内容上限。</p>
+                </div>
+              </div>
+              <div class="field temperature-field">
+                <label for="temperature">回答随机性 <span>Temperature · 0–2</span></label>
+                <input id="temperature" name="temperature" type="number" min="0" max="2" step="0.1" placeholder="跟随服务商默认" aria-describedby="temperature-hint" />
+                <p id="temperature-hint" class="hint">较低更稳定，较高更有变化。常用范围为 0.2–0.7。</p>
+              </div>
+              <div class="capability-row">
+                <label class="toggle-card" for="reasoning-enabled">
+                  <span><strong>思考模式</strong><small id="reasoning-hint">按模型能力识别，可手动调整</small></span>
+                  <span class="switch"><input id="reasoning-enabled" name="reasoningEnabled" type="checkbox" role="switch" /><i></i></span>
+                </label>
+                <label class="toggle-card" for="vision-enabled">
+                  <span><strong>视觉输入</strong><small id="vision-hint">支持时可向模型发送图片</small></span>
+                  <span class="switch"><input id="vision-enabled" name="visionEnabled" type="checkbox" role="switch" /><i></i></span>
+                </label>
+              </div>
+              <div class="field" id="reasoning-effort-field">
+                <label for="reasoning-effort">思考强度 <span>需服务商支持</span></label>
+                <select id="reasoning-effort" name="reasoningEffort"><option value="default">跟随服务商默认</option></select>
+              </div>
+            </section>
+
+            <section id="research-section" class="form-section" data-settings-section aria-labelledby="research-title">
+              <div class="section-heading">
+                <span class="section-symbol"><i data-icon="globe"></i></span>
+                <div><h2 id="research-title">联网检索</h2><p>时效性问题可自动搜索与抓取，使用上方服务地址和密钥。</p></div>
+              </div>
+              <label class="toggle-card research-toggle" for="web-research-enabled">
+                <span><strong>启用搜索与抓取</strong><small>普通稳定知识不自动联网</small></span>
+                <span class="switch"><input id="web-research-enabled" name="webResearchEnabled" type="checkbox" role="switch" /><i></i></span>
+              </label>
+              <div class="field-row">
+                <div class="field">
+                  <label for="web-search-endpoint">搜索接口 <span>可自定义</span></label>
+                  <input id="web-search-endpoint" name="webSearchEndpoint" type="text" placeholder="tools/search 或 web_search" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label for="web-fetch-endpoint">抓取接口 <span>可自定义</span></label>
+                  <input id="web-fetch-endpoint" name="webFetchEndpoint" type="text" placeholder="tools/fetch 或 web_fetch" autocomplete="off" spellcheck="false" />
+                </div>
+              </div>
+              <div class="section-action-row">
+                <span>搜索和抓取分开检测，可自动识别常见接口。</span>
+                <button id="detect-research" class="inline-action" type="button"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">检测接口</span></button>
+              </div>
+              <p id="research-feedback" class="inline-feedback" role="status" hidden></p>
+              <details class="settings-details"><summary>接口填写说明<i data-icon="chevron-down"></i></summary><p>会自动尝试 <code>tools/search</code>、<code>web_search</code> 等常见名称。中转服务也可手动填写接口路径；读取失败时会说明资料缺口。</p></details>
+            </section>
+
+            <section id="storage-section" class="form-section" data-settings-section aria-labelledby="storage-title">
+              <div class="section-heading">
+                <span class="section-symbol"><i data-icon="folder"></i></span>
+                <div><h2 id="storage-title">本地数据</h2><p>选择对话文件保存位置，文件夹授权后立即生效。</p></div>
+              </div>
+              <div class="storage-panel">
+                <div class="storage-copy">
+                  <strong id="storage-location">尚未选择保存位置</strong>
+                  <small id="storage-status">首次使用需授权一个本地文件夹</small>
+                </div>
+                <button id="choose-directory" class="button button-secondary" type="button"><i data-icon="folder"></i>选择文件夹</button>
+              </div>
+              <p class="hint storage-hint">正式对话写入所选文件夹中的 <code>conversations/</code>。浏览器保留临时对话、待同步内容和删除恢复记录；分组与自定义名称也保存在当前浏览器。</p>
+              <details class="settings-details"><summary>删除与恢复<i data-icon="chevron-down"></i></summary><p>删除历史对话也会删除原目录中的对应文件。通过撤销可从当前浏览器的恢复记录找回；文件夹不可用时，恢复后的内容会等待同步。</p></details>
+              <div id="storage-feedback" class="inline-feedback" role="status" hidden></div>
+              <div class="diagnostic-settings">
+                <div><strong>诊断日志</strong><span class="section-badge">本地 · 7 天</span></div>
+                <p>记录请求阶段、耗时、错误类型和页面动作校验，用于定位问题。不记录对话正文、附件、输入值或密钥，也不会自动发送。</p>
+                <p id="diagnostic-status" role="status">正在读取日志状态…</p>
+                <div class="diagnostic-actions">
+                  <button id="export-diagnostics" class="inline-action" type="button"><i data-icon="download"></i>导出今天全部诊断日志</button>
+                  <button id="flush-diagnostics" class="inline-action" type="button">重试保存 / 刷新状态</button>
+                </div>
+                <p class="hint">按北京时间导出今天所有对话的排障记录。更换文件夹不会迁移旧日志；未选择文件夹时产生的记录仅在浏览器暂存。</p>
+                <p id="diagnostic-feedback" class="inline-feedback" role="status" hidden></p>
+              </div>
+            </section>
+          </form>
+
+          <section id="agent-section" class="form-section" data-settings-section aria-labelledby="agent-settings-title">
+            <div class="section-heading">
+              <span class="section-symbol"><i data-icon="shield"></i></span>
+              <div><h2 id="agent-settings-title">浏览器控制 <span class="section-badge">即时生效</span></h2><p>允许 Agent 操作网页；站点授权可单独撤销。</p></div>
+            </div>
+            <div class="agent-settings-panel">
+              <label class="toggle-card" for="agent-enabled">
+                <span><strong>允许浏览器控制</strong><small>关闭后停止 Agent 页面操作，不影响普通问答与页面阅读</small></span>
+                <span class="switch"><input id="agent-enabled" type="checkbox" role="switch" /><i></i></span>
+              </label>
+              <label class="toggle-card" for="agent-strict">
+                <span><strong>逐次确认页面动作</strong><small>严格模式：每次页面动作执行前都由你确认</small></span>
+                <span class="switch"><input id="agent-strict" type="checkbox" role="switch" /><i></i></span>
+              </label>
+              <div class="agent-site-heading"><strong>已授权站点</strong><span>撤销后不再允许新的页面动作</span></div>
+              <div id="agent-site-list" class="agent-site-list"></div>
+              <div id="agent-settings-feedback" class="inline-feedback" role="status" hidden></div>
+              <details class="settings-details"><summary>需要你接管的操作<i data-icon="chevron-down"></i></summary><p>Agent 不会自动输入密码、CVV 或 PIN，不执行支付、下单或注销。验证码与登录需要你接管。</p></details>
+            </div>
+          </section>
+
+          <footer class="privacy-note"><i data-icon="info"></i><p>模型请求发送到你配置的服务。网页内容仅在你发起页面相关问答或操作时，按本轮使用范围提供。</p></footer>
+          <div class="settings-save-bar">
+            <div id="settings-status" class="settings-status" role="status" hidden></div>
+            <div class="save-bar-main">
+              <div class="save-copy"><strong id="save-state" role="status">模型配置需保存后生效</strong><span>文件夹与浏览器权限即时生效</span></div>
+              <div class="form-actions">
+                <button id="test-connection" class="button button-secondary" type="button"><i data-icon="plug"></i>测试连接</button>
+                <button id="save-settings" class="button button-primary" form="settings-form" type="submit"><i data-icon="check"></i>保存设置</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="./options.js"></script>
+  </body>
+</html>

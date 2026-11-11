@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN" data-scrollbar-fixture>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>统一滚动条交互回归</title>
+    <style>
+      #fixture { padding: 24px; max-width: 640px; }
+      #fixture h1 { margin: 0 0 10px; font-size: 20px; }
+      #fixture > p { font-size: 12px; line-height: 1.6; }
+      #keyboard-start { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--surface); }
+      #specimen { width: min(500px, calc(100vw - 48px)); height: 280px; margin-top: 22px; }
+      #specimen [data-probe] { max-width: 100%; }
+      #specimen [data-lines] > p { flex: 0 0 auto; margin: 8px 0; font-size: 12px; line-height: 20px; }
+      #specimen [data-probe="history"] { position: static; }
+      #fixture-result { color: var(--muted); }
+      #viewport-filler { height: 1800px; padding-top: 120px; }
+      #viewport-filler[hidden] { display: none; }
+    </style>
+  </head>
+  <body>
+    <main id="fixture">
+      <h1>统一滚动条</h1>
+      <p>使用真实侧栏、浮窗、导出或设置样式；仅提供本地长短内容与固定展示尺寸，不调用模型、浏览器存储或业务入口。</p>
+      <button id="keyboard-start" type="button">键盘测试起点 / 鼠标停放区</button>
+      <p id="fixture-result">正在加载样式</p>
+      <div id="specimen"></div>
+      <div id="viewport-filler" hidden>设置页的长内容，验证整页滚动条。</div>
+    </main>
+    <script type="module">
+      const surface = new URL(location.href).searchParams.get('surface') === 'options' ? 'options' : 'sidepanel';
+      if (surface === 'options') await import('../../src/options/style.css');
+      else {
+        await import('../../src/sidepanel/style.css');
+        await import('../../src/sidepanel/features/history/history-sidebar.css');
+        await import('../../src/sidepanel/features/messages/selection-chat.css');
+        await import('../../src/sidepanel/features/export/export-dialog.css');
+      }
+      const specimen = document.querySelector('#specimen');
+      const samples = {
+        conversation: '<div class="conversation-view" data-probe="conversation" tabindex="0" data-lines style="height:180px;flex:none"></div>',
+        history: '<div id="history-drawer"><div class="history-list" data-probe="history" tabindex="0" data-lines style="height:180px;max-height:180px;flex:none"></div></div>',
+        thinking: '<div class="thinking-content" data-probe="thinking" tabindex="0" data-lines style="height:180px"></div>',
+        error: '<div class="message-error is-expanded"><div class="message-error-detail" data-probe="error" tabindex="0" data-lines style="height:180px"></div></div>',
+        code: '<div class="message-content"><pre data-probe="code" tabindex="0"><code></code></pre></div>',
+        table: '<div class="message-content"><div class="md-table-scroll" data-probe="table" tabindex="0"><table style="min-width:1500px"><tbody><tr><td>日期</td><td>主题</td><td>来源</td><td>详细说明</td><td>核实结果</td></tr></tbody></table></div></div>',
+        input: '<textarea id="message-input" data-probe="input" aria-label="长草稿" style="height:160px"></textarea>',
+        floating: '<section class="selection-chat-window" style="position:static;width:500px;height:240px"><header class="selection-chat-header">单独追问</header><div class="selection-chat-messages messages" data-probe="floating" tabindex="0" data-lines></div></section>',
+        reference: '<details class="selection-chat-reference" data-probe="reference" tabindex="0" open style="height:180px;max-height:180px"><summary><span>选中的原文</span><small>长引用</small></summary><blockquote data-lines></blockquote><small>' + '原提问及相邻正文说明。'.repeat(90) + '</small></details>',
+        export: '<div class="export-dialog-body" data-probe="export" tabindex="0" data-lines style="height:180px;flex:none"></div>',
+        short: '<div class="conversation-view" data-probe="short" tabindex="0" style="height:180px;flex:none"><p>内容只有一行。</p></div>',
+        nested: '<div class="conversation-view" data-probe="parent" tabindex="0" style="height:250px;flex:none"><div id="parent-hover-zone" style="height:38px;flex:none">父滚动区的空白边缘</div><div class="thinking-content" data-probe="child" tabindex="0" data-lines style="height:100px;flex:none"></div><div data-lines style="flex:none"></div></div>',
+        navigation: '<nav class="settings-nav" data-probe="navigation" tabindex="0">' + Array.from({ length: 12 }, (_, index) => `<a href="#section-${index}" tabindex="-1">设置分区 ${index + 1}</a>`).join('') + '</nav>',
+        viewport: '<p>整页内容溢出时，鼠标移入页面显示滚动条。</p>',
+      };
+      function show(name) {
+        if (!Object.hasOwn(samples, name)) throw new Error(`Unknown sample: ${name}`);
+        document.activeElement?.blur();
+        document.documentElement.removeAttribute('data-probe');
+        document.querySelector('#viewport-filler').hidden = name !== 'viewport';
+        specimen.innerHTML = samples[name];
+        for (const node of specimen.querySelectorAll('[data-lines]')) {
+          node.innerHTML = Array.from({ length: 35 }, (_, index) => `<p>第 ${index + 1} 行：长内容可用滚轮和键盘阅读，滑块显隐不应改变正文宽度。</p>`).join('');
+        }
+        const textarea = specimen.querySelector('textarea');
+        if (textarea) textarea.value = Array.from({ length: 35 }, (_, index) => `草稿第 ${index + 1} 行：继续输入长问题。`).join('\n');
+        const code = specimen.querySelector('pre code');
+        if (code) code.textContent = 'const source = "长代码横向阅读"; '.repeat(80);
+        if (name === 'viewport') document.documentElement.dataset.probe = 'viewport';
+        document.scrollingElement.scrollTop = 0;
+        document.querySelector('#fixture-result').textContent = `${surface} / ${name}`;
+      }
+      function snapshot(name) {
+        const node = document.querySelector(`[data-probe="${name}"]`);
+        if (!node) throw new Error(`Missing rendered probe: ${name}`);
+        const rect = node.getBoundingClientRect();
+        const thumb = getComputedStyle(node, '::-webkit-scrollbar-thumb');
+        const track = getComputedStyle(node, '::-webkit-scrollbar-track');
+        const scrollbar = getComputedStyle(node, '::-webkit-scrollbar');
+        const style = getComputedStyle(node);
+        return { name, thumb: thumb.backgroundColor, track: track.backgroundColor,
+          width: scrollbar.width, height: scrollbar.height,
+          hover: node.matches(':hover'), focusVisible: node.matches(':focus-visible'),
+          overflowX: style.overflowX, overflowY: style.overflowY,
+          borderTop: parseFloat(style.borderTopWidth) || 0,
+          borderRight: parseFloat(style.borderRightWidth) || 0,
+          verticalGutter: rect.width - node.clientWidth - (parseFloat(style.borderLeftWidth) || 0) - (parseFloat(style.borderRightWidth) || 0),
+          clientWidth: node.clientWidth, clientHeight: node.clientHeight,
+          scrollWidth: node.scrollWidth, scrollHeight: node.scrollHeight,
+          scrollTop: node.scrollTop, scrollLeft: node.scrollLeft,
+          rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+      }
+      window.scrollbarFixture = { surface, show, snapshot,
+        theme: value => { document.documentElement.dataset.theme = value; } };
+      show(surface === 'options' ? 'navigation' : 'conversation');
+      document.documentElement.dataset.fixtureReady = 'true';
+    </script>
+  </body>
+</html>

@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN" data-article-selection-fixture>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>文章选区追问浏览器回归</title>
+    <style>
+      html[data-article-selection-fixture], html[data-article-selection-fixture] body { height: auto; min-height: 100%; overflow: auto; }
+      #fixture { width: min(100%, 840px); padding: 18px; margin: 0 auto; }
+      #fixture h1 { font-size: 18px; margin: 0 0 8px; }
+      #fixture > p { font-size: 12px; line-height: 1.6; }
+      #result { color: var(--muted); overflow-wrap: anywhere; }
+      #main-input { width: 100%; min-height: 72px; margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; padding: 10px; background: var(--surface); color: var(--ink); }
+      #quoted-reference { padding: 10px; border: 1px solid var(--line); background: var(--surface-alt); border-radius: 10px; font-size: 12px; }
+      #history-records { font-size: 11px; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <main id="fixture">
+      <h1>文章选区追问</h1>
+      <p>选择回答中的文字，可引用到主对话或在独立小窗口追问。此页面使用真实 UI、应用内核和模型网关，本地模型与内存保存替身不会访问外部服务。</p>
+      <p id="result" role="status">等待界面就绪</p>
+      <section id="messages" class="messages" aria-label="主对话消息"></section>
+      <div id="quoted-reference" hidden></div>
+      <label for="main-input">主对话输入框</label>
+      <textarea id="main-input" placeholder="引用后可继续输入问题"></textarea>
+      <p id="history-records"></p>
+    </main>
+    <script type="module">
+      import '../../src/sidepanel/style.css';
+      import '../../src/sidepanel/features/messages/selection-chat.css';
+      import { messageMarkup, renderMessageContent } from '../../src/sidepanel/features/messages/message-view.js';
+      import { createArticleSelectionMenu } from '../../src/sidepanel/features/messages/article-selection-menu.js';
+      import { createSelectionChatView } from '../../src/sidepanel/features/messages/selection-chat-view.js';
+      import { createSelectionChatRuntime } from '../../src/sidepanel/features/messages/selection-chat-runtime.js';
+      import { createModelGateway } from '../../src/app/model-gateway.js';
+      import { hydrateIcons } from '../../src/sidepanel/icons.js';
+
+      const copy = value => structuredClone(value);
+      const initialConversation = {
+        version: 2, id: 'fixture-main-conversation', storage: 'local', groupId: 'original-group',
+        title: 'metadata 的用途', createdAt: '2026-11-11T03:00:00.000Z', updatedAt: '2026-11-11T03:00:00.000Z',
+        pageContext: { text: 'UNRELATED_CURRENT_WEBPAGE', title: '无关网页', url: 'https://unrelated.test/page' },
+        messages: [
+          { id: 'main-question', role: 'user', content: '请解释 metadata 在 RAG 中的用途。', displayContent: '请解释 metadata 在 RAG 中的用途。', createdAt: '2026-11-11T03:00:00.000Z' },
+          { id: 'main-answer', role: 'assistant', status: 'complete', createdAt: '2026-11-11T03:00:01.000Z',
+            reasoning: 'PRIVATE_THOUGHT_SHOULD_NOT_BECOME_SELECTION',
+            content: '## 一、metadata 是什么\n\n在向量库和 RAG 中，metadata 是每个 chunk 附带的键值对（JSON/dict），存储时不参与向量化。它能用于过滤和回溯来源，通常与文本、向量一起保存。\n\n例如 tenant_id 限定租户，source 和 page 保留出处。选中这句时，需要联系前后的 RAG 语境来理解 metadata。\n\n## 二、它解决的问题\n\n前置过滤让检索缩小到符合条件的记录；来源字段让回答可以回到原文核对。\n\n```python\nfilter={"tenant_id":"t_42", "doc_type":"faq"}\n```\n\n此处的过滤只是示例，真实权限仍由应用程序核验。' },
+        ],
+      };
+      let conversation = copy(initialConversation);
+      const originalSnapshot = JSON.stringify(initialConversation);
+      const records = new Map([[conversation.id, copy(conversation)]]);
+      const writes = [], requests = [], quotes = [], errors = [], runtimeEvents = [], replacements = [], escapedOutside = [];
+      const runtimes = [];
+      const pendingAnswers = [];
+      let nextMode = 'complete';
+      let sequence = 0;
+      let answerSequence = 0;
+      let currentRuntime = null;
+      let currentView = null;
+      const messages = document.querySelector('#messages');
+      const input = document.querySelector('#main-input');
+      const reference = document.querySelector('#quoted-reference');
+      const result = document.querySelector('#result');
+      const profile = { id: 'fixture-model', model: 'fixture-model', endpointUrl: 'https://fixture-model.invalid/v1',
+        apiKey: 'fixture-only-key', contextLength: 16000, maxTokens: 1000, supportsVision: false,
+        reasoningEnabled: true, reasoningEffort: 'low', webSearchEnabled: false, webFetchEnabled: false };
+      const gateway = createModelGateway({ transport: async input => {
+        requests.push({ purpose: input.purpose, request: copy(input.request), model: input.profile.model });
+        if (input.purpose === 'suggestions') return '[]';
+        if (input.purpose !== 'answer') throw new Error(`Unexpected fixture purpose: ${input.purpose}`);
+        const count = ++answerSequence;
+        const first = `第 ${count} 次回答：metadata 是附在文本块上的键值字段。`;
+        const full = `${first}\n\n它能把 tenant_id、source 和 page 与这个 chunk 关联，分别支持过滤和来源核对。`;
+        input.onReasoning?.('结合原提问和选区前后语境。', '结合原提问和选区前后语境。');
+        input.onDelta(first, first);
+        const mode = nextMode;
+        nextMode = 'complete';
+        if (mode === 'hold') {
+          return await new Promise(resolve => pendingAnswers.push({
+            count, input, resolve, first, full, released: false,
+          }));
+        }
+        await new Promise(resolve => setTimeout(resolve, 80));
+        input.onDelta(full.slice(first.length), full);
+        return full;
+      } });
+      function updateHistory() {
+        document.querySelector('#history-records').textContent = `内存历史 ${records.size} 段对话，模型主请求 ${requests.filter(request => request.purpose === 'answer').length} 次，保存 ${writes.length} 次`;
+      }
+      function renderMain() {
+        menu?.hide();
+        messages.innerHTML = conversation.messages.map(message => messageMarkup(message)).join('');
+        for (const message of conversation.messages) {
+          if (message.role !== 'assistant') continue;
+          const article = [...messages.querySelectorAll('[data-message-id]')].find(node => node.dataset.messageId === message.id);
+          renderMessageContent(article.querySelector('[data-message-content]'), message.content);
+        }
+        hydrateIcons(messages);
+        updateHistory();
+      }
+      function openChat(selection, rect) {
+        currentView?.close({ restoreFocus: false });
+        const runtime = createSelectionChatRuntime({ selection, getConfig: () => ({ endpointUrl: profile.endpointUrl, models: [{ id: profile.id }] }),
+          getProfile: () => profile, modelGateway: gateway, makeId: () => `fixture-branch-${++sequence}`,
+          writeConversation: async value => {
+            writes.push(copy(value));
+            const saved = { ...copy(value), syncStatus: 'pending', syncDirectoryName: 'fixture-directory' };
+            records.set(saved.id, saved);
+            updateHistory();
+            return saved;
+          }, loadConversation: async id => copy(records.get(id) || null),
+          onSaved: updateHistory, onError: error => errors.push(String(error?.message || error)) });
+        runtimes.push(runtime);
+        runtime.subscribe(event => runtimeEvents.push({ type: event.type, assistantId: event.assistantId || null }));
+        currentRuntime = runtime;
+        const view = createSelectionChatView({ document, runtime, selection, anchorRect: rect, fallbackFocus: () => input,
+          onReplace: async (ownedRuntime, scope) => {
+            const candidate = await ownedRuntime.takeConversation();
+            if (!scope.isCurrent()) return false;
+            replacements.push({ previousId: conversation.id, nextId: candidate.id });
+            conversation = candidate;
+            reference.hidden = true;
+            renderMain();
+            return true;
+          }, onClose: () => { if (currentView === view) currentView = null; } });
+        currentView = view;
+        result.textContent = '已打开独立追问窗口，尚未发送时不调用模型、不保存空对话';
+      }
+      let menu = createArticleSelectionMenu({ document, root: messages, getConversation: () => conversation,
+        onQuote: selection => {
+          quotes.push(copy(selection));
+          reference.textContent = `已引用：${selection.text}`;
+          reference.hidden = false;
+          input.focus({ preventScroll: true });
+          result.textContent = '原文已引用到主输入区，尚未请求模型';
+        }, onAsk: openChat, onError: error => errors.push(String(error?.message || error)) });
+      // These listeners observe whether an Escape consumed by the real UI leaks.
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') escapedOutside.push(event.key); });
+      function selectText(text, { selector = '[data-message-id="main-answer"] [data-message-content]', occurrence = 0 } = {}) {
+        const body = document.querySelector(selector);
+        if (!body) throw new Error('Selection source is missing');
+        body.scrollIntoView({ block: 'start', behavior: 'instant' });
+        const full = body.textContent;
+        let at = -1, offset = 0;
+        for (let count = 0; count <= occurrence; count++) {
+          at = full.indexOf(text, offset);
+          if (at < 0) throw new Error('Exact selection text is missing');
+          offset = at + text.length;
+        }
+        const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+        const nodes = []; let node;
+        while ((node = walker.nextNode())) nodes.push(node);
+        const boundary = position => {
+          let traversed = 0;
+          for (const node of nodes) {
+            if (position <= traversed + node.textContent.length) return [node, position - traversed];
+            traversed += node.textContent.length;
+          }
+          throw new Error('Selection boundary is missing');
+        };
+        const range = document.createRange();
+        range.setStart(...boundary(at)); range.setEnd(...boundary(at + text.length));
+        const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+        return { text: selection.toString(), rect: range.getBoundingClientRect().toJSON() };
+      }
+      function releaseLate() {
+        for (const pending of pendingAnswers) {
+          if (pending.released) continue;
+          pending.released = true;
+          pending.input.onDelta('LATE_CALLBACK_MUST_BE_IGNORED', `${pending.first}LATE_CALLBACK_MUST_BE_IGNORED`);
+          pending.resolve(`${pending.full}LATE_CALLBACK_MUST_BE_IGNORED`);
+        }
+      }
+      function snapshot() {
+        const rect = node => {
+          if (!node) return null;
+          const value = node.getBoundingClientRect();
+          return { left: value.left, top: value.top, width: value.width, height: value.height, right: value.right, bottom: value.bottom };
+        };
+        const window = document.querySelector('.selection-chat-window');
+        return { main: copy(conversation), originalRetained: JSON.stringify(records.get(initialConversation.id)) === originalSnapshot,
+          currentMainUnchanged: JSON.stringify(conversation) === originalSnapshot, branch: currentRuntime ? copy(currentRuntime.state.conversation) : null,
+          opened: Boolean(window), busy: currentRuntime?.isBusy() || false, window: rect(window),
+          menuVisible: !document.querySelector('.article-selection-menu')?.hidden,
+          menu: rect(document.querySelector('.article-selection-menu')), quotes: copy(quotes),
+          answerRequests: copy(requests.filter(request => request.purpose === 'answer')), writeCount: writes.length,
+          savedIds: [...records.keys()], records: [...records.values()].map(copy), errors: [...errors],
+          replacements: copy(replacements), pendingCount: pendingAnswers.filter(item => !item.released).length,
+          escapedOutside: escapedOutside.length, activeElement: document.activeElement?.id || document.activeElement?.getAttribute('aria-label') || '',
+          runtimeEvents: copy(runtimeEvents) };
+      }
+      window.articleSelectionFixture = { selectText, snapshot, openChat, releaseLate,
+        holdNextAnswer: () => { nextMode = 'hold'; }, flush: async () => { await currentRuntime?.flush(); },
+        flushAll: async () => { await Promise.all(runtimes.map(runtime => runtime.flush())); },
+        redraw: renderMain, get runtime() { return currentRuntime; }, get view() { return currentView; } };
+      renderMain();
+      await document.fonts.ready;
+      document.documentElement.dataset.fixtureReady = 'true';
+      result.textContent = '就绪：选择 metadata 的定义可测试两种追问入口';
+    </script>
+  </body>
+</html>

@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="870" height="966" viewBox="0 0 870 966" role="img" aria-labelledby="title desc">
+  <title id="title">图 14：多段引用与注释的发送流程</title>
+  <desc id="desc">选中助手回答正文，选择引用到当前对话，填写注释并确认，在汇总清单中管理多段引用，输入总问题后发送。未发送的引用只是当前草稿，切换会话或关闭侧栏会清理。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#20685d"/></marker>
+  </defs>
+  <g font-family="Microsoft YaHei, PingFang SC, sans-serif">
+    <rect width="870" height="966" rx="20" fill="#f6f8f5"/>
+    <text x="30" y="47" font-size="28" fill="#243e33" font-weight="700">多段引用：先整理，再一起提问</text>
+    <text x="30" y="82" font-size="18" fill="#64776e">从助手回答中挑出需要讨论的片段，每段都可以带上自己的注释。</text>
+
+    <rect x="35" y="116" width="800" height="98" rx="14" fill="#fff" stroke="#cfded5"/>
+    <circle cx="65" cy="149" r="14" fill="#20685d"/>
+    <text x="65" y="155" text-anchor="middle" font-size="18" fill="#fff" font-weight="700">1</text>
+    <text x="92" y="157" font-size="21" fill="#243e33" font-weight="650">在助手回答正文中选中文字</text>
+    <text x="57" y="190" font-size="18" fill="#64776e">选区旁会出现操作菜单，可连续引用多个片段。</text>
+    <path d="M435 220 V241" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="35" y="250" width="800" height="155" rx="14" fill="#eef5ef" stroke="#cfded5"/>
+    <circle cx="65" cy="283" r="14" fill="#20685d"/>
+    <text x="65" y="289" text-anchor="middle" font-size="18" fill="#fff" font-weight="700">2</text>
+    <text x="92" y="291" font-size="21" fill="#243e33" font-weight="650">选择「引用到当前对话」</text>
+    <text x="57" y="324" font-size="18" fill="#64776e">在选区旁填写注释；留空表示只引用原文。</text>
+    <rect x="57" y="341" width="154" height="39" rx="8" fill="#fff" stroke="#cfded5"/>
+    <text x="134" y="367" text-anchor="middle" font-size="18" fill="#20685d">Enter 确认</text>
+    <rect x="225" y="341" width="230" height="39" rx="8" fill="#fff" stroke="#cfded5"/>
+    <text x="340" y="367" text-anchor="middle" font-size="18" fill="#20685d">Shift + Enter 换行</text>
+    <text x="478" y="367" font-size="18" fill="#64776e">取消或 Esc 不加入草稿</text>
+    <path d="M435 411 V432" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="35" y="441" width="800" height="156" rx="14" fill="#fff" stroke="#cfded5"/>
+    <circle cx="65" cy="474" r="14" fill="#20685d"/>
+    <text x="65" y="480" text-anchor="middle" font-size="18" fill="#fff" font-weight="700">3</text>
+    <text x="92" y="482" font-size="21" fill="#243e33" font-weight="650">在输入框汇总中管理多段引用</text>
+    <text x="57" y="517" font-size="18" fill="#64776e">
+      <tspan x="57">点击「N 条引用注释」或正文编号，展开清单。</tspan>
+      <tspan x="57" dy="28">每条都可修改、移除；也可一次清空。</tspan>
+      <tspan x="57" dy="28">添加引用时，原有输入文字和附件会保留。</tspan>
+    </text>
+    <path d="M435 603 V624" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="35" y="633" width="800" height="117" rx="14" fill="#eef5ef" stroke="#cfded5"/>
+    <circle cx="65" cy="666" r="14" fill="#20685d"/>
+    <text x="65" y="672" text-anchor="middle" font-size="18" fill="#fff" font-weight="700">4</text>
+    <text x="92" y="674" font-size="21" fill="#243e33" font-weight="650">输入总问题，再点击发送</text>
+    <text x="57" y="709" font-size="18" fill="#64776e">确认引用不会请求模型；发送后才一起作为本轮资料。</text>
+
+    <rect x="35" y="786" width="800" height="116" rx="14" fill="#fff" stroke="#cfded5"/>
+    <rect x="35" y="802" width="5" height="84" rx="2.5" fill="#20685d"/>
+    <text x="57" y="823" font-size="21" fill="#243e33" font-weight="650">未发送的引用，只在当前草稿中</text>
+    <text x="57" y="859" font-size="18" fill="#64776e">切换会话或关闭侧栏会清理；已提交回合保留自己的引用。</text>
+    <text x="435" y="939" text-anchor="middle" font-size="18" fill="#64776e">引用是提供给模型的参考资料，不代表其中的说法已经核实。</text>
+  </g>
+</svg>

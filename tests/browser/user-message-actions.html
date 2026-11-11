@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN" data-hover-fixture>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>提问操作悬停行为回归</title>
+    <style>
+      html[data-hover-fixture], html[data-hover-fixture] body { height: auto; min-height: 100%; overflow: auto; }
+      #fixture { width: min(100%, 560px); margin: 0 auto; padding: 16px; }
+      #result { margin: 0 0 16px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <main id="fixture">
+      <p id="result" role="status">等待浏览器行为回归</p>
+      <button id="keyboard-start" class="sr-only" type="button">键盘测试起点</button>
+      <section id="messages" class="messages" aria-label="测试消息"></section>
+    </main>
+    <script type="module">
+      import '../../src/sidepanel/style.css';
+      import { messageMarkup, renderMessageContent } from '../../src/sidepanel/features/messages/message-view.js';
+      import { hydrateIcons } from '../../src/sidepanel/icons.js';
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 130;
+      canvas.height = 180;
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#dbe9e1';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillStyle = '#20685d';
+      context.fillRect(30, 45, 70, 90);
+      const image = {
+        id: 'hover-image', type: 'image', name: 'hover-reference.png',
+        mime: 'image/png', dataUrl: canvas.toDataURL('image/png'),
+        width: canvas.width, height: canvas.height,
+      };
+      const questions = [
+        { id: 'long', role: 'user', content: '请把这个页面的配置逐项说明，并比较各个选项的适用情况。'.repeat(5) },
+        { id: 'image', role: 'user', agentTask: true, content: '以这个图片为参考，请先说明画面内容，再给出适合这个页面的配置建议。', attachments: [image] },
+        { id: 'narrow', role: 'user', content: '嗯' },
+      ];
+      const messages = document.querySelector('#messages');
+      for (const question of questions) {
+        const answer = { id: `${question.id}-answer`, role: 'assistant', status: 'complete', content: '这是相邻回答，用于确认提问操作显隐时消息位置不变。', createdAt: 1793890800000 };
+        messages.insertAdjacentHTML('beforeend', messageMarkup(question) + messageMarkup(answer));
+        renderMessageContent(messages.querySelector(`[data-message-id="${answer.id}"] [data-message-content]`), answer.content);
+      }
+      hydrateIcons(messages);
+      // Only observe the production buttons. No fixture listener changes hover or layout.
+      window.userMessageActionEvents = [];
+      messages.addEventListener('click', event => {
+        const button = event.target.closest('.user-action-btn');
+        if (!button) return;
+        window.userMessageActionEvents.push({ action: button.dataset.action, messageId: button.dataset.messageId });
+      });
+      for (const button of messages.querySelectorAll('.message:not(.user-message) button')) button.tabIndex = -1;
+      await Promise.all(Array.from(messages.querySelectorAll('img'), img => img.decode()));
+      await document.fonts.ready;
+      document.documentElement.dataset.fixtureReady = 'true';
+    </script>
+  </body>
+</html>

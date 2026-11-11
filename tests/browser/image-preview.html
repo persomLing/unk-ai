@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN" data-image-preview-fixture>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>图片放大预览浏览器回归</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html[data-image-preview-fixture], html[data-image-preview-fixture] body { height: auto; min-height: 100%; overflow: auto; }
+      #fixture { width: min(100%, 560px); margin: 0 auto; padding: 16px; }
+      #fixture h1 { font-size: 18px; margin: 0 0 8px; }
+      #fixture p, #fixture label { font-size: 12px; line-height: 1.6; }
+      .fixture-controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+      .fixture-controls button { padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font-size: 11px; }
+      #attachment-list { margin: 12px 0; }
+      #input { width: 100%; margin: 12px 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+      #result { overflow-wrap: anywhere; color: var(--muted); }
+    </style>
+  </head>
+  <body>
+    <main id="fixture">
+      <h1>图片放大预览</h1>
+      <p>聊天和附件使用真实生产标记。滚轮以鼠标位置为中心缩放，按住拖动或用方向键移动；双击切换原始尺寸与适应宽度。此页面只使用本地生成的图片。</p>
+      <div class="fixture-controls">
+        <button id="same-conversation" type="button">同会话重绘</button>
+        <button id="switch-conversation" type="button">切换会话</button>
+        <button id="theme" type="button">切换明暗主题</button>
+        <button id="dispose" type="button">释放预览器</button>
+      </div>
+      <p id="result" role="status">等待图片载入</p>
+      <section id="messages" class="messages" aria-label="测试消息"></section>
+      <label for="input">测试输入框</label>
+      <input id="input" placeholder="关闭预览后可继续输入" />
+      <div id="attachment-list" class="attachment-list" aria-label="待发送图片附件"></div>
+      <button id="attach-button" type="button" hidden>添加附件</button>
+    </main>
+    <script type="module">
+      import '../../src/sidepanel/style.css';
+      import { messageMarkup } from '../../src/sidepanel/features/messages/message-view.js';
+      import { renderAttachmentList } from '../../src/sidepanel/features/attachments/attachments-slot.js';
+      import { createImagePreview } from '../../src/sidepanel/features/messages/image-preview.js';
+      import { hydrateIcons } from '../../src/sidepanel/icons.js';
+
+      function makeImage(id, width, height, name) {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#f4f7f2';
+        context.fillRect(0, 0, width, height);
+        context.fillStyle = '#20685d';
+        context.fillRect(0, 0, width, 78);
+        context.fillStyle = '#ffffff';
+        context.font = `${width > 300 ? 30 : 18}px sans-serif`;
+        context.fillText(width > 300 ? 'UNK AI · 长截图预览' : '小图片', 18, 48);
+        for (let top = 100, section = 1; top < height - 40; top += 250, section++) {
+          context.fillStyle = section % 2 ? '#e3eee7' : '#ffffff';
+          context.fillRect(18, top, width - 36, Math.min(225, height - top - 18));
+          context.fillStyle = '#20685d';
+          context.font = '24px sans-serif';
+          context.fillText(`第 ${section} 部分 · 放大后应清晰可读`, 36, top + 40);
+          context.fillStyle = '#74847a';
+          for (let row = 0; row < 5 && top + 78 + row * 25 < height - 18; row++) {
+            context.fillRect(36, top + 68 + row * 25, Math.max(10, width - 90 - row * 18), 8);
+          }
+        }
+        const dataUrl = canvas.toDataURL('image/png');
+        return { id, type: 'image', name, mime: 'image/png', dataUrl, width, height, size: Math.floor(dataUrl.length * 0.75) };
+      }
+
+      const longImage = makeImage('long-image', 720, 3400, '长截图.png');
+      const smallImage = makeImage('small-image', 160, 120, '小图片.png');
+      const wideImage = makeImage('wide-image', 1600, 900, '横向截图.png');
+      const messages = [
+        { id: 'long-message', role: 'user', content: '点击长截图，查看完整内容。', attachments: [longImage] },
+        { id: 'wide-message', role: 'user', content: '点击横向截图，检查居中、缩放和拖动细节。', attachments: [wideImage] },
+        { id: 'small-message', role: 'user', content: '点击小图片，检查预览和关闭后的焦点。', attachments: [smallImage] },
+      ];
+      let attachments = [structuredClone(longImage), structuredClone(smallImage)];
+      let conversationId = 'preview-conversation-a';
+      const errors = [];
+      const removedIds = [];
+      const escapedOutside = [];
+      const originalMessages = JSON.stringify(messages);
+      const originalAttachments = JSON.stringify(attachments);
+      const result = document.querySelector('#result');
+      const controller = createImagePreview({ document, onError: error => {
+        errors.push(String(error?.message || error));
+        result.textContent = `预览错误：${errors.at(-1)}`;
+      } });
+
+      function redraw() {
+        controller.sync(conversationId);
+        document.querySelector('#messages').innerHTML = messages.map(message => messageMarkup(message)).join('');
+        renderAttachmentList(attachments);
+        hydrateIcons(document.querySelector('#fixture'));
+        result.textContent = `当前 ${conversationId} · 图片数据未修改`;
+      }
+      function switchConversation() {
+        conversationId = conversationId === 'preview-conversation-a' ? 'preview-conversation-b' : 'preview-conversation-a';
+        redraw();
+      }
+      function snapshot() {
+        const dialog = document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]');
+        const image = dialog?.querySelector('img');
+        const viewport = dialog?.querySelector('.image-preview-viewport');
+        const rect = element => element ? { x: element.getBoundingClientRect().x, y: element.getBoundingClientRect().y, width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height } : null;
+        return {
+          conversationId, opened: Boolean(dialog), dialog: rect(dialog), image: rect(image),
+          naturalWidth: image?.naturalWidth || 0, naturalHeight: image?.naturalHeight || 0,
+          imageName: image?.alt || '', imageSourceMatches: image ? [longImage.dataUrl, smallImage.dataUrl, wideImage.dataUrl].includes(image.src) : null,
+          viewport: viewport ? { ...rect(viewport), clientWidth: viewport.clientWidth, clientHeight: viewport.clientHeight, overflow: getComputedStyle(viewport).overflow, dragging: viewport.classList.contains('is-dragging') } : null,
+          scale: image ? image.getBoundingClientRect().width / image.naturalWidth : null,
+          scaleText: dialog?.querySelector('.image-preview-scale')?.textContent,
+          controls: dialog ? [...dialog.querySelectorAll('button')].map(button => ({ label: button.getAttribute('aria-label') || button.textContent, disabled: button.disabled, ...rect(button) })) : [],
+          activeElement: { tag: document.activeElement?.tagName, id: document.activeElement?.id || '', previewTrigger: document.activeElement?.hasAttribute('data-image-preview') || false },
+          errors: [...errors], removedIds: [...removedIds], escapedOutside: [...escapedOutside],
+          messageDataUnchanged: JSON.stringify(messages) === originalMessages,
+          attachmentDataUnchanged: JSON.stringify(attachments) === originalAttachments,
+        };
+      }
+      document.querySelector('#same-conversation').addEventListener('click', redraw);
+      document.querySelector('#switch-conversation').addEventListener('click', switchConversation);
+      document.querySelector('#theme').addEventListener('click', () => {
+        document.documentElement.dataset.theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+      });
+      document.querySelector('#dispose').addEventListener('click', () => { controller.dispose(); result.textContent = '预览器已释放'; });
+      document.querySelector('#attachment-list').addEventListener('click', event => {
+        const remove = event.target.closest('.attachment-remove');
+        if (!remove) return;
+        removedIds.push(remove.dataset.attachmentId);
+        attachments = attachments.filter(attachment => attachment.id !== remove.dataset.attachmentId);
+        renderAttachmentList(attachments);
+      });
+      // Observe propagation after production preview listeners have been installed.
+      document.addEventListener('keydown', event => { if (event.key === 'Escape') escapedOutside.push(event.key); });
+      window.imagePreviewFixture = { controller, redraw, switchConversation, snapshot, errors, longImage, smallImage, wideImage, messages };
+      redraw();
+      await Promise.all(Array.from(document.querySelectorAll('#fixture img'), image => image.decode()));
+      await document.fonts.ready;
+      document.documentElement.dataset.fixtureReady = 'true';
+    </script>
+  </body>
+</html>

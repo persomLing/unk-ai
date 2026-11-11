@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="870" height="974" viewBox="0 0 870 974" role="img" aria-labelledby="title desc">
+  <title id="title">图 15：单独追问窗口的状态与保留规则</title>
+  <desc id="desc">单独追问可以展开提问、收起后继续思考和回答、完成后显示未读点，再展开查看清除未读点。关闭会停止本地等待，已发送内容留在历史，空窗口不保存。同一主对话的新选区复用追问，切换主对话后旧窗口解除跟踪并可独立续聊。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#20685d"/></marker>
+  </defs>
+  <g font-family="Microsoft YaHei, PingFang SC, sans-serif">
+    <rect width="870" height="974" rx="20" fill="#f6f8f5"/>
+    <text x="30" y="47" font-size="28" fill="#243e33" font-weight="700">单独追问：收起后，回答仍会继续</text>
+    <text x="30" y="82" font-size="18" fill="#64776e">选中回答中的一段，选择「单独追问这段内容」，在小窗口中发送问题。</text>
+
+    <rect x="35" y="120" width="182" height="250" rx="14" fill="#fff" stroke="#cfded5"/>
+    <rect x="85" y="150" width="82" height="60" rx="9" fill="#eef5ef" stroke="#20685d" stroke-width="2"/>
+    <path d="M96 166 H145 M96 177 H154 M96 188 H133" stroke="#20685d" stroke-width="3" stroke-linecap="round"/>
+    <rect x="95" y="197" width="62" height="6" rx="3" fill="#cfded5"/>
+    <text x="126" y="247" text-anchor="middle" font-size="21" fill="#243e33" font-weight="650">展开提问</text>
+    <text x="126" y="281" text-anchor="middle" font-size="18" fill="#64776e">
+      <tspan x="126">输入问题并发送</tspan>
+      <tspan x="126" dy="28">可拖动、调整大小</tspan>
+      <tspan x="126" dy="28">或收起到右侧</tspan>
+    </text>
+    <path d="M222 239 H234" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="241" y="120" width="182" height="250" rx="14" fill="#eef5ef" stroke="#cfded5"/>
+    <circle cx="332" cy="180" r="35" fill="none" stroke="#cfded5" stroke-width="5"/>
+    <path d="M306 157 A35 35 0 1 1 305 203" fill="none" stroke="#208779" stroke-width="5" stroke-linecap="round"/>
+    <rect x="312" y="165" width="40" height="28" rx="8" fill="#20685d"/>
+    <path d="M319 191 V201 L330 193" fill="#20685d"/>
+    <circle cx="323" cy="179" r="2" fill="#fff"/><circle cx="332" cy="179" r="2" fill="#fff"/><circle cx="341" cy="179" r="2" fill="#fff"/>
+    <text x="332" y="247" text-anchor="middle" font-size="21" fill="#243e33" font-weight="650">收起继续</text>
+    <text x="332" y="281" text-anchor="middle" font-size="18" fill="#64776e">
+      <tspan x="332">思考或回答进行中</tspan>
+      <tspan x="332" dy="28">显示青绿色光环</tspan>
+      <tspan x="332" dy="28">不需要一直展开</tspan>
+    </text>
+    <path d="M428 239 H440" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="447" y="120" width="182" height="250" rx="14" fill="#fff" stroke="#cfded5"/>
+    <circle cx="538" cy="180" r="33" fill="#eef5ef" stroke="#cfded5"/>
+    <rect x="518" y="165" width="40" height="28" rx="8" fill="#20685d"/>
+    <path d="M525 191 V201 L536 193" fill="#20685d"/>
+    <circle cx="529" cy="179" r="2" fill="#fff"/><circle cx="538" cy="179" r="2" fill="#fff"/><circle cx="547" cy="179" r="2" fill="#fff"/>
+    <circle cx="565" cy="155" r="7" fill="#208779" stroke="#fff" stroke-width="2"/>
+    <text x="538" y="247" text-anchor="middle" font-size="21" fill="#243e33" font-weight="650">完成未读</text>
+    <text x="538" y="281" text-anchor="middle" font-size="18" fill="#64776e">
+      <tspan x="538">成功收到正文后</tspan>
+      <tspan x="538" dy="28">未查看时显示小点</tspan>
+      <tspan x="538" dy="28">提醒有新回答</tspan>
+    </text>
+    <path d="M634 239 H646" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <rect x="653" y="120" width="182" height="250" rx="14" fill="#fff" stroke="#cfded5"/>
+    <rect x="703" y="150" width="82" height="60" rx="9" fill="#eef5ef" stroke="#20685d" stroke-width="2"/>
+    <path d="M717 180 L731 193 L754 168" fill="none" stroke="#20685d" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="744" y="247" text-anchor="middle" font-size="21" fill="#243e33" font-weight="650">展开查看</text>
+    <text x="744" y="281" text-anchor="middle" font-size="18" fill="#64776e">
+      <tspan x="744">点击图标恢复窗口</tspan>
+      <tspan x="744" dy="28">查看后清除小点</tspan>
+      <tspan x="744" dy="28">再收起不重复提醒</tspan>
+    </text>
+
+    <rect x="35" y="400" width="800" height="106" rx="14" fill="#eef5ef" stroke="#cfded5"/>
+    <text x="57" y="437" font-size="21" fill="#243e33" font-weight="650">光环对应真实的准备、思考或回答阶段</text>
+    <text x="57" y="474" font-size="18" fill="#64776e">收起保留输入草稿和正在进行的回答；悬停图标可查看阶段说明。</text>
+
+    <rect x="35" y="537" width="800" height="156" rx="14" fill="#fff" stroke="#cfded5"/>
+    <text x="57" y="575" font-size="21" fill="#243e33" font-weight="650">关闭窗口会结束当前本地等待</text>
+    <text x="57" y="611" font-size="18" fill="#64776e">
+      <tspan x="57">已发送的问题与部分回答留在未分组历史。</tspan>
+      <tspan x="57" dy="28">空窗口不保存；未发送的窗口草稿只在内存中。</tspan>
+      <tspan x="57" dy="28">关闭与收起不同：需要保留当前回答进程时使用收起。</tspan>
+    </text>
+
+    <rect x="35" y="724" width="380" height="177" rx="14" fill="#fff" stroke="#cfded5"/>
+    <text x="57" y="763" font-size="21" fill="#243e33" font-weight="650">同一主对话，再选一段</text>
+    <text x="57" y="801" font-size="18" fill="#64776e">
+      <tspan x="57">复用正在跟踪的追问窗口，</tspan>
+      <tspan x="57" dy="28">新选区用于下一次发送。</tspan>
+      <tspan x="57" dy="28">当前回合保留提交时的原引用。</tspan>
+    </text>
+    <rect x="445" y="724" width="390" height="177" rx="14" fill="#fff" stroke="#cfded5"/>
+    <text x="467" y="763" font-size="21" fill="#243e33" font-weight="650">切换主对话之后</text>
+    <text x="467" y="801" font-size="18" fill="#64776e">
+      <tspan x="467">旧窗口解除跟踪，仍可独立续聊。</tspan>
+      <tspan x="467" dy="28">新选区另开追问；返回原主对话</tspan>
+      <tspan x="467" dy="28">也不会重新附着旧窗口。</tspan>
+    </text>
+    <text x="435" y="943" text-anchor="middle" font-size="18" fill="#64776e">成功且有正文才出现未读点；停止、失败或仅思考不会亮点。</text>
+  </g>
+</svg>

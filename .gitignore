@@ -1,0 +1,43 @@
+# Dependencies and build output
+node_modules/
+dist/
+output/
+*.zip
+
+# Local browser and test artifacts
+.playwright-cli/
+.playwright/
+test-profile*/
+playwright-report/
+test-results/
+coverage/
+*.log
+
+# Local extension data when this folder is chosen as the data directory
+/conversations/
+/images/
+/diagnostics/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+.envrc
+/.npmrc
+/.netrc
+/credentials.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.sqlite
+*.sqlite3
+*.db
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
