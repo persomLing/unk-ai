@@ -1,6 +1,7 @@
 import { awaitWithAbort, awaitWithTimeout } from '../utils/abortable.js';
 import { finalizePendingTurn, pageSourceFor } from '../utils/turn-source.js';
-import { messageWithSelection } from '../utils/selection.js';
+import { messageWithSelection, pageSelectionMatches } from '../utils/selection.js';
+import { captureSelectionVisuals, retainedSelectionVisuals } from '../sidepanel/features/visual-context/selection-visual-context.js';
 import { readingPolicyForTurn, readingPolicyForRetry } from '../utils/reading-plan.js';
 import { parseRepositoryUrl } from '../utils/repository-reader.js';
 import { normalizePageUrl } from '../sidepanel/features/page-reading/page-source.js';
@@ -112,7 +113,7 @@ export function createConversationService(deps) {
     let directModelRequest = independent || (options.directModelRequest ?? (state.directModelRequest === content));
     let attachments = structuredClone(options.fromQueue ? options.attachments || [] : state.attachments);
     const capturedSelection = independent ? null : options.fromQueue ? options.selection : state.pageSelection;
-    const selection = capturedSelection ? { ...capturedSelection } : null;
+    const selection = capturedSelection ? structuredClone(capturedSelection) : null;
     const agentTask = !independent && Boolean(options.agentTask ?? agentSlot?.isMode());
     const pageContextEnabled = !agentTask && (options.pageContextEnabled ?? !state.disablePageContext) && !directModelRequest;
     let readingPolicy = (!independent && options.readingPolicy) || readingPolicyForTurn({ question: submittedText, pageContextEnabled,
@@ -330,6 +331,14 @@ export function createConversationService(deps) {
       }
       assertSubmission();
       profiles.set(submissionOwner.runId, structuredClone(profileFor(modelId, effort)));
+      const savedSelectedImages = !agentTask ? retainedSelectionVisuals(selection, attachments) : [];
+      if (!agentTask && selection?.visuals?.length && (!pageContextEnabled || readingPolicy.scope === 'none')) {
+        throw new Error('选区包含图片，请开启“基于当前页”后重新发送。');
+      }
+      if (!agentTask && selection?.visuals?.length && !profiles.get(submissionOwner.runId)?.supportsVision) {
+        throw new Error('选区包含图片，请选择支持视觉的模型后重新发送。');
+      }
+      if (!agentTask && selection?.visuals?.length) assertPageTarget(selection, intendedTab || {});
       if (agentTask) {
         if (!content) { restoreDraft(); toast('请描述要根据图片完成的页面操作。', 'error'); return; }
         const referenceImages = normalizeAgentReferenceImages(attachments);
@@ -384,14 +393,15 @@ export function createConversationService(deps) {
           renderPageSelection();
         }
       }
-      if (selection?.url) {
+      if (selection?.url && !savedSelectedImages.length) {
         try {
           const tab = await waitForPreparation(pageTargetPromise, '获取选区页面超时，请重试。');
           if (tab?.id && /^https?:/i.test(tab.url || '')) {
-            const result = await waitForPreparation(browser.sendMessage({ type: 'GET_PAGE_SELECTION', tabId: tab.id }), '核对网页选区超时，请重试。');
+            const result = await waitForPreparation(browser.sendMessage({ type: 'GET_PAGE_SELECTION', tabId: tab.id,
+              expectedUrl: tab.url, ...(tab.documentId ? { documentId: tab.documentId } : {}) }), '核对网页选区超时，请重试。');
             assertSubmission();
             const liveText = String(result?.selection?.text || '');
-            if (liveText && liveText !== selection.text) {
+            if (liveText && (liveText !== selection.text || (selection.visuals?.length && !pageSelectionMatches(selection, result.selection)))) {
               setPageSelection(result.selection);
               toast('网页选区已变化，请确认后重新发送。');
               restoreDraft();
@@ -406,6 +416,7 @@ export function createConversationService(deps) {
           }
         } catch (error) {
           if (error.name === 'AbortError' || error.name === 'TimeoutError') throw error;
+          if (selection?.visuals?.length) throw error;
           // Privileged pages may block script execution; keep the captured text.
         }
       }
@@ -448,6 +459,22 @@ export function createConversationService(deps) {
         }
       }
       const visualPage = requestPage;
+      if (selection?.visuals?.length && !savedSelectedImages.length) {
+        setAssistantPhase(earlyAssistantMessage, 'reading');
+        const selectedImages = await captureSelectionVisuals({ selection,
+          target: requestPage || intendedTab, profile: profiles.get(submissionOwner.runId), attachments,
+          sendMessage: message => browser.sendMessage(message), signal: submissionController.signal });
+        assertSubmission();
+        attachments = [...attachments, ...selectedImages];
+        // Keep accepted pixels on this turn even if later storage preparation
+        // fails or is stopped; retry must not recapture a changed page image.
+        const preparedTurn = repository.get(submissionOwner.ref);
+        if (preparedTurn) {
+          preparedTurn.user.attachments = structuredClone(attachments);
+          preparedTurn.user.includeVisual = true;
+        }
+        if (selection.visualsTruncated) toast(`选区共有 ${selection.visualCount} 张图片，本轮读取前 ${selection.visuals.length} 张。`);
+      }
       const mentionsVisual = requestPage?.readingAssessment?.visualRecommended === true
         || /截图|看图|看下图|图表|图片|界面|样式|长相|长什么样|视觉|颜色|排版/i.test(content);
       if (!researchEnabled && mentionsVisual && content && visualPage && !attachments.some((attachment) => attachment.type === 'image')) {
@@ -486,7 +513,8 @@ export function createConversationService(deps) {
       const selectionForMessage = selection || null;
       const messageText = messageWithSelection(content, selectionForMessage);
       const turnSource = pageSourceFor(requestPage);
-      const includeVisual = attachments.some((attachment) => attachment.type === 'image') && hasVision();
+      const includeVisual = attachments.some((attachment) => attachment.type === 'image')
+        && (selection?.visuals?.length ? profiles.get(submissionOwner.runId)?.supportsVision === true : hasVision());
       if (earlyAssistantMessage) earlyAssistantMessage.selectionUsed = selectionForMessage;
       if (earlyUserMessage && conversation.messages.includes(earlyUserMessage)) {
         earlyUserMessage.pageSource = turnSource;
@@ -714,6 +742,7 @@ export function createConversationService(deps) {
       if (!question) throw new Error('找不到这条回答对应的提问，无法重新生成。');
       const target = await waitForCurrent(retryTargetPromise);
       assertCurrent();
+      if (question.selection?.visuals?.length) assertPageTarget(question.selection, target || {});
       const ref = repository.retry({ conversation, assistantId, runId: submissionOwner.runId, assistant: replacement });
       const retained = repository.get(ref);
       next = retained.assistant;
@@ -723,6 +752,21 @@ export function createConversationService(deps) {
       setAssistantPhase(next, 'preparing');
       await waitForCurrent(refreshPageForRetry(conversation, retained.user, next, submissionController.signal, target, submissionOwner, readingHistory));
       assertCurrent();
+      if (retained.user.selection?.visuals?.length) {
+        const fixedProfile = profiles.get(submissionOwner.runId);
+        if (!fixedProfile?.supportsVision) throw new Error('选区包含图片，请选择支持视觉的模型后重试。');
+        const existing = retained.user.attachments || [];
+        assertImageAttachmentsAvailable(existing);
+        const captured = retainedSelectionVisuals(retained.user.selection, existing);
+        if (!captured.length) {
+          const images = await captureSelectionVisuals({ selection: retained.user.selection, target,
+            profile: fixedProfile, attachments: existing, signal: submissionController.signal,
+            sendMessage: message => browser.sendMessage(message) });
+          assertCurrent();
+          retained.user.attachments = [...existing, ...images];
+        }
+        retained.user.includeVisual = true;
+      }
       setAssistantPhase(next, 'saving');
       await waitWithTimeout((submissionOwner.ref ? repository.save(submissionOwner.ref, { required: true }) : saveCurrent({ required: true })), { signal: submissionController.signal, message: '保存消息超时，尚未请求模型，请重试。' });
       assertCurrent();

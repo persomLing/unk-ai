@@ -17,6 +17,7 @@ import { handleAgentMessage, pauseAgentTask } from './agent-service.js';
 import { createNetworkReadingService, withPageDebugger } from './network-reading-service.js';
 import { captureSiteResearchDiscovery } from '../utils/site-research.js';
 import { assertPageTarget, pageTargetFields } from '../utils/page-target.js';
+import { awaitWithAbort } from '../utils/abortable.js';
 import {
   mergeDeepReading,
   summarizeAccessibilityTree,
@@ -30,6 +31,8 @@ const RESTRICTED_HOSTS = new Set(['chromewebstore.google.com', 'chrome.google.co
 const WEB_RESEARCH_TIMEOUT_MS = 26000;
 const WEB_RESEARCH_MAX_BYTES = 128 * 1024;
 const activeCaptures = new Map();
+const selectionVisualCaptures = new Map();
+const cancelledSelectionVisuals = new Map();
 let captureSequence = 0;
 const agentTakeoverTabs = new Map();
 const networkReadingService = chrome.runtime.onConnect ? createNetworkReadingService({ chrome }) : null;
@@ -1081,6 +1084,181 @@ async function captureVisualContext(message = {}) {
   }, { chrome, timeoutMs: 35000 });
 }
 
+function selectionVisualOwner(sender) {
+  const extensionRoot = chrome.runtime.getURL('');
+  if (sender?.id !== chrome.runtime.id
+    || (sender?.tab && !String(sender.tab.url || '').startsWith(extensionRoot))
+    || !String(sender?.url || '').startsWith(extensionRoot)) {
+    throw new Error('选区图片只能由扩展界面读取。');
+  }
+  return `${sender.id}:${sender.documentId || sender.url}`;
+}
+
+function selectionVisualToken(message, sender) {
+  const owner = selectionVisualOwner(sender);
+  if (typeof message.captureToken !== 'string' || !/^[\w:-]{8,160}$/.test(message.captureToken)) {
+    throw new Error('选区图片读取缺少有效任务身份。');
+  }
+  return `${owner}:${message.captureToken}`;
+}
+
+function selectionVisualKey(value) {
+  const visuals = (value?.visuals || []).map(visual => ({ id: visual.id, type: visual.type,
+    src: visual.src, alt: visual.alt, title: visual.title }));
+  return JSON.stringify({ text: value?.text || '', url: value?.url || '', visuals,
+    visualCount: value?.visualCount || 0, visualsTruncated: value?.visualsTruncated === true, imageOnly: value?.imageOnly === true });
+}
+
+function cancelSelectionVisualContext(message, sender) {
+  const key = selectionVisualToken(message, sender);
+  const now = Date.now();
+  for (const [token, expiry] of cancelledSelectionVisuals) if (expiry <= now) cancelledSelectionVisuals.delete(token);
+  if (cancelledSelectionVisuals.size >= 128) cancelledSelectionVisuals.delete(cancelledSelectionVisuals.keys().next().value);
+  cancelledSelectionVisuals.set(key, now + 30000);
+  selectionVisualCaptures.get(key)?.abort(new DOMException('选区图片读取已取消。', 'AbortError'));
+  return { ok: true };
+}
+
+/** Explicit selection pixels share a fixed document and a cancellable read-only task. */
+async function captureSelectionVisualContext(message, sender) {
+  const key = selectionVisualToken(message, sender);
+  if ((cancelledSelectionVisuals.get(key) || 0) > Date.now()) throw new DOMException('选区图片读取已取消。', 'AbortError');
+  if (selectionVisualCaptures.has(key)) throw new Error('这项选区图片读取已经在执行。');
+  if (!Number.isInteger(message.tabId) || !message.documentId || !message.expectedUrl
+    || !Array.isArray(message.selection?.visuals) || !message.selection.visuals.length || message.selection.visuals.length > 3) {
+    throw new Error('选区图片需要固定页面、文档与选中图片身份。');
+  }
+  const controller = new AbortController();
+  selectionVisualCaptures.set(key, controller);
+  const timer = setTimeout(() => controller.abort(new DOMException('读取选区图片超时，请重试。', 'TimeoutError')), 20000);
+  const wait = async operation => {
+    controller.signal.throwIfAborted();
+    const value = await awaitWithAbort(operation(), controller.signal);
+    controller.signal.throwIfAborted();
+    return value;
+  };
+  let identity;
+  const verifyDocument = async () => {
+    const tab = await wait(() => chrome.tabs.get(identity.tabId));
+    assertPageTarget(identity, { ...tab, tabId: tab.id, documentId: identity.documentId });
+    await wait(() => documentIdentity(tab, identity));
+  };
+  const probe = async pixels => {
+    await verifyDocument();
+    const results = await wait(() => chrome.scripting.executeScript({
+      target: { tabId: identity.tabId, documentIds: [identity.documentId] }, injectImmediately: true,
+      func: (expected, readPixels) => globalThis.__unkAiSelectionVisuals?.capture(expected, readPixels),
+      args: [message.selection, pixels],
+    }));
+    const entry = results?.find(result => result.frameId === 0);
+    assertPageTarget(identity, { tabId: identity.tabId, documentId: entry?.documentId, url: entry?.result?.selection?.url });
+    const result = entry?.result;
+    if (!result || selectionVisualKey(result.selection) !== selectionVisualKey(message.selection)
+      || result.images?.length !== message.selection.visuals.length) throw new Error('网页选区或选中图片已变化，请重新选择后发送。');
+    await verifyDocument();
+    return result;
+  };
+  const geometryKey = value => JSON.stringify(value.images.map(image => ({ id: image.figureId, rect: image.rect, pixelRatio: image.pixelRatio || 1 })));
+  const bytes = dataUrl => {
+    if (!/^data:image\/(?:jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(dataUrl || '')) throw new Error('没有获取到所选图片的有效像素。');
+    return Math.ceil((dataUrl.length - dataUrl.indexOf(',') - 1) * 0.75);
+  };
+  try {
+    const tab = await wait(() => activeTab(message));
+    identity = await wait(() => documentIdentity(tab, message));
+    assertPageTarget({ expectedUrl: identity.url, ...pageTargetFields(message.selection) }, identity);
+    const initial = await probe(true);
+    const baseline = geometryKey(initial);
+    const check = async () => {
+      const current = await probe(false);
+      if (geometryKey(current) !== baseline) throw new Error('选中图片的位置或大小已变化，请重新选择后发送。');
+    };
+    let totalBytes = 0;
+    const images = [];
+    for (let index = 0; index < initial.images.length; index += 1) {
+      await check();
+      const image = initial.images[index];
+      if (image.figureId !== message.selection.visuals[index].id) throw new Error('选中图片身份不匹配。');
+      let dataUrl = image.dataUrl;
+      let width = image.width, height = image.height;
+      if (!dataUrl) {
+        const rect = image.rect;
+        if (![rect?.x, rect?.y, rect?.width, rect?.height].every(Number.isFinite) || rect.x < 0 || rect.y < 0
+          || rect.width < 1 || rect.height < 1 || rect.width > 100000 || rect.height > 100000) throw new Error('所选图片的截图区域无效。');
+        const pixelRatio = Number(image.pixelRatio) || 1;
+        if (!Number.isFinite(pixelRatio) || pixelRatio < 0.25 || pixelRatio > 10) throw new Error('所选图片的像素比例无效。');
+        const scale = Math.min(1, 1600 / (Math.max(rect.width, rect.height) * pixelRatio));
+        dataUrl = await wait(() => withPageDebugger({ tabId: identity.tabId }, async (_target, sendCommand) => {
+          await check();
+          let styleToken;
+          try {
+            const styles = await wait(() => chrome.scripting.executeScript({
+              target: { tabId: identity.tabId, documentIds: [identity.documentId] },
+              func: () => globalThis.__unkAiSelectionVisuals?.suppressSelection(),
+            }));
+            styleToken = styles?.[0]?.result;
+            await check();
+            const shot = await wait(() => sendCommand('Page.captureScreenshot', {
+              format: 'jpeg', quality: 86, fromSurface: true, captureBeyondViewport: true,
+              clip: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, scale },
+            }));
+            await check();
+            return `data:image/jpeg;base64,${shot?.data || ''}`;
+          } finally {
+            if (styleToken) await withTimeout(chrome.scripting.executeScript({
+              target: { tabId: identity.tabId, documentIds: [identity.documentId] },
+              func: token => globalThis.__unkAiSelectionVisuals?.restoreSelection(token), args: [styleToken],
+            }), 1500, '恢复网页选区样式超时。').catch(() => {});
+          }
+        }, { chrome, signal: controller.signal, timeoutMs: 20000 }));
+        width = Math.max(1, Math.round(rect.width * scale * pixelRatio)); height = Math.max(1, Math.round(rect.height * scale * pixelRatio));
+      }
+      totalBytes += bytes(dataUrl);
+      if (totalBytes > 8 * 1024 * 1024) throw new Error('选区图片总大小超过 8 MiB，请减少所选图片后重试。');
+      images.push({ dataUrl, figureId: image.figureId, caption: image.caption || '', width, height,
+        pageUrl: identity.url, pageTitle: String(tab.title || ''), scope: 'selection', fullPage: false });
+    }
+    await check();
+    return { ...identity, title: String(tab.title || ''), selection: initial.selection, images,
+      truncated: initial.selection.visualsTruncated === true, visualCount: initial.selection.visualCount || images.length };
+  } finally {
+    clearTimeout(timer);
+    if (selectionVisualCaptures.get(key) === controller) selectionVisualCaptures.delete(key);
+    controller.abort();
+  }
+}
+
+async function getBoundPageSelection(message) {
+  const deadline = Date.now() + 6500;
+  const wait = async operation => {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) throw new Error('读取网页选区超时，请重试。');
+    const value = await withTimeout(operation(), remaining, '读取网页选区超时，请重试。');
+    if (Date.now() >= deadline) throw new Error('读取网页选区超时，请重试。');
+    return value;
+  };
+  const tab = await wait(() => activeTab(message));
+  const identity = await wait(() => documentIdentity(tab, message));
+  const verifyDocument = async () => {
+    const current = await wait(() => chrome.tabs.get(identity.tabId));
+    assertPageTarget(identity, { ...current, tabId: current.id, documentId: identity.documentId });
+    await wait(() => documentIdentity(current, identity));
+  };
+  const read = () => wait(() => chrome.tabs.sendMessage(identity.tabId, { type: 'GET_PAGE_SELECTION' }, { documentId: identity.documentId }));
+  let selection;
+  try { selection = await read(); }
+  catch {
+    await verifyDocument();
+    await wait(() => chrome.scripting.executeScript({ target: { tabId: identity.tabId, documentIds: [identity.documentId] }, files: ['content/page-selection.js'], injectImmediately: true }));
+    await verifyDocument();
+    selection = await read();
+  }
+  await verifyDocument();
+  if (!selection?.text) return null;
+  assertPageTarget({ expectedUrl: identity.url }, selection);
+  return { ...selection, ...identity };
+}
+
 async function captureSiteResearch(message) {
   const tab = await activeTab(message);
   const identity = await documentIdentity(tab, message);
@@ -1158,6 +1336,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }));
     return true;
   }
+  if (message?.type === 'CAPTURE_SELECTION_VISUAL_CONTEXT') {
+    captureSelectionVisualContext(message, sender).then(sendResponse).catch(error => sendResponse({
+      error: error?.code || error?.name || 'SELECTION_VISUAL_FAILED', message: error?.message || '选区图片读取失败。',
+    }));
+    return true;
+  }
+  if (message?.type === 'CANCEL_SELECTION_VISUAL_CONTEXT') {
+    try { sendResponse(cancelSelectionVisualContext(message, sender)); }
+    catch (error) { sendResponse({ error: 'SELECTION_VISUAL_SENDER', message: error.message }); }
+    return false;
+  }
   if (message?.type === 'CAPTURE_ACTIVE_TAB') {
     activeTab(message).then(async (tab) => {
       const identity = await documentIdentity(tab, message);
@@ -1220,41 +1409,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ selection: null });
       return false;
     }
-    chrome.tabs.sendMessage(tabId, { type: 'GET_PAGE_SELECTION' }).then((selection) => {
-      sendResponse({ selection: selection || null });
-    }).catch(() => chrome.scripting.executeScript({
-      target: { tabId },
-      func: () => {
-        const selection = window.getSelection();
-        if (!selection || !selection.rangeCount) return { text: '', context: '' };
-        const text = String(selection.toString() || '').trim();
-        if (!text) return { text: '', context: '' };
-        let node = selection.getRangeAt(0).startContainer;
-        if (node?.nodeType === 3) node = node.parentElement;
-        let container = node;
-        for (let depth = 0; container && depth < 5; depth += 1) {
-          if (/^(P|LI|BLOCKQUOTE|TD|TH|PRE|H1|H2|H3|H4|SECTION|ARTICLE)$/.test(container.tagName || '')) break;
-          container = container.parentElement;
-        }
-        return {
-          text: text.slice(0, 12000),
-          context: String(container?.innerText || container?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 1600),
-          title: document.title,
-          url: location.href,
-        };
-      },
-    }).then(([result]) => {
-      const selection = result?.result?.text ? {
-        ...result.result,
-        selectedAt: new Date().toISOString(),
-      } : null;
-      if (selection) chrome.storage.session.set({ pageSelection: selection }).catch(() => {});
-      sendResponse({ selection });
-    }).catch(() => sendResponse({ selection: null })));
+    withTimeout(getBoundPageSelection(message), 7000, '读取网页选区超时，请重试。')
+      .then(selection => sendResponse({ selection }))
+      .catch(error => sendResponse({ selection: null, error: error?.code || 'SELECTION_READ_FAILED', message: error?.message || '网页选区读取失败。' }));
     return true;
   }
   if (message?.type === 'PAGE_SELECTION_CHANGED') {
-    chrome.storage.session.set({ pageSelection: message.payload || null }).catch(() => {});
+    if (sender?.id === chrome.runtime.id && Number.isInteger(sender?.tab?.id)) {
+      chrome.storage.session.set({ pageSelection: message.payload ? { ...message.payload,
+        tabId: sender.tab.id, ...(sender.documentId ? { documentId: sender.documentId } : {}),
+        ...(sender.url ? { url: sender.url } : {}) } : null }).catch(() => {});
+    }
     return false;
   }
   if (message?.type === 'PAGE_FIGURE_PICKED') {

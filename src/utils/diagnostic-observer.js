@@ -3,6 +3,16 @@ export function safeDiagnostic(record, event) {
   try { Promise.resolve(record?.(event)).catch(() => {}); } catch { /* Optional telemetry. */ }
 }
 
+/** A durable browser record may still be waiting for its folder-sync result. */
+export function observeConversationSaveDiagnostic(record, conversationId, saved) {
+  const failed = saved?.syncStatus === 'error' || Boolean(saved?.syncError);
+  const pending = saved?.syncStatus === 'pending';
+  safeDiagnostic(record, { event: failed ? 'storage.failed' : pending ? 'storage.progress' : 'storage.completed',
+    source: 'storage', level: failed ? 'error' : 'info', context: { conversationId },
+    data: { stage: 'saving', status: saved?.syncStatus === 'synced' ? 'complete' : 'pending' },
+    error: saved?.syncError ? diagnosticFailure({ message: saved.syncError }) : undefined });
+}
+
 /** Classify locally, then discard the raw message (which may contain secrets). */
 export function diagnosticFailure(error) {
   const names = ['Error', 'TypeError', 'RangeError', 'SyntaxError', 'AbortError', 'TimeoutError', 'NetworkError',

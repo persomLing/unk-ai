@@ -67,7 +67,7 @@ import { createExportController } from './features/export/export-controller.js';
 import { createConversationExportMenu } from './features/export/export-menu.js';
 import { createExportDownloader } from './features/export/download-export.js';
 import { recordDiagnostic, collectDiagnosticLogs, flushDiagnostics } from '../utils/diagnostic-log.js';
-import { diagnosticFailure, safeDiagnostic, observeModelDiagnostic, installRuntimeDiagnostics } from '../utils/diagnostic-observer.js';
+import { diagnosticFailure, safeDiagnostic, observeModelDiagnostic, observeConversationSaveDiagnostic, installRuntimeDiagnostics } from '../utils/diagnostic-observer.js';
 import { createDiagnosticExporter } from './features/diagnostics/diagnostic-export.js';
 import './features/messages/message-copy.css';
 import './features/export/export-dialog.css';
@@ -526,7 +526,8 @@ function renderPageSelection() {
   chip.hidden = !selection?.text || selection.source === 'conversation';
   if (!selection?.text) return;
   const preview = trim(selection.text.replace(/\s+/g, ' '));
-  $('#selection-chip-title').textContent = `${selection.source === 'conversation' ? '已引用回答' : '已选择 1 项'} · ${preview.slice(0, 34)}${preview.length > 34 ? '…' : ''}`;
+  const visualLabel = selection.visuals?.length ? ` · 含 ${selection.visualCount || selection.visuals.length} 张图片` : '';
+  $('#selection-chip-title').textContent = `${selection.source === 'conversation' ? '已引用回答' : '已选择 1 项'}${visualLabel} · ${preview.slice(0, 34)}${preview.length > 34 ? '…' : ''}`;
   $('#selection-chip-preview').textContent = selection.title
     ? `来自：${selection.title}`
     : selection.url || (selection.source === 'conversation' ? '对话回答' : '当前网页');
@@ -1503,9 +1504,7 @@ const conversationSaver = createConversationSaver({
   setQueue: (pending) => { state.saveQueue = pending; },
   now,
   onSaved: (conversationId, saved) => {
-    safeDiagnostic(recordDiagnostic, { event: saved?.syncStatus === 'error' || saved?.syncStatus === 'pending' ? 'storage.failed' : 'storage.completed',
-      source: 'storage', context: { conversationId }, data: { stage: 'saving', status: saved?.syncStatus === 'synced' ? 'complete' : 'pending' },
-      error: saved?.syncError ? diagnosticFailure({ message: saved.syncError }) : undefined });
+    observeConversationSaveDiagnostic(recordDiagnostic, conversationId, saved);
     if (state.conversation?.id === conversationId) {
       state.conversation.syncStatus = saved?.syncStatus || 'synced';
       state.conversation.syncError = saved?.syncError || '';

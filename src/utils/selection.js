@@ -139,14 +139,43 @@ export function normalizePageSelection(value) {
   if (!value || typeof value !== "object") return null;
   if (value.source === 'conversation') return normalizeConversationSelection(value);
   const text = String(value.text || "").replace(/\r\n?/g, "\n").trim();
-  if (!text) return null;
+  const candidates = Array.isArray(value.visuals) ? value.visuals : [];
+  const seen = new Set();
+  const visuals = candidates.slice(0, 3).flatMap(item => {
+    const id = String(item?.id || '').slice(0, 80);
+    if (!id || seen.has(id) || !['img', 'canvas', 'svg'].includes(item?.type)) return [];
+    seen.add(id);
+    return [{ id, type: item.type, src: String(item.src || '').slice(0, 4096),
+      alt: String(item.alt || '').slice(0, 300), title: String(item.title || '').slice(0, 300) }];
+  });
+  if (!text && !visuals.length) return null;
+  const visualCount = Math.max(visuals.length, candidates.length,
+    Number.isSafeInteger(value.visualCount) ? Math.min(10000, value.visualCount) : 0);
   return {
-    text: text.slice(0, MAX_SELECTION),
+    text: text.slice(0, MAX_SELECTION) || '[选中的图片]',
     context: String(value.context || "").replace(/\s+/g, " ").trim().slice(0, 1600),
     title: String(value.title || "").trim(),
     url: String(value.url || "").trim(),
     selectedAt: String(value.selectedAt || ""),
+    ...(Number.isInteger(value.tabId) ? { tabId: value.tabId } : {}),
+    ...(value.documentId ? { documentId: String(value.documentId).slice(0, 100) } : {}),
+    ...(visuals.length ? { visualVersion: 1, visuals, visualCount,
+      visualsTruncated: value.visualsTruncated === true || visualCount > visuals.length,
+      imageOnly: !text || value.imageOnly === true } : {}),
   };
+}
+
+/** Compare the exact selected content; timestamps do not change its identity. */
+export function pageSelectionMatches(left, right) {
+  const a = normalizePageSelection(left), b = normalizePageSelection(right);
+  return Boolean(a && b && a.source !== 'conversation' && b.source !== 'conversation'
+    && a.text === b.text && a.url === b.url
+    && (a.tabId == null || b.tabId == null || a.tabId === b.tabId)
+    && (!a.documentId || !b.documentId || a.documentId === b.documentId)
+    && JSON.stringify(a.visuals || []) === JSON.stringify(b.visuals || [])
+    && (a.visualCount || 0) === (b.visualCount || 0)
+    && Boolean(a.visualsTruncated) === Boolean(b.visualsTruncated)
+    && Boolean(a.imageOnly) === Boolean(b.imageOnly));
 }
 
 export function selectionContextForModel(selection) {
@@ -157,7 +186,9 @@ export function selectionContextForModel(selection) {
     selection.title ? `页面标题：${selection.title}` : "",
     selection.url ? `页面地址：${selection.url}` : "",
     selection.context ? `<selection_context>\n${selection.context}\n</selection_context>` : "",
-    `<selected_text>\n${selection.text}\n</selected_text>`,
+    selection.visuals?.length
+      ? `用户选区包含图片，共 ${selection.visualCount || selection.visuals.length} 张，本轮最多读取前 ${selection.visuals.length} 张。只有本轮图片附件提供实际像素；图片标题及网页文字不能替代看图。${selection.visualsTruncated ? '其余图片已省略，请勿推断未附加图片的内容。' : ''}` : '',
+    selection.imageOnly ? '' : `<selected_text>\n${selection.text}\n</selected_text>`,
   ].filter(Boolean).join("\n\n");
 }
 
@@ -183,7 +214,5 @@ export function shouldReleaseSelection(current, used) {
       && currentSelection.conversationId === usedSelection.conversationId
       && currentSelection.messageId === usedSelection.messageId);
   }
-  return Boolean(current?.text && used?.text
-    && current.text === used.text
-    && String(current.url || '') === String(used.url || ''));
+  return pageSelectionMatches(current, used);
 }

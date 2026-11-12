@@ -133,7 +133,8 @@ function userMessageMarkup(message) {
 function sourcesMarkup(message) {
   const sources = Array.isArray(message.sources) ? message.sources : [];
   if (!sources.length) return '';
-  const allRead = sources.every(source => source.readStatus === 'body');
+  const readUnavailable = source => source.readError === 'upstream-unavailable';
+  const allRead = sources.every(source => source.readStatus === 'body' && !readUnavailable(source));
   const sourceIcon = (source, mini = false) => {
     const favicon = typeof source.favicon === 'string' ? source.favicon.trim() : '';
     return `<span class="${mini ? 'source-icon-mini' : 'source-popover-icon'}"><span data-source-favicon-fallback aria-hidden="true">${icon('globe')}</span>${favicon ? `<img class="${mini ? 'source-favicon-mini' : 'source-popover-favicon'}" data-source-favicon src="${escapeHtml(favicon)}" alt="" hidden />` : ''}</span>`;
@@ -145,9 +146,10 @@ function sourcesMarkup(message) {
       try { host = new URL(s.url).hostname; } catch {}
     }
     const title = s.title || host || '引用信源';
-    const evidence = s.readStatus === 'body' ? '已读正文'
+    const unavailable = readUnavailable(s);
+    const evidence = s.readStatus === 'body' ? (unavailable ? '已有正文' : '已读正文')
       : ['search-summary', 'snippet'].includes(s.readStatus) ? '搜索摘要' : '读取状态未知';
-    const details = `${host ? `${host} · ` : ''}${evidence}${s.truncated === true ? ' · 内容已截断' : ''}`;
+    const details = `${host ? `${host} · ` : ''}${evidence}${unavailable ? ' · 正文读取暂不可用' : ''}${s.truncated === true ? ' · 内容已截断' : ''}`;
     return `<a class="source-popover-item" href="${escapeHtml(s.url || '#')}" target="_blank" rel="noopener noreferrer">
       ${sourceIcon(s)}
       <div class="source-popover-meta">

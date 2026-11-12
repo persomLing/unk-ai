@@ -161,9 +161,14 @@ export async function runResearchAnswer({ connection, run, messages, createTools
           const value = batch[offset].budgetReason ? budgetResult(batch[offset].budgetReason, callsUsed, searchesUsed) : results[offset];
           history.push({ role: 'tool', tool_call_id: batch[offset].call.id, content: JSON.stringify(value) });
           for (const source of [...(value.sources || []), ...(value.source ? [value.source] : [])]) {
+            const known = sources.get(source.url);
+            // Redelivering an old failed call preserves its tool result, but
+            // cannot erase a complete body supplied by a later search.
+            if (source.readError === 'upstream-unavailable' && known?.readStatus === 'body' && !known.truncated) continue;
             sources.set(source.url, { title: source.title, url: source.url, domain: new URL(source.url).hostname,
               favicon: `${new URL(source.url).origin}/favicon.ico`, capturedAt: source.capturedAt,
-              readStatus: source.readStatus, truncated: source.truncated === true });
+              readStatus: source.readStatus, truncated: source.truncated === true,
+              ...(source.readError === 'upstream-unavailable' ? { readError: source.readError } : {}) });
           }
         }
         onSources?.([...sources.values()]);

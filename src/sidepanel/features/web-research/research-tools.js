@@ -87,8 +87,10 @@ function sourceOutput(source, maxChars = MAX_BODY_CHARS) {
   return { ...source, text: source.text.slice(0, maxChars), truncated: source.truncated || source.text.length > maxChars };
 }
 
-function readOutput(source, reused) {
-  const result = { kind: 'read', untrusted: true, notice: NOTICE, reused, source: sourceOutput(source) };
+function readOutput(source, reused, unavailableStatus = null) {
+  const result = { kind: 'read', untrusted: true, notice: NOTICE, reused, source: sourceOutput(source),
+    ...(unavailableStatus === null ? {} : { ok: false, code: 'ERR_RESEARCH_SOURCE_UNAVAILABLE', httpStatus: unavailableStatus }) };
+  if (unavailableStatus !== null) result.notice += ' 本次来源正文读取服务暂不可用，此次读取未取得新正文；下方只保留本轮已经取得的资料，读取范围以 readStatus 和 truncated 为准。不要重复读取这个失败来源；可核对其他已返回来源，证据不足时明确说明未读正文和无法核实的部分。';
   // JSON escaping counts against the wire budget too, including cached bodies.
   while (JSON.stringify(result).length > MAX_RESULT_CHARS && result.source.text.length) {
     result.source.text = result.source.text.slice(0, Math.floor(result.source.text.length * 0.8));
@@ -187,7 +189,12 @@ export function createResearchToolSession({ connection, signal, deadlineAt,
     // A later short search excerpt does not erase a fuller identical body
     // already delivered during this turn, or change its original capture time.
     if (previous?.capturedAt === source.capturedAt && previous.readStatus === source.readStatus
-      && previous.text.startsWith(source.text) && previous.text.length > source.text.length) return;
+      && previous.text.startsWith(source.text) && previous.text.length > source.text.length) {
+      // Preserve fuller evidence while still publishing a failed read or a
+      // later successful recovery; metadata must not hide the unavailable body.
+      source = { ...previous, readError: source.readError };
+      if (!source.readError) delete source.readError;
+    }
     delivered.set(source.sourceId, structuredClone(source));
   }
 
@@ -208,6 +215,7 @@ export function createResearchToolSession({ connection, signal, deadlineAt,
         record = normalizedSource(item, `source-${++sourceSequence}`, capturedAt);
       } else {
         const incoming = normalizedSource(item, record.sourceId, capturedAt);
+        if (record.readError && incoming && (incoming.readStatus !== 'body' || incoming.truncated)) incoming.readError = record.readError;
         // Keep a readable body when another query returns only a summary, but
         // accept newly supplied bodies so an existing ID can avoid refetching.
         if (incoming && (incoming.readStatus === 'body' || record.readStatus !== 'body')) record = incoming;
@@ -238,7 +246,24 @@ export function createResearchToolSession({ connection, signal, deadlineAt,
       publishSource(result.source);
       return result;
     }
-    const fetched = await request('web-fetch', { url: source.url });
+    let fetched;
+    try { fetched = await request('web-fetch', { url: source.url }); }
+    catch (failure) {
+      assertLive();
+      // Only a known, model-selected public source's transient upstream error
+      // becomes a failed tool result. Required page preparation, search,
+      // permission, cancellation and timeout failures retain their boundaries.
+      if (['AbortError', 'TimeoutError'].includes(failure?.name)
+        || ![500, 502, 503, 504].includes(failure?.status)) throw failure;
+      // A parallel search can acquire newer evidence while this read waits.
+      const latest = byId.get(sourceId) || source;
+      const unavailable = latest.readStatus === 'body' && !latest.truncated
+        ? latest : { ...latest, readError: 'upstream-unavailable' };
+      const result = readOutput(unavailable, false, failure.status);
+      byUrl.set(source.url, unavailable); byId.set(sourceId, unavailable);
+      publishSource(result.source);
+      return result;
+    }
     assertLive();
     if (fetched?.ok === false || (Number(fetched?.pageStatus) >= 400)) throw error('ERR_RESEARCH_TOOL_SOURCE', '来源正文读取失败，不能视为已读取。');
     const url = fetched?.url === undefined || fetched.url === '' ? source.url : publicResearchUrl(fetched.url);
@@ -248,6 +273,7 @@ export function createResearchToolSession({ connection, signal, deadlineAt,
     const updated = { ...source, title: cleanText(fetched.title).slice(0, 200) || source.title,
       text: text.slice(0, MAX_BODY_CHARS), capturedAt: new Date(now()).toISOString(), readStatus: 'body',
       truncated: fetched.truncated === true || text.length > MAX_BODY_CHARS };
+    delete updated.readError;
     const result = readOutput(updated, false);
     assertLive();
     byUrl.set(updated.url, updated); byId.set(sourceId, updated);
@@ -270,6 +296,17 @@ export function createResearchToolSession({ connection, signal, deadlineAt,
       const previous = calls.get(call.id);
       if (previous) return previous.promise;
       let promise = operations.get(fingerprint);
+      if (promise && name === 'read_webpage') {
+        promise = promise.then(result => {
+          assertLive();
+          const latest = byId.get(value);
+          // New commands may reuse a complete body acquired after an outage.
+          // The original call ID keeps its original result, with no HTTP replay.
+          return result.ok === false && result.code === 'ERR_RESEARCH_SOURCE_UNAVAILABLE'
+            && latest?.readStatus === 'body' && !latest.truncated ? read(value) : result;
+        });
+        operations.set(fingerprint, promise);
+      }
       if (!promise) {
         if (count >= maxCalls || (name === 'web_search' && searchCount >= maxSearches)) throw error('ERR_RESEARCH_TOOL_LIMIT', '本轮检索工具调用次数已达到预算。');
         count += 1;
