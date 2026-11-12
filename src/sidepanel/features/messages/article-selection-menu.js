@@ -2,7 +2,7 @@ import { captureArticleSelection, articleSelectionBelongsTo, normalizeArticleSel
 
 /** Local reference controls own no model request or conversation persistence. */
 export function createArticleSelectionMenu({ document = globalThis.document, root,
-  getConversation, onQuote, onAsk, onError = () => {} }) {
+  getConversation, onQuote, onAsk, getViewportRect, onError = () => {} }) {
   const view = document.defaultView;
   const menu = document.createElement('div');
   menu.className = 'article-selection-menu';
@@ -88,12 +88,19 @@ export function createArticleSelectionMenu({ document = globalThis.document, roo
     confirm.disabled = false;
   }
   function place(node, anchor) {
-    const rect = node.getBoundingClientRect();
     const viewportWidth = view.innerWidth, viewportHeight = view.innerHeight;
-    const left = Math.max(8, Math.min(anchor.left, viewportWidth - rect.width - 8));
+    const available = getViewportRect?.() || {};
+    const minLeft = Math.max(8, Number(available.left) + 8 || 8);
+    const maxRight = Math.min(viewportWidth - 8, Number(available.right) - 8 || viewportWidth - 8);
+    const minTop = Math.max(8, Number(available.top) + 8 || 8);
+    const maxBottom = Math.min(viewportHeight - 8, Number(available.bottom) - 8 || viewportHeight - 8);
+    node.style.maxWidth = `${Math.max(0, maxRight - minLeft)}px`;
+    node.style.maxHeight = `${Math.max(0, maxBottom - minTop)}px`;
+    const rect = node.getBoundingClientRect();
+    const left = Math.max(minLeft, Math.min(anchor.left, maxRight - rect.width));
     const preferredTop = anchor.top - rect.height - 8;
-    const top = Math.max(8, Math.min(preferredTop >= 8 ? preferredTop : anchor.bottom + 8,
-      viewportHeight - rect.height - 8));
+    const top = Math.max(minTop, Math.min(preferredTop >= minTop ? preferredTop : anchor.bottom + 8,
+      maxBottom - rect.height));
     node.style.left = `${left}px`;
     node.style.top = `${top}px`;
   }
@@ -114,7 +121,7 @@ export function createArticleSelectionMenu({ document = globalThis.document, roo
     frame = view.requestAnimationFrame(() => { frame = null; refresh(event); });
   }
   function openQuote(selection, rect, { comment = '', title = '添加引用注释', onConfirm,
-    ownerConversationId, isCurrent } = {}) {
+    ownerConversationId, isCurrent, getAnchorRect, sourceUnavailable = false } = {}) {
     if (disposed) return false;
     const ownedEdit = ownerConversationId !== undefined || isCurrent !== undefined;
     if (ownedEdit && (typeof onConfirm !== 'function' || typeof isCurrent !== 'function'
@@ -125,10 +132,11 @@ export function createArticleSelectionMenu({ document = globalThis.document, roo
       ...(ownedEdit ? { ownerConversationId, isCurrent, onConfirm } : {}) };
     if (!belongs(snapshot) || !rect) { hide(); return false; }
     hide();
-    editing = { ...snapshot, onConfirm };
+    editing = { ...snapshot, onConfirm, getAnchorRect, returnFocus: document.activeElement };
     editor.setAttribute('aria-label', title);
     confirm.setAttribute('aria-label', title);
     confirm.title = title;
+    hint.textContent = sourceUnavailable ? '原文不在当前回答中 · Enter 确认' : onConfirm ? '修改当前注释 · Enter 确认' : '添加到当前对话 · Enter 确认';
     preview.textContent = String(fixedSelection.text || '').replace(/\s+/g, ' ').slice(0, 180);
     input.value = String(comment || '').slice(0, 2000);
     feedback.hidden = true;
@@ -183,7 +191,12 @@ export function createArticleSelectionMenu({ document = globalThis.document, roo
   listen(ask, 'click', () => choose(onAsk));
   listen(editor, 'submit', submit);
   listen(confirm, 'click', event => { event.preventDefault(); void submit(); });
-  listen(cancel, 'click', hide);
+  function cancelEditing() {
+    const target = editing?.returnFocus;
+    hide();
+    if (target?.isConnected && !menu.contains(target)) target.focus?.({ preventScroll: true });
+  }
+  listen(cancel, 'click', cancelEditing);
   listen(input, 'keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) void submit(event);
   });
@@ -197,9 +210,16 @@ export function createArticleSelectionMenu({ document = globalThis.document, roo
     if (event.key !== 'Escape' || (menu.hidden && editor.hidden)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    cancelEditing();
+  }, true);
+  listen(document, 'scroll', event => {
+    if (editor.contains(event.target) || menu.contains(event.target)) return;
+    if (editing?.getAnchorRect && belongs(editing)) {
+      const rect = editing.getAnchorRect();
+      if (rect) { place(editor, rect); return; }
+    }
     hide();
   }, true);
-  listen(root, 'scroll', hide, true);
   listen(view, 'resize', hide);
   return Object.freeze({
     hide, openQuote,

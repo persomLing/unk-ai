@@ -66,21 +66,27 @@
 .article-quote-editor-cancel { color: var(--muted); background: var(--surface-alt); }
 .article-quote-editor button:disabled { opacity: .5; cursor: default; }
 .article-quote-editor-feedback { margin: 0; font-size: 11px; color: var(--muted); }
-.article-quote-draft { margin: 0 0 10px; }
+.article-quote-draft { margin: 0 0 8px; min-width: 0; }
+.article-quote-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; }
 .article-quote-draft[data-expanded="false"] .article-quote-actions { display: none; }
-.article-quote-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-alt); color: var(--ink); font: inherit; font-size: 11px; cursor: pointer; }
+.article-quote-toggle { display: inline-flex; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-alt); color: var(--ink); font: inherit; font-size: 11px; line-height: 16px; cursor: pointer; }
+.article-quote-toggle::after { content: ''; width: 5px; height: 5px; border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: translateY(-1px) rotate(45deg); }
+.article-quote-toggle[aria-expanded="true"]::after { transform: translateY(2px) rotate(225deg); }
 .article-quote-toggle .icon { width: 13px; height: 13px; }
-.article-quote-list { list-style: none; max-height: 220px; overflow: auto; overscroll-behavior: contain; margin: 8px 0 0; padding: 0; display: grid; gap: 7px; }
-.article-quote-item { position: relative; padding: 9px 10px 8px 36px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-alt); }
+.article-quote-list { list-style: none; max-height: min(180px, 25vh); overflow: auto; overscroll-behavior: contain; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.article-quote-item { display: flex; align-items: center; gap: 4px; min-width: 0; padding: 3px 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-alt); }
 .article-quote-number { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font-size: 10px; font-weight: 600; color: var(--surface); background: var(--teal); flex-shrink: 0; }
-.article-quote-item > .article-quote-number { position: absolute; left: 9px; top: 10px; }
-.article-quote-text { margin: 0; max-height: 56px; overflow: auto; font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
-.article-quote-comment { margin: 6px 0 0; max-height: 90px; overflow: auto; font-size: 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
-.article-quote-source { display: block; margin-top: 4px; font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.article-quote-item-actions, .article-quote-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 5px; }
-.article-quote-item-actions button, .article-quote-actions button { border: 0; padding: 3px 0; background: transparent; color: var(--muted); font: inherit; font-size: 10px; cursor: pointer; }
-.article-quote-item-actions button:hover, .article-quote-actions button:hover { color: var(--teal); }
-.article-quote-marker { position: fixed; z-index: 80; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 2px solid var(--surface); border-radius: 50%; background: var(--teal); color: var(--surface); box-shadow: 0 2px 6px #0002; font: inherit; font-size: 10px; font-weight: 600; cursor: pointer; }
+.article-quote-locate { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 2px 0; border: 0; border-radius: 4px; color: var(--ink); background: transparent; text-align: left; font: inherit; cursor: pointer; }
+.article-quote-text, .article-quote-comment { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 22px; font-size: 11px; }
+.article-quote-text { flex: 0 1 36%; color: var(--muted); }
+.article-quote-comment { flex: 1; padding-left: 7px; border-left: 1px solid var(--line); }
+.article-quote-item-actions, .article-quote-actions { flex: none; display: flex; align-items: center; gap: 2px; }
+.article-quote-item-actions button, .article-quote-actions button { border: 0; border-radius: 4px; padding: 4px; background: transparent; color: var(--muted); font: inherit; font-size: 10px; line-height: 20px; white-space: nowrap; cursor: pointer; }
+.article-quote-item-actions .article-quote-remove { width: 26px; padding: 3px; font-size: 16px; }
+.article-quote-item-actions button:hover, .article-quote-actions button:hover, .article-quote-locate:hover { color: var(--teal); }
+.article-quote-draft button:focus-visible, .article-quote-marker:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
+.article-quote-markers { position: fixed; z-index: 2; overflow: hidden; pointer-events: none; }
+.article-quote-marker { position: absolute; pointer-events: auto; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 2px solid var(--surface); border-radius: 50%; background: var(--teal); color: var(--surface); box-shadow: 0 2px 6px #0002; font: inherit; font-size: 10px; font-weight: 600; cursor: pointer; }
 .article-quote-marker[hidden] { display: none; }
 ::highlight(unk-article-quotes) { background-color: color-mix(in srgb, var(--teal) 18%, transparent); }
 .message-quote-bundle { margin-bottom: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 8px 10px; max-width: 100%; }

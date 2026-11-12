@@ -33,8 +33,8 @@
     <text x="65" y="480" text-anchor="middle" font-size="18" fill="#fff" font-weight="700">3</text>
     <text x="92" y="482" font-size="21" fill="#243e33" font-weight="650">在输入框汇总中管理多段引用</text>
     <text x="57" y="517" font-size="18" fill="#64776e">
-      <tspan x="57">点击「N 条引用注释」或正文编号，展开清单。</tspan>
-      <tspan x="57" dy="28">每条都可修改、移除；也可一次清空。</tspan>
+      <tspan x="57">点击「N 条引用注释」展开清单，每条只占一行。</tspan>
+      <tspan x="57" dy="28">点清单定位原文，点正文编号就地修改；支持移除和清空。</tspan>
       <tspan x="57" dy="28">添加引用时，原有输入文字和附件会保留。</tspan>
     </text>
     <path d="M435 603 V624" fill="none" stroke="#20685d" stroke-width="2.5" marker-end="url(#arrow)"/>

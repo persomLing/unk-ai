@@ -2867,6 +2867,8 @@ img[data-image-preview]:focus-visible {
    Composer Area (底部输入区)
    ========================================================================== */
 .composer-area {
+  position: relative;
+  z-index: 3;
   padding: 8px 14px 14px;
   background: #f8f9f7;
   flex: 0 0 auto;

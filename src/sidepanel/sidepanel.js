@@ -1837,17 +1837,22 @@ async function replaceWithSelectionChat(runtime, { signal, isCurrent }) {
 }
 const articleQuoteView = createArticleQuoteView({ document, root: messagesElement, host: $('#article-quote-draft'),
   getConversation: () => state.conversation, getSelection: () => state.pageSelection,
+  scrollContainer: conversationView,
   getViewportRect: () => conversationView.getBoundingClientRect(),
+  onLocateUnavailable: () => toast('当前对话中无法定位这段原文，引用内容仍已保留。'),
   focusInput: () => input.focus({ preventScroll: true }),
   onEdit: quote => {
     const blocked = articleQuoteMutationBlocked();
     if (blocked) { toast(blocked); return; }
     const ownerId = state.conversation?.id;
-    const row = [...document.querySelectorAll('.article-quote-item')].find(node => node.dataset.quoteId === quote.id);
-    const bounds = row?.getBoundingClientRect() || input.getBoundingClientRect();
-    const rect = { left: bounds.left, top: bounds.top, width: bounds.width, height: bounds.height, right: bounds.right, bottom: bounds.bottom };
+    const sourceRect = articleQuoteView.anchorRect(quote.id) || articleQuoteView.locate(quote.id);
+    const bounds = conversationView.getBoundingClientRect();
+    const rect = sourceRect || { left: bounds.left + 16, right: bounds.right - 16,
+      top: bounds.top + 16, bottom: bounds.top + 16, width: Math.max(0, bounds.width - 32), height: 0 };
     articleSelectionMenu.openQuote(quote, rect, {
       comment: quote.comment, title: '修改引用注释', ownerConversationId: ownerId,
+      getAnchorRect: sourceRect ? () => articleQuoteView.anchorRect(quote.id) : undefined,
+      sourceUnavailable: !sourceRect,
       isCurrent: () => state.conversation?.id === ownerId && articleQuotes(state.pageSelection).some(item => item.id === quote.id),
       onConfirm: comment => {
         if (state.conversation?.id !== ownerId) return false;
@@ -1872,6 +1877,7 @@ const articleQuoteView = createArticleQuoteView({ document, root: messagesElemen
 });
 const articleSelectionMenu = createArticleSelectionMenu({ document, root: messagesElement,
   getConversation: () => state.conversation,
+  getViewportRect: () => conversationView.getBoundingClientRect(),
   onQuote: (selection, _rect, comment = '') => {
     if (agentSlot?.isBusy()) { toast('请先停止页面操作，再引用回答提问。'); return false; }
     const blocked = articleQuoteMutationBlocked();
