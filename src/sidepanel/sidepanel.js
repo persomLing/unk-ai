@@ -273,7 +273,7 @@ function setPageMode(enabled) {
     void agentSlot.stop('已关闭“基于当前页”，页面操作已停止。').catch(() => toast('页面操作停止失败，请检查任务状态。', 'error'));
     agentSlot.setMode(false);
   }
-  if (state.disablePageContext && state.isSubmitting) stopActiveReply();
+  if (state.disablePageContext) application.conversations.cancelPagePreparation();
   updateComposer();
   renderQueueBar();
   if (!state.disablePageContext) void processQueue();

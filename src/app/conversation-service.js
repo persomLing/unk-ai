@@ -8,6 +8,7 @@ import { normalizePageUrl } from '../sidepanel/features/page-reading/page-source
 import { isReadablePageUrl } from '../sidepanel/features/page-reading/page-control-state.js';
 import { preparePageReading } from '../sidepanel/features/page-reading/site-research-slot.js';
 import { capturePageTarget } from '../sidepanel/features/page-reading/page-target-capture.js';
+import { retainedPageForRetry } from '../sidepanel/features/page-reading/retry-page-context.js';
 import { sendFingerprint, isDuplicateSend } from '../sidepanel/features/messages/send-guard.js';
 import { messagesForRetry, stoppedReplyForPrompt } from '../sidepanel/features/messages/retry-flow.js';
 import { settleInterruptedReply } from '../sidepanel/features/messages/reply-state.js';
@@ -33,6 +34,7 @@ export function createConversationService(deps) {
   const listeners = new Set();
   let disposed = false;
   const profiles = new Map(), connections = new Map();
+  const pagePreparations = new WeakSet();
   const plainText = value => String(value ?? '');
   const find = (values, predicate) => values?.find(predicate);
   const emit = (type, data = {}) => { for (const listener of listeners) { try { listener({ type, ...data }); } catch {} } };
@@ -220,6 +222,7 @@ export function createConversationService(deps) {
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
     state.submissionController = submissionController;
     state.submissionOwner = submissionOwner;
+    if (!agentTask && pageContextEnabled && readingPolicy.scope !== 'none') pagePreparations.add(submissionOwner);
     state.lastSentFingerprint = fingerprint;
     state.lastSentAt = Date.now();
     const releaseSendLocks = () => {
@@ -486,6 +489,8 @@ export function createConversationService(deps) {
           if (pendingPage) pendingPage.visualCapturedAt = now();
         }
       }
+      // The remaining work uses accepted page data, with no further browser read.
+      pagePreparations.delete(submissionOwner);
       // Capture before ensureConversation(): creating a new conversation clears pendingPage.
       const pendingPage = state.pendingPage;
       const conversation = await waitForPreparation(ensureConversation(submissionController.signal));
@@ -576,6 +581,7 @@ export function createConversationService(deps) {
       }
       if (!cancelled) toast('发送失败：' + (error.message || '未知错误'), 'error');
     } finally {
+      pagePreparations.delete(submissionOwner);
       if (!['completed', 'failed', 'cancelled'].includes(submissionOwner.status)) {
         if (agentTask) submissionOwner.complete(); else submissionOwner.cancel();
       }
@@ -610,6 +616,16 @@ export function createConversationService(deps) {
     return Boolean(owner || controller);
   }
 
+  function cancelPagePreparation() {
+    const owner = state.submissionOwner;
+    if (!owner || owner.signal.aborted || !pagePreparations.has(owner)) return false;
+    stopActiveReply();
+    return true;
+  }
+
+  const retryPageError = (message, code) => Object.assign(new Error(message), { code });
+  const pageSwitchOffError = () => retryPageError('页面读取已关闭，且本轮没有可核对的已读资料。请回到原页面并开启页面读取后重试，或回退提问改用普通问答。', 'RETRY_PAGE_SWITCH_OFF');
+
   async function validateRetryPageTarget(question, signal) {
     if (deps.retryTarget) return deps.retryTarget(question, signal);
     signal?.throwIfAborted();
@@ -618,7 +634,7 @@ export function createConversationService(deps) {
       question.pageContextEnabled = false;
       return null;
     }
-    if (state.disablePageContext) throw new Error('页面读取已关闭，请开启页面开关后再重试。');
+    if (state.disablePageContext) throw pageSwitchOffError();
     const originalUrl = normalizePageUrl(question.pageSource?.url);
     if (!originalUrl) throw new Error('这条提问没有记录页面来源，请针对当前页面重新提问。');
     const target = await waitWithTimeout(capturePageTarget({
@@ -629,10 +645,32 @@ export function createConversationService(deps) {
     });
     signal?.throwIfAborted();
     if (!target?.id || !isReadablePageUrl(target.url) || normalizePageUrl(target.url) !== originalUrl) {
-      throw new Error('当前页面与这条提问的来源不同，请回到原页面重试，或针对当前页面重新提问。');
+      throw retryPageError('当前页面与这条提问的来源不同，请回到原页面并开启页面读取后重试，或回退提问改用普通问答。', 'RETRY_PAGE_TARGET_CHANGED');
     }
-    if (state.disablePageContext) throw new Error('页面读取已关闭，请开启页面开关后再重试。');
+    try {
+      assertPageTarget(question.pageSource, target);
+    } catch (error) {
+      if (error.code !== 'PAGE_CHANGED') throw error;
+      throw retryPageError('当前页面与这条提问的来源不同，页面可能已切换或刷新。请回到原页面并开启页面读取后重试，或回退提问重新发送。', 'RETRY_PAGE_TARGET_CHANGED');
+    }
+    if (state.disablePageContext) throw pageSwitchOffError();
     return target;
+  }
+
+  async function prepareRetryContext(question, retainedPage, signal) {
+    signal.throwIfAborted();
+    if (retainedPage && state.disablePageContext) return { target: null, page: retainedPage };
+    try {
+      const target = await validateRetryPageTarget(question, signal);
+      signal.throwIfAborted();
+      return { target, page: null };
+    } catch (error) {
+      signal.throwIfAborted();
+      if (retainedPage && ['RETRY_PAGE_SWITCH_OFF', 'RETRY_PAGE_TARGET_CHANGED'].includes(error.code)) {
+        return { target: null, page: retainedPage };
+      }
+      throw error;
+    }
   }
 
   async function refreshPageForRetry(conversation, question, assistant, signal, preparedTarget, owner, history) {
@@ -640,7 +678,7 @@ export function createConversationService(deps) {
     const target = preparedTarget === undefined ? await validateRetryPageTarget(question, signal) : preparedTarget;
     signal?.throwIfAborted();
     if (!target) return;
-    if (state.disablePageContext) throw new Error('页面读取已关闭，请开启页面开关后再重试。');
+    if (state.disablePageContext) throw pageSwitchOffError();
     const originalUrl = normalizePageUrl(question.pageSource?.url);
     setAssistantPhase(assistant, 'reading');
     const content = question.displayContent || question.content || '';
@@ -699,9 +737,17 @@ export function createConversationService(deps) {
     updateComposer();
     const retryIndex = conversation.messages.findIndex(message => message.id === assistantId);
     const originalQuestion = conversation.messages.slice(0, retryIndex).findLast(message => message.role === 'user');
+    // Freeze verified evidence before any configuration, browser or storage wait.
+    const retainedPage = retainedPageForRetry(conversation, originalQuestion);
+    if (originalQuestion && readingPolicyForRetry(originalQuestion).scope !== 'none'
+      && (originalQuestion.pageContextEnabled === true || originalQuestion.pageSource?.url)
+      && !(retainedPage && state.disablePageContext)) pagePreparations.add(submissionOwner);
     const readingHistory = captureReadingHistory(conversation.messages.slice(0, Math.max(0, conversation.messages.indexOf(originalQuestion))));
     const retryTargetPromise = originalQuestion
-      ? validateRetryPageTarget({ ...originalQuestion }, submissionController.signal)
+      ? prepareRetryContext({ ...originalQuestion }, retainedPage, submissionController.signal).then(context => {
+        if (context.page) pagePreparations.delete(submissionOwner);
+        return context;
+      })
       : Promise.reject(new Error('找不到这条回答对应的提问，无法重新生成。'));
     retryTargetPromise.catch(() => {});
     let next = null;
@@ -740,17 +786,24 @@ export function createConversationService(deps) {
       if (!replacementMessages) throw new Error('找不到这条回答对应的提问，无法重新生成。');
       const question = replacementMessages.findLast((message) => message.role === 'user');
       if (!question) throw new Error('找不到这条回答对应的提问，无法重新生成。');
-      const target = await waitForCurrent(retryTargetPromise);
+      const { target, page: retainedReading } = await waitForCurrent(retryTargetPromise);
       assertCurrent();
-      if (question.selection?.visuals?.length) assertPageTarget(question.selection, target || {});
+      if (question.selection?.visuals?.length) assertPageTarget(question.selection, retainedReading || target || {});
       const ref = repository.retry({ conversation, assistantId, runId: submissionOwner.runId, assistant: replacement });
       const retained = repository.get(ref);
       next = retained.assistant;
-      if (!target) retained.user.pageContextEnabled = false;
+      if (!target && !retainedReading) retained.user.pageContextEnabled = false;
       submissionOwner.bind({ conversation, user: retained.user, assistant: next });
       renderConversation({ scroll: true });
       setAssistantPhase(next, 'preparing');
-      await waitForCurrent(refreshPageForRetry(conversation, retained.user, next, submissionController.signal, target, submissionOwner, readingHistory));
+      if (retainedReading) {
+        pagePreparations.delete(submissionOwner);
+        conversation.pageContext = retainedReading;
+        state.pendingPage = null;
+        toast('本次重试使用本轮已读的原页面资料，未重新读取当前页面。');
+      } else {
+        await waitForCurrent(refreshPageForRetry(conversation, retained.user, next, submissionController.signal, target, submissionOwner, readingHistory));
+      }
       assertCurrent();
       if (retained.user.selection?.visuals?.length) {
         const fixedProfile = profiles.get(submissionOwner.runId);
@@ -767,6 +820,7 @@ export function createConversationService(deps) {
         }
         retained.user.includeVisual = true;
       }
+      pagePreparations.delete(submissionOwner);
       setAssistantPhase(next, 'saving');
       await waitWithTimeout((submissionOwner.ref ? repository.save(submissionOwner.ref, { required: true }) : saveCurrent({ required: true })), { signal: submissionController.signal, message: '保存消息超时，尚未请求模型，请重试。' });
       assertCurrent();
@@ -783,6 +837,7 @@ export function createConversationService(deps) {
       }
       if (!cancelled) toast(error.message || '重新生成失败。', 'error');
     } finally {
+      pagePreparations.delete(submissionOwner);
       if (!['completed', 'failed', 'cancelled'].includes(submissionOwner.status)) submissionOwner.cancel();
       disposeModel(submissionOwner);
       if (state.submissionOwner === submissionOwner) {
@@ -797,7 +852,7 @@ export function createConversationService(deps) {
   }
 
 
-  return Object.freeze({ sendMessage, regenerate, stopActiveReply, processQueue, validateRetryPageTarget, refreshPageForRetry,
+  return Object.freeze({ sendMessage, regenerate, stopActiveReply, cancelPagePreparation, processQueue, validateRetryPageTarget, refreshPageForRetry,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     dispose() { disposed = true; runner.cancel(); for (const connection of connections.values()) connection.dispose(); connections.clear(); profiles.clear(); listeners.clear(); } });
 }
