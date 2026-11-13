@@ -164,6 +164,7 @@ export function createNetworkReadingService(options = {}) {
     if (Date.now() >= session.expiresAt) throw fail('NETWORK_CAPTURE_COMPLETE', '本次接口监听时间已结束。');
     const binding = bindings.get(session.id);
     if (!binding || binding.port !== session.port || binding.closed) throw fail('NETWORK_PANEL_CLOSED', '接口读取侧栏已关闭。');
+    if (session.networkPolicy === 'page-turn') assertPermit(binding, session.target);
   }
 
   async function wait(session, operation) {
@@ -198,10 +199,38 @@ export function createNetworkReadingService(options = {}) {
     ...config, storage: api.storage.local, timeoutMs: ioTimeoutMs,
   }));
 
+  // A page-turn permit exists only on the trusted sidepanel's live, target-bound port.
+  // Model decisions select necessity; they cannot create or extend this permit.
+  function permitBinding(message, sender) {
+    const identity = identify(message, sender);
+    const binding = bindings.get(identity.key);
+    if (!binding || binding.owner !== identity.owner || binding.cancelToken !== message.cancelToken || binding.closed) {
+      throw fail('NETWORK_PORT_REQUIRED', '接口读取需要保持当前侧栏连接。');
+    }
+    if (binding.revokedCode) throw fail(binding.revokedCode, '本轮页面读取许可已失效。');
+    if ((message.networkPolicy || 'site') !== (binding.networkPolicy || 'site')) {
+      throw fail('NETWORK_PERMISSION_DENIED', '本次连接未授予所请求的接口读取许可。');
+    }
+    if (binding.networkPolicy === 'page-turn') assertPermit(binding, targetOf(message));
+    return binding;
+  }
+
+  function assertPermit(binding, target) {
+    if (!binding || binding.networkPolicy !== 'page-turn' || binding.closed || bindings.get(binding.id) !== binding) {
+      throw fail('NETWORK_PANEL_CLOSED', '本轮页面读取许可已随连接关闭。');
+    }
+    if (binding.revokedCode) throw fail(binding.revokedCode, '本轮页面读取许可已失效。');
+    if (Date.now() >= binding.expiresAt) throw fail('NETWORK_PERMISSION_DENIED', '本轮页面读取许可已到期。');
+    assertPageTarget(binding.target, target);
+  }
+
   async function validate(session) {
-    const grant = await wait(session, () => getGrant(session.target.expectedUrl, { signal: session.controller.signal }));
-    if (!grant?.allowed || grant.origin !== session.origin) {
-      throw fail('NETWORK_PERMISSION_DENIED', '该站点尚未允许接口读取，或授权已关闭。');
+    if (session.networkPolicy === 'page-turn') assertPermit(bindings.get(session.id), session.target);
+    else {
+      const grant = await wait(session, () => getGrant(session.target.expectedUrl, { signal: session.controller.signal }));
+      if (!grant?.allowed || grant.origin !== session.origin) {
+        throw fail('NETWORK_PERMISSION_DENIED', '该站点尚未允许接口读取，或授权已关闭。');
+      }
     }
     const observed = await wait(session, () => (options.getTarget || actualTarget)(session.target, () => check(session)));
     assertPageTarget(session.target, observed);
@@ -213,13 +242,16 @@ export function createNetworkReadingService(options = {}) {
     assertSender(sender);
     const target = targetOf(message);
     const origin = networkReadingOrigin(target.expectedUrl);
+    const binding = message.networkPolicy === 'page-turn' ? permitBinding(message, sender) : null;
+    if (message.networkPolicy && !binding) throw fail('NETWORK_PERMISSION_DENIED', '本轮接口读取许可无法识别。');
     const controller = new AbortController();
-    const boundary = { target, origin, controller };
+    const boundary = { target, origin, controller, binding };
     const deadline = Date.now() + ioTimeoutMs;
     const timer = setTimeout(() => controller.abort(fail('NETWORK_VALIDATION_TIMEOUT', '核验接口读取授权超时。')), ioTimeoutMs);
     const verify = () => {
       controller.signal.throwIfAborted();
       if (disposed) throw fail('NETWORK_SERVICE_DISPOSED', '接口读取服务已释放。');
+      if (binding) assertPermit(binding, target);
       if (Date.now() >= deadline) throw fail('NETWORK_VALIDATION_TIMEOUT', '核验接口读取授权超时。');
     };
     const read = async operation => {
@@ -230,8 +262,10 @@ export function createNetworkReadingService(options = {}) {
     };
     validations.add(boundary);
     try {
-      const grant = await read(() => getGrant(target.expectedUrl, { signal: controller.signal }));
-      if (!grant?.allowed || grant.origin !== origin) throw fail('NETWORK_PERMISSION_DENIED', '该站点尚未允许接口读取，或授权已关闭。');
+      if (!binding) {
+        const grant = await read(() => getGrant(target.expectedUrl, { signal: controller.signal }));
+        if (!grant?.allowed || grant.origin !== origin) throw fail('NETWORK_PERMISSION_DENIED', '该站点尚未允许接口读取，或授权已关闭。');
+      }
       const observed = await read(() => (options.getTarget || actualTarget)(target, verify));
       assertPageTarget(target, observed);
       verify();
@@ -281,16 +315,16 @@ export function createNetworkReadingService(options = {}) {
       throw fail('NETWORK_SESSION_EXPIRED', '接口读取任务不存在或不属于当前侧栏。');
     }
     assertPageTarget(session.target, targetOf(message));
+    if ((message.networkPolicy || 'site') !== (session.networkPolicy || 'site')) {
+      throw fail('NETWORK_PERMISSION_DENIED', '本轮接口读取许可不匹配。');
+    }
     return session;
   }
 
   async function start(message, sender) {
     const identity = identify(message, sender);
     const target = targetOf(message);
-    const binding = bindings.get(identity.key);
-    if (!binding || binding.owner !== identity.owner || binding.cancelToken !== message.cancelToken || binding.closed) {
-      throw fail('NETWORK_PORT_REQUIRED', '接口读取需要保持当前侧栏连接。');
-    }
+    const binding = permitBinding(message, sender);
     const previous = sessions.get(identity.key);
     if (previous) { ownedSession(message, sender); return snapshot(previous); }
     if (byTab.has(target.tabId)) throw fail('NETWORK_DEBUGGER_BUSY', '此页面已有接口读取任务。');
@@ -302,6 +336,7 @@ export function createNetworkReadingService(options = {}) {
     if (sessions.size >= 16) throw fail('NETWORK_SESSION_LIMIT', '同时读取的页面过多，请先结束已有任务。');
     const session = {
       id: identity.key, owner: identity.owner, cancelToken: message.cancelToken,
+      networkPolicy: binding.networkPolicy,
       target, origin: networkReadingOrigin(target.expectedUrl), port: binding.port,
       controller: new AbortController(), status: 'starting', reason: '',
       startedAt: Date.now(), expiresAt: Date.now() + Math.min(durationMs, NETWORK_READING_LIMITS.maxDurationMs),
@@ -358,11 +393,14 @@ export function createNetworkReadingService(options = {}) {
           if (disposed || sessions.get(session.id) !== session || !bindings.has(session.id) || session.status !== 'complete') {
             throw fail('NETWORK_SESSION_EXPIRED', '接口读取任务已失效。');
           }
+          if (session.networkPolicy === 'page-turn') assertPermit(bindings.get(session.id), session.target);
         };
         verify();
-        const grant = await awaitWithTimeout(getGrant(session.target.expectedUrl, {}), { timeoutMs: ioTimeoutMs });
-        verify();
-        if (!grant?.allowed || grant.origin !== session.origin) throw fail('NETWORK_PERMISSION_DENIED', '接口读取授权已关闭。');
+        if (session.networkPolicy !== 'page-turn') {
+          const grant = await awaitWithTimeout(getGrant(session.target.expectedUrl, {}), { timeoutMs: ioTimeoutMs });
+          verify();
+          if (!grant?.allowed || grant.origin !== session.origin) throw fail('NETWORK_PERMISSION_DENIED', '接口读取授权已关闭。');
+        }
         const observed = await awaitWithTimeout((options.getTarget || actualTarget)(session.target, verify), { timeoutMs: Math.max(1, deadline - Date.now()) });
         verify();
         assertPageTarget(session.target, observed);
@@ -458,6 +496,11 @@ export function createNetworkReadingService(options = {}) {
     if (session) end(session, 'NETWORK_DEBUGGER_DETACHED');
   }
   function onUpdated(tabId, change) {
+    for (const binding of bindings.values()) {
+      if (binding.target?.tabId === tabId && (change.status === 'loading' || (change.url && change.url !== binding.target.expectedUrl))) {
+        binding.revokedCode = 'PAGE_CHANGED';
+      }
+    }
     const session = byTab.get(tabId);
     if (session && (change.status === 'loading' || (change.url && change.url !== session.target.expectedUrl))) end(session, 'PAGE_CHANGED');
     for (const boundary of validations) {
@@ -467,6 +510,7 @@ export function createNetworkReadingService(options = {}) {
     }
   }
   function onRemoved(tabId) {
+    for (const binding of bindings.values()) if (binding.target?.tabId === tabId) binding.revokedCode = 'PAGE_CHANGED';
     const session = byTab.get(tabId);
     if (session) end(session, 'NETWORK_TAB_CLOSED');
     for (const boundary of validations) {
@@ -478,10 +522,10 @@ export function createNetworkReadingService(options = {}) {
     let settings;
     try { settings = normalizeNetworkReadingSettings(changes[NETWORK_READING_SETTINGS_KEY].newValue); } catch { settings = null; }
     for (const session of sessions.values()) {
-      if (!settings?.origins[session.origin]?.allowed) end(session, 'NETWORK_PERMISSION_DENIED');
+      if (session.networkPolicy !== 'page-turn' && !settings?.origins[session.origin]?.allowed) end(session, 'NETWORK_PERMISSION_DENIED');
     }
     for (const boundary of validations) {
-      if (!settings?.origins[boundary.origin]?.allowed) boundary.controller.abort(fail('NETWORK_PERMISSION_DENIED', '接口读取授权已关闭。'));
+      if (!boundary.binding && !settings?.origins[boundary.origin]?.allowed) boundary.controller.abort(fail('NETWORK_PERMISSION_DENIED', '接口读取授权已关闭。'));
     }
   }
 
@@ -496,7 +540,12 @@ export function createNetworkReadingService(options = {}) {
       try {
         const identity = identify(message, port.sender);
         if (bindings.has(identity.key) || sessions.has(identity.key)) throw fail('NETWORK_SESSION_INVALID', '接口读取任务身份已经使用。');
+        if (message.networkPolicy && message.networkPolicy !== 'page-turn') throw fail('NETWORK_PERMISSION_DENIED', '本轮接口读取许可无法识别。');
         binding = { id: identity.key, owner: identity.owner, cancelToken: message.cancelToken, port, closed: false };
+        if (message.networkPolicy === 'page-turn') Object.assign(binding, {
+          networkPolicy: 'page-turn', target: Object.freeze(targetOf(message)),
+          expiresAt: Date.now() + NETWORK_READING_LIMITS.maxDurationMs,
+        });
         bindings.set(binding.id, binding);
         clearTimeout(bindTimer);
         port.postMessage({ type: 'NETWORK_READING_BOUND', sessionId: binding.id });
@@ -515,6 +564,9 @@ export function createNetworkReadingService(options = {}) {
         if (bindings.get(binding.id) === binding) bindings.delete(binding.id);
         const session = sessions.get(binding.id);
         if (session?.port === port) end(session, 'NETWORK_PANEL_CLOSED');
+        for (const boundary of validations) {
+          if (boundary.binding === binding) boundary.controller.abort(fail('NETWORK_PANEL_CLOSED', '本轮页面读取许可已随连接关闭。'));
+        }
       }
       port.onMessage.removeListener(onMessage);
       port.onDisconnect.removeListener(onDisconnect);

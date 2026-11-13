@@ -21,6 +21,8 @@ const list = value => Array.isArray(value) ? value : [];
 const bounded = (value, size = 1200) => String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, size);
 const errorWith = (message, code, name = 'Error') => Object.assign(new Error(message), { code, name });
 
+export const isExplicitNetworkRequest = question => /抓包|(?:读取|查看|分析|检查|捕获).{0,12}(?:接口(?:数据|响应|返回)|网络请求)|\b(?:read|inspect|capture|analy[sz]e).{0,20}(?:api response|network request)/i.test(question);
+
 function mustPropagate(error) {
   return ['AbortError', 'NotAllowedError', 'SecurityError'].includes(error?.name)
     || /PAGE_CHANGED|DOCUMENT_CHANGED|PERMISSION|DENIED|FORBIDDEN|CANCELLED|ABORTED/i.test(error?.code || '')
@@ -187,7 +189,7 @@ function usefulChange(before, after) {
 /** One bounded pre-answer supplement. No global state, storage, main reply, navigation or repeated generation. */
 export async function prepareAdaptiveReading(question, {
   page, target = page, mode = 'auto', history = [], modelRun, readDeep, signal, onPhase = () => {},
-  timeoutMs = ADAPTIVE_READING_TIMEOUT_MS, requestId = 'reading-decision',
+  timeoutMs = ADAPTIVE_READING_TIMEOUT_MS, requestId = 'reading-decision', networkPolicy,
 } = {}) {
   signal?.throwIfAborted();
   modelRun?.signal?.throwIfAborted();
@@ -200,6 +202,12 @@ export async function prepareAdaptiveReading(question, {
   const query = bounded(question, 4000);
   const feedback = relevantFeedback(query, structuredClone(list(history).slice(-16)), identity);
   const plan = localPlan(query, base, normalizeReadingMode(mode), feedback);
+  if (networkPolicy === 'page-turn' && !isExplicitNetworkRequest(query) && plan.mode !== 'basic' && plan.reason !== 'style-feedback') {
+    // A local gap may justify checking necessity, but cannot authorize automatic response collection.
+    plan.judge ||= !plan.required && (plan.networkRecommended || DATA_REQUEST.test(query));
+    plan.networkRecommended = false;
+    plan.gaps = plan.gaps.filter(gap => gap !== 'network-evidence');
+  }
   const controller = new AbortController();
   const parents = [...new Set([signal, modelRun?.signal].filter(Boolean))];
   const cancel = () => controller.abort(parents.find(parent => parent.aborted)?.reason);
@@ -275,6 +283,9 @@ export async function prepareAdaptiveReading(question, {
         assessment.gaps.push('network-evidence');
         assessment.reason = 'model-network';
       } else assessment.reason = 'model-enough';
+    } else if (plan.judge && networkPolicy === 'page-turn') {
+      assessment.gaps.push('decision-unavailable');
+      assessment.reason = 'decision-unavailable';
     }
     check();
     if (!plan.deep) return finish();

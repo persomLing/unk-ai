@@ -1,11 +1,10 @@
-import { prepareAdaptiveReading } from './adaptive-reading.js';
+import { prepareAdaptiveReading, isExplicitNetworkRequest } from './adaptive-reading.js';
 import { normalizeNetworkReading } from '../../../utils/network-reading-context.js';
 import { awaitWithTimeout } from '../../../utils/abortable.js';
 import { assertPageTarget } from '../../../utils/page-target.js';
 import { createNetworkReadingCache } from './network-reading-cache.js';
 import { normalizeReadingAssessment } from '../../../utils/reading-assessment.js';
 
-const explicitNetwork = question => /抓包|(?:读取|查看|分析|检查|捕获).{0,12}(?:接口(?:数据|响应|返回)|网络请求)|\b(?:read|inspect|capture|analy[sz]e).{0,20}(?:api response|network request)/i.test(question);
 const propagate = error => ['AbortError', 'NotAllowedError', 'SecurityError'].includes(error?.name)
   || /PAGE_CHANGED|DOCUMENT_CHANGED|PERMISSION|DENIED|FORBIDDEN|CANCELLED/i.test(error?.code || '');
 
@@ -35,13 +34,14 @@ export function createSupplementalReader({ readDeep, networkClient, getNetworkGr
     };
     let page = await prepareAdaptiveReading(question, { ...options, readDeep });
     options.signal?.throwIfAborted();
-    const required = explicitNetwork(question);
+    const required = isExplicitNetworkRequest(question);
     const candidate = typeof getNetworkGrant === 'function' ? cache.lookup(cacheContext, question, page) : null;
-    const needed = required || (options.mode !== 'basic' && (page.readingAssessment?.networkRecommended || candidate));
+    const needed = required || (options.mode !== 'basic' && (page.readingAssessment?.networkRecommended
+      || (options.networkPolicy !== 'page-turn' && candidate)));
     if (!needed) return page;
     if (!options.allowNetwork) {
       if (cacheContext) cache.invalidate({ origin: cacheContext.origin });
-      if (required) throw Object.assign(new Error('本轮需要接口数据，请先在“接口数据”中允许本站读取，再重新发送。'), { code: 'NETWORK_PERMISSION_DENIED' });
+      if (required) throw Object.assign(new Error('本轮记录未允许接口读取。请开启页面开关并重新发送，使用新的本轮读取许可。'), { code: 'NETWORK_PERMISSION_DENIED' });
       return { ...page, networkReading: normalizeNetworkReading({ version: 1, status: 'disabled', records: [] }, page) };
     }
     options.onPhase?.(candidate ? 'checking-evidence' : 'reading-network');
@@ -50,7 +50,7 @@ export function createSupplementalReader({ readDeep, networkClient, getNetworkGr
       if (candidate) {
         const grant = await awaitWithTimeout(Promise.resolve().then(() => {
           options.signal?.throwIfAborted();
-          return getNetworkGrant(cacheContext.target, { signal: options.signal });
+          return getNetworkGrant(cacheContext.target, { signal: options.signal, networkPolicy: options.networkPolicy });
         }), { signal: options.signal, timeoutMs: Math.max(1, Math.min(3000, 23000 - (Date.now() - started))), message: '核验接口缓存授权超时。' });
         options.signal?.throwIfAborted();
         checkCacheContext();
@@ -69,7 +69,7 @@ export function createSupplementalReader({ readDeep, networkClient, getNetworkGr
       const remaining = Math.max(1, Math.min(12000, 23000 - (Date.now() - started)));
       const result = await awaitWithTimeout(Promise.resolve().then(() => {
         checkCacheContext();
-        return networkClient.capture(options.target || page, { signal: options.signal, timeoutMs: remaining });
+        return networkClient.capture(options.target || page, { signal: options.signal, timeoutMs: remaining, networkPolicy: options.networkPolicy });
       }), { signal: options.signal, timeoutMs: remaining, message: '补充接口数据超时。' });
       checkCacheContext();
       page = withNetworkEvidence(page, normalizeNetworkReading(result, page));
@@ -97,7 +97,7 @@ export function createSupplementalReader({ readDeep, networkClient, getNetworkGr
     if (options.signal?.aborted) cancel();
     active.add(controller);
     try {
-      return await read(question, { ...options, signal: controller.signal });
+      return await read(question, { ...options, target: { ...(options.target || options.page) }, signal: controller.signal });
     } finally {
       options.signal?.removeEventListener('abort', cancel);
       active.delete(controller);

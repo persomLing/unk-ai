@@ -1,0 +1,31 @@
+.composer-add-menu {
+  position: absolute; z-index: 35; left: -2px; bottom: calc(100% + 10px);
+  width: min(420px, calc(100vw - 48px)); max-height: min(460px, calc(100dvh - 220px));
+  overflow-y: auto; overscroll-behavior: contain; padding: 7px;
+  border: 1px solid var(--line); border-radius: 16px;
+  background: var(--surface); color: var(--ink); box-shadow: var(--shadow-lg);
+}
+.composer-add-menu[hidden], .composer-add-section[hidden] { display: none; }
+.composer-add-menu button {
+  display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0;
+  min-height: 37px; padding: 8px 10px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--ink-secondary); text-align: left;
+  font: inherit; font-size: 12px; line-height: 1.5;
+}
+.composer-add-menu button:hover:not(:disabled), .composer-add-menu button:focus-visible { background: var(--surface-alt); color: var(--ink); }
+.composer-add-menu button:focus-visible { outline: 2px solid var(--teal); outline-offset: -2px; }
+.composer-add-menu button:disabled, .composer-add-menu button[aria-disabled="true"] { opacity: .45; cursor: default; }
+.composer-add-menu button > .icon, .add-menu-skill-icon { width: 17px; height: 17px; flex: 0 0 17px; }
+.add-menu-skill-icon { color: var(--teal); display: grid; place-items: center; }
+.add-menu-skill-icon .icon { width: 17px; height: 17px; }
+.add-menu-heading { display: flex; align-items: center; justify-content: space-between; padding: 5px 10px; color: var(--muted); font-size: 10px; }
+.add-menu-heading:not(:first-child) { margin-top: 5px; }
+.composer-add-menu .add-menu-manage { width: auto; min-height: 24px; padding: 3px 6px; font-size: 10px; color: var(--muted); }
+.add-menu-name { flex: 0 1 auto; min-width: 0; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.add-menu-description { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--muted); }
+.add-menu-selected { flex: 0 0 auto; color: var(--teal); font-size: 10px; }
+.add-menu-check { width: 15px; height: 15px; margin-left: auto; opacity: 0; color: var(--teal); }
+#agent-toggle[aria-pressed="true"] .add-menu-check { opacity: 1; }
+[data-menu-skills] { color: var(--muted); font-size: 11px; }
+#attach-button[aria-expanded="true"], #attach-button.is-active { background: var(--teal-soft); color: var(--teal); }
+@media (pointer: coarse) { .composer-add-menu button { min-height: 44px; } }

@@ -79,10 +79,10 @@ import {
 import { readPdfFromUrl } from '../utils/pdf-reader.js';
 import { findOpenTabForSource, pageTargetFields } from '../utils/page-target.js';
 import { normalizePageUrl, resolvePageSource } from './features/page-reading/page-source.js';
-import { createReadingControls } from './features/page-reading/reading-controls.js';
+import { createComposerAddMenu } from './features/composer/composer-add-menu.js';
+import './features/composer/composer-add-menu.css';
 import { createNetworkReadingClient } from './features/page-reading/network-reading-client.js';
 import { createSupplementalReader } from './features/page-reading/supplemental-reading.js';
-import { getNetworkReadingGrant, setNetworkReadingGrant } from '../utils/network-reading.js';
 import { parseRepositoryUrl, readRepository as repositoryReader } from '../utils/repository-reader.js';
 import {
   normalizePageSelection,
@@ -225,14 +225,14 @@ const state = {
   historySearchQuery: '',
   pageContextPreference: true,
   disablePageContext: true,
-  readingMode: 'auto',
-  networkReadingGrant: null,
   draftPageTarget: null,
   readingPage: false,
   submissionController: null,
   compressionController: null,
   progressTimer: null,
 };
+
+let composerAddMenu = null;
 
 const now = () => new Date().toISOString();
 const makeId = () => crypto.randomUUID();
@@ -611,10 +611,9 @@ function renderAttachments() {
   $('#attach-button').disabled = state.preparingAttachments;
 }
 
-function toggleAttachMenu(open = !$('#attach-menu').hidden) {
-  const menu = $('#attach-menu');
-  menu.hidden = !open;
-  $('#attach-button').setAttribute('aria-expanded', String(open));
+function toggleAttachMenu(open = $('#attach-menu').hidden) {
+  if (open) return composerAddMenu?.open();
+  composerAddMenu?.close();
 }
 
 async function addAttachments(files, kind) {
@@ -1109,10 +1108,6 @@ function updatePageToolbar() {
   const active = state.activePageSignal;
   const draftSource = normalizeDraftSource(state.draftSource);
   const pageEnabled = !state.disablePageContext && !draftSource;
-  void readingControls.update({ url: active?.url || '', pageEnabled,
-    mode: state.readingMode, agentMode: Boolean(agentSlot?.isMode()),
-    busy: !state.ready || Boolean(state.generatingId) || state.isSubmitting || state.compressing || state.preparingAttachments,
-  });
   pageQuestionChoice.refresh();
   if (!pastedText.getValue().trim()) state.draftPageTarget = null;
   const draftPageChanged = Boolean(state.draftPageTarget && active
@@ -1141,6 +1136,8 @@ function updatePageToolbar() {
     const availability = composition.status('agent');
     agentToggle.disabled = !state.ready || Boolean(state.generatingId) || state.isSubmitting || state.compressing
       || Boolean(agentSlot?.isBusy()) || availability.status !== 'ready' || !control.available || !pageEnabled;
+    agentToggle.setAttribute('aria-pressed', String(Boolean(agentSlot?.isMode())));
+    $('#attach-button')?.classList.toggle('is-active', Boolean(agentSlot?.isMode()));
     agentToggle.title = availability.status === 'ready' ? (agentSlot?.isMode() ? '关闭页面操作' : '页面操作')
       : availability.status === 'initializing' ? '页面操作正在初始化' : '页面操作暂不可用，请重新打开侧栏';
   }
@@ -1185,9 +1182,10 @@ function updatePageToolbar() {
     modeHint.hidden = !draftSource && !(agentSlot?.isMode() && pageEnabled && control.available);
     modeHint.textContent = draftSource
       ? `独立话题 · ${draftSource.label} · 本轮不携带当前网页`
-      : agentSlot?.isMode() && pageEnabled && control.available ? '授权后执行页面动作；切换标签或手动操作时暂停。'
+      : agentSlot?.isMode() && pageEnabled && control.available ? '页面操作已开启 · 点击 ＋ 可关闭'
         : '';
   }
+  composerAddMenu?.sync();
   if (input && state.ready) input.placeholder = draftSource ? '编辑独立话题…（本轮不携带当前网页）'
     : agentSlot?.isMode() ? '描述要在当前页面完成的任务…' : !active || state.disablePageContext ? '输入问题…' : '问问这个页面，例如：这些配置怎么选？';
 
@@ -1331,11 +1329,12 @@ function updateComposer() {
   historySidebar?.setBusy(busy || historyMutationBusy);
   $('#export-selected').disabled = !state.conversation?.id;
   conversationExportMenu.sync(state.conversation?.id);
-  $('#attach-button').disabled = busy || state.preparingAttachments;
+  $('#attach-button').disabled = !state.ready || state.preparingAttachments || historyMutationBusy || restartPending;
+  for (const item of $('#attach-menu').querySelectorAll('[data-attach-kind]')) {
+    item.disabled = busy || state.preparingAttachments || historyMutationBusy || (item.dataset.attachKind === 'document' && agentMode);
+  }
   const skillsButton = $('#skills-button');
   if (skillsButton) skillsButton.disabled = !state.ready || state.preparingAttachments;
-  const documentAttachment = $('#attach-menu [data-attach-kind="document"]');
-  if (documentAttachment) { documentAttachment.disabled = agentMode; documentAttachment.classList.toggle('is-disabled', agentMode); }
   input.readOnly = !state.ready || agentBusy || historyMutationBusy || restartPending;
   input.placeholder = agentMode ? '描述要在当前页面完成的任务…' : state.disablePageContext ? '输入消息…（本轮不读取网页）' : state.activePageSignal ? '针对当前网页提问…' : '输入消息…';
   $('#composer').classList.toggle('is-generating', busy);
@@ -1741,27 +1740,7 @@ const networkReadingClient = createNetworkReadingClient({
 });
 const enhancePageReading = createSupplementalReader({
   readDeep: options => readCurrentPageForRequest('', options), networkClient: networkReadingClient,
-  getNetworkGrant: async (target, { signal }) => {
-    const response = await awaitWithTimeout(chrome.runtime.sendMessage({
-      type: 'NETWORK_READING_VALIDATE', ...pageTargetFields(target),
-    }), { signal, timeoutMs: 4000, message: '核对接口资料授权超时，请重试。' });
-    signal?.throwIfAborted();
-    if (response?.error) throw Object.assign(new Error(response.message || '无法核对接口资料授权。'), { code: response.error });
-    return response;
-  },
-});
-const readingControls = createReadingControls({
-  getNetworkAllowed: async url => {
-    const grant = await getNetworkReadingGrant(url);
-    return grant.allowed;
-  },
-  setNetworkAllowed: (url, allowed) => setNetworkReadingGrant(new URL(url).origin, allowed),
-  onModeChange: mode => { state.readingMode = mode; },
-  onGrantState: ({ origin, allowed, confirmed }) => {
-    state.networkReadingGrant = { origin, allowed: confirmed && allowed };
-    if (origin && (!confirmed || !allowed)) enhancePageReading.invalidate({ origin });
-  },
-  onError: error => toast(error.message || '读取设置暂不可用。', 'error'),
+  getNetworkGrant: (target, options) => networkReadingClient.validateGrant(target, options),
 });
 void composition.ready.then(() => updateComposer());
 
@@ -1777,23 +1756,33 @@ const application = createSidepanelApplication({
   conversationTitle, hasVision, makeId, now, truncateText,
 });
 const skillLibrary = createSkillLibrary({ storage: chrome.storage.local, locks: navigator.locks });
+function skillApplyBlockReason() {
+  if (!state.ready || state.preparingAttachments || historyMutationBusy || state.compressing || agentTaskRestart.isPending()) return '请等待当前准备完成后选择技能。';
+  if (agentSlot?.isMode() || agentSlot?.isBusy()) return '技能用于普通提问，请先关闭页面操作。';
+  if (state.attachments.filter(item => item.type !== 'skill').length >= 6) return '每次最多 6 个附件，请先移除一个。';
+  return '';
+}
+function applySkill(record) {
+  const blocked = skillApplyBlockReason();
+  if (blocked) throw new Error(blocked);
+  const snapshot = createSkillAttachment(record);
+  state.attachments = [...state.attachments.filter(item => item.type !== 'skill'), snapshot];
+  renderAttachments(); updateComposer(); input.focus();
+}
 const skillLibraryView = createSkillLibraryView({
   root: $('#skills-dialog'), store: skillLibrary,
   getContextKey: () => state.conversation?.id || '',
-  getApplyBlockReason: () => {
-    if (!state.ready || state.preparingAttachments || historyMutationBusy || state.compressing || agentTaskRestart.isPending()) return '请等待当前准备完成后选择 Skill。';
-    if (agentSlot?.isMode() || agentSlot?.isBusy()) return 'Skill 当前用于普通问答，请先退出页面操作模式。';
-    if (state.attachments.filter(item => item.type !== 'skill').length >= 6) return '每次提问最多 6 个附件，请先移除一个附件再选择 Skill。';
-    return '';
-  },
-  onApply: record => {
-    const snapshot = createSkillAttachment(record);
-    state.attachments = [...state.attachments.filter(item => item.type !== 'skill'), snapshot];
-    renderAttachments(); updateComposer(); input.focus();
-  },
+  getApplyBlockReason: skillApplyBlockReason, onApply: applySkill,
   onNotice: (message, kind) => toast(message, kind),
 });
-$('#skills-button')?.addEventListener('click', () => { toggleAttachMenu(false); void skillLibraryView.open(); });
+composerAddMenu = createComposerAddMenu({
+  root: $('#attach-menu'), trigger: $('#attach-button'), store: skillLibrary,
+  getContextKey: () => state.conversation?.id || '',
+  getSkillBlockReason: skillApplyBlockReason,
+  getSelectedSkillId: () => state.attachments.find(item => item.type === 'skill')?.skill?.id || '',
+  onApplySkill: applySkill, onOpenSkills: options => { void skillLibraryView.open(options); },
+  onNotice: (message, kind) => toast(message, kind),
+});
 const selectionChats = new Set();
 let selectionChatsDisposed = false;
 selectionChatSessions = createSelectionChatSessions({ getConversationId: () => state.conversation?.id,
@@ -2132,7 +2121,7 @@ stopButton.addEventListener('click', (event) => {
 });
 $('#attach-menu').addEventListener('click', (event) => {
   const item = event.target.closest('[data-attach-kind]');
-  if (!item) return;
+  if (!item || item.disabled) return;
   toggleAttachMenu(false);
   const kind = item.dataset.attachKind;
   if (kind === 'image') $('#image-input').click();
@@ -2156,11 +2145,6 @@ $('#attachment-list').addEventListener('click', (event) => {
 });
 document.addEventListener('click', (event) => {
   if (!event.target.closest('.context-control')) setContextPanel(false);
-  if (event.target.closest('#attach-button')) {
-    if (!state.generatingId) toggleAttachMenu($('#attach-menu').hidden);
-    return;
-  }
-  if (!event.target.closest('.attach-control')) toggleAttachMenu(false);
 }, true);
 $('#composer').addEventListener('dragover', (event) => {
   if (!event.dataTransfer?.types.includes('Files')) return;
@@ -2612,6 +2596,7 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
 });
 const startupController = new AbortController();
 window.addEventListener('pagehide', () => {
+  composerAddMenu?.dispose();
   skillLibraryView.dispose();
   skillLibrary.dispose();
   if (typeof articleSelectionMenu !== 'undefined') articleSelectionMenu.dispose();
@@ -2629,7 +2614,6 @@ window.addEventListener('pagehide', () => {
   diagnosticExporter.dispose();
   removeRuntimeDiagnostics();
   void flushDiagnostics();
-  readingControls.dispose();
   enhancePageReading.dispose();
   networkReadingClient.dispose();
   if (typeof historyNavigation !== 'undefined') historyNavigation.dispose();

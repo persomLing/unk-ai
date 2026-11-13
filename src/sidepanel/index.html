@@ -149,32 +149,19 @@
           <div class="composer-toolbar">
             <div class="composer-leading">
               <div class="attach-control">
-                <button id="attach-button" class="composer-icon-button" type="button" aria-label="添加图片或文档" title="添加图片或文档" aria-expanded="false"><i data-icon="plus"></i></button>
-                <div id="attach-menu" class="attach-menu" role="menu" hidden>
-                  <button type="button" role="menuitem" data-attach-kind="image"><span class="attach-menu-icon"><i data-icon="image"></i></span><span><strong>上传图片</strong><small>也可以直接粘贴截图</small></span></button>
-                  <button type="button" role="menuitem" data-attach-kind="document"><span class="attach-menu-icon"><i data-icon="file"></i></span><span><strong>文档</strong><small>TXT、Markdown、CSV、JSON、DOCX、PDF</small></span></button>
+                <button id="attach-button" class="composer-icon-button" type="button" aria-label="添加文件、技能或工具" title="添加文件、技能或工具" aria-haspopup="menu" aria-controls="attach-menu" aria-expanded="false"><i data-icon="plus"></i></button>
+                <div id="attach-menu" class="composer-add-menu" role="menu" aria-label="添加到本次提问" hidden>
+                  <div class="add-menu-heading" role="presentation">添加</div>
+                  <button type="button" role="menuitem" data-attach-kind="image"><i data-icon="image"></i><span class="add-menu-name">上传图片</span><span class="add-menu-description">也可直接粘贴</span></button>
+                  <button type="button" role="menuitem" data-attach-kind="document"><i data-icon="file"></i><span class="add-menu-name">上传文档</span><span class="add-menu-description">PDF、Word、文本等</span></button>
+                  <div id="composer-modes" class="composer-add-section" role="group" aria-label="页面能力" hidden>
+                    <button id="agent-toggle" type="button" role="menuitem" aria-label="页面操作" aria-pressed="false" title="在授权后点击、输入和导航"><i data-icon="globe"></i><span class="add-menu-name">页面操作</span><span class="add-menu-description">协助点击与填写</span><i class="add-menu-check" data-icon="check"></i></button>
+                  </div>
+                  <div class="add-menu-heading" role="presentation"><span>技能</span><button id="skills-button" class="add-menu-manage" type="button" role="menuitem" data-menu-action="skills" aria-label="管理技能" aria-haspopup="dialog" aria-controls="skills-dialog">管理</button></div>
+                  <div data-menu-skills role="group" aria-label="已导入技能"></div>
                 </div>
                 <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
                 <input id="document-input" type="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yaml,.yml,.log,.docx,.pdf" multiple hidden />
-              </div>
-              <button id="skills-button" class="composer-mode-button" type="button" aria-label="导入和选择 Skill" aria-haspopup="dialog" aria-controls="skills-dialog" title="导入和选择 Skill"><i data-icon="sparkles"></i><span>Skill</span></button>
-            </div>
-            <div id="composer-modes" class="composer-modes" role="group" aria-label="页面能力" hidden>
-              <button id="agent-toggle" class="composer-mode-button agent-toggle" type="button" aria-label="页面操作" aria-pressed="false" title="在授权后点击、输入和导航"><i data-icon="globe"></i><span>页面操作</span></button>
-              <div id="composer-reading-controls" class="composer-reading-controls" hidden>
-                <button id="composer-reading-depth" class="composer-mode-button reading-depth-trigger" type="button" aria-label="页面阅读强度" aria-haspopup="menu" aria-controls="composer-reading-menu" aria-expanded="false" title="按资料缺口自动选择读取方式" data-tooltip="按资料缺口自动选择读取方式">
-                  <i data-icon="sparkles"></i><span id="composer-reading-depth-label">自动</span><i class="reading-chevron" data-icon="chevron-down"></i>
-                </button>
-                <div id="composer-reading-menu" class="composer-reading-menu" role="menu" aria-label="页面阅读强度" hidden>
-                  <span class="reading-menu-heading" aria-hidden="true">读取方式</span>
-                  <button type="button" role="menuitemradio" data-reading-mode="auto" aria-checked="true" tabindex="-1"><i data-icon="sparkles"></i><span><strong>自动</strong><small>按资料缺口选择补读方式</small></span><i class="reading-option-check" data-icon="check"></i></button>
-                  <button type="button" role="menuitemradio" data-reading-mode="basic" aria-checked="false" tabindex="-1"><i data-icon="article"></i><span><strong>基础</strong><small>读取页面正文，快速回答</small></span><i class="reading-option-check" data-icon="check"></i></button>
-                  <button type="button" role="menuitemradio" data-reading-mode="deep" aria-checked="false" tabindex="-1"><i data-icon="scan"></i><span><strong>深入</strong><small>补充页面结构，仔细核验</small></span><i class="reading-option-check" data-icon="check"></i></button>
-                </div>
-                <button id="composer-network-allowed" class="composer-mode-button network-reading-toggle" type="button" aria-label="允许本站读取接口数据" aria-pressed="false" aria-describedby="composer-network-note" title="允许在需要时读取本站接口数据" data-tooltip="允许在需要时读取本站接口数据">
-                  <i data-icon="network"></i><span id="composer-network-label">接口</span><span class="network-state-dot" aria-hidden="true"></span>
-                </button>
-                <span id="composer-network-note" class="sr-only" role="status"></span>
               </div>
             </div>
             <div class="composer-trailing">

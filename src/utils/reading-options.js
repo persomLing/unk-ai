@@ -1,5 +1,10 @@
 /** Per-turn capabilities. Missing historical records deliberately stay basic. */
 export function normalizeReadingOptions(value, fallback = 'basic') {
+  if (value?.version === 2) {
+    const allowed = value.networkPolicy === 'page-turn' && value.allowNetwork === true;
+    return { version: 2, mode: ['basic', 'auto', 'deep'].includes(value.mode) ? value.mode : fallback,
+      allowNetwork: allowed, networkPolicy: allowed ? 'page-turn' : 'disabled' };
+  }
   const mode = value?.version === 1 && ['basic', 'auto', 'deep'].includes(value.mode) ? value.mode : fallback;
   return { version: 1, mode, allowNetwork: value?.version === 1 && value.allowNetwork === true };
 }
@@ -13,13 +18,11 @@ export function captureReadingHistory(messages = []) {
   }));
 }
 
-export function readingOptionsAtSubmission(state, options, enabled) {
+export function readingOptionsAtSubmission(_state, options, enabled) {
   if (!enabled) return normalizeReadingOptions(null);
   if (options.readingOptions) return normalizeReadingOptions(options.readingOptions);
-  let origin = '';
-  try { origin = new URL(state.activePageSignal?.url).origin; } catch {}
-  return normalizeReadingOptions({ version: 1,
-    mode: options.deep === true ? 'deep' : state.readingMode || 'auto',
-    allowNetwork: Boolean(origin && state.networkReadingGrant?.origin === origin && state.networkReadingGrant.allowed),
+  return normalizeReadingOptions({ version: 2,
+    mode: options.deep === true ? 'deep' : 'auto',
+    allowNetwork: true, networkPolicy: 'page-turn',
   }, 'auto');
 }
