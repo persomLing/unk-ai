@@ -157,7 +157,7 @@
                 <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
                 <input id="document-input" type="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yaml,.yml,.log,.docx,.pdf" multiple hidden />
               </div>
-
+              <button id="skills-button" class="composer-mode-button" type="button" aria-label="导入和选择 Skill" aria-haspopup="dialog" aria-controls="skills-dialog" title="导入和选择 Skill"><i data-icon="sparkles"></i><span>Skill</span></button>
             </div>
             <div id="composer-modes" class="composer-modes" role="group" aria-label="页面能力" hidden>
               <button id="agent-toggle" class="composer-mode-button agent-toggle" type="button" aria-label="页面操作" aria-pressed="false" title="在授权后点击、输入和导航"><i data-icon="globe"></i><span>页面操作</span></button>
@@ -253,6 +253,7 @@
       <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
     </div>
 
+    <dialog id="skills-dialog" aria-label="Skill 技能库"></dialog>
     <script type="module" src="./sidepanel.js"></script>
   </body>
 </html>

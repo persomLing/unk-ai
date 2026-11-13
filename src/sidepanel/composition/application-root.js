@@ -9,6 +9,7 @@ import { createApplicationDiagnostics } from '../../utils/diagnostic-observer.js
 import { readSourcesForPage } from '../../utils/research-context.js';
 import { createResearchToolSession } from '../features/web-research/research-tools.js';
 import { createPublicResearchTransport } from '../features/web-research/public-research-transport.js';
+import { createSkillContextProvider } from '../features/skills/skill-context.js';
 
 export function readingDiagnosticEvidence(page) {
   return { hasPageContext: Boolean(page?.text?.trim()), textChars: page?.text?.length || 0,
@@ -45,7 +46,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
       summarize: result => name === 'ensureConfigured' ? { ok: result === true }
         : name === 'getDirectoryInfo' ? { permissionGranted: result?.granted === true } : { ok: Boolean(result?.id) } });
   }
-  const contextAssembler = createContextAssembler({ providers: contextProviders });
+  const contextAssembler = createContextAssembler({ providers: [createSkillContextProvider(), ...contextProviders] });
   const contextService = createContextService({ state, modelGateway, profileFor: ports.profileFor,
     createId: ports.makeId, now: ports.now,
     save: conversation => conversationSaver.schedule(conversation),

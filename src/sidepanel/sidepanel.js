@@ -158,6 +158,10 @@ import {
 } from './features/page-reading/page-reader-slot.js';
 import { createSidepanelComposition } from './composition/composition-root.js';
 import { createSidepanelApplication } from './composition/application-root.js';
+import { createSkillLibrary } from './features/skills/skill-library.js';
+import { createSkillLibraryView } from './features/skills/skill-library-view.js';
+import { createSkillAttachment } from './features/skills/skill-context.js';
+import './features/skills/skills.css';
 import { createModelGateway } from '../app/model-gateway.js';
 import { capturePageTarget } from './features/page-reading/page-target-capture.js';
 import { createPageReadState } from './features/page-reading/page-read-state.js';
@@ -1328,6 +1332,8 @@ function updateComposer() {
   $('#export-selected').disabled = !state.conversation?.id;
   conversationExportMenu.sync(state.conversation?.id);
   $('#attach-button').disabled = busy || state.preparingAttachments;
+  const skillsButton = $('#skills-button');
+  if (skillsButton) skillsButton.disabled = !state.ready || state.preparingAttachments;
   const documentAttachment = $('#attach-menu [data-attach-kind="document"]');
   if (documentAttachment) { documentAttachment.disabled = agentMode; documentAttachment.classList.toggle('is-disabled', agentMode); }
   input.readOnly = !state.ready || agentBusy || historyMutationBusy || restartPending;
@@ -1770,6 +1776,24 @@ const application = createSidepanelApplication({
   activeChatProfile, profileFor: (modelId = state.selectedModelId, effort = state.selectedEffort) => requestProfile(state.config, { modelId, effort }),
   conversationTitle, hasVision, makeId, now, truncateText,
 });
+const skillLibrary = createSkillLibrary({ storage: chrome.storage.local, locks: navigator.locks });
+const skillLibraryView = createSkillLibraryView({
+  root: $('#skills-dialog'), store: skillLibrary,
+  getContextKey: () => state.conversation?.id || '',
+  getApplyBlockReason: () => {
+    if (!state.ready || state.preparingAttachments || historyMutationBusy || state.compressing || agentTaskRestart.isPending()) return '请等待当前准备完成后选择 Skill。';
+    if (agentSlot?.isMode() || agentSlot?.isBusy()) return 'Skill 当前用于普通问答，请先退出页面操作模式。';
+    if (state.attachments.filter(item => item.type !== 'skill').length >= 6) return '每次提问最多 6 个附件，请先移除一个附件再选择 Skill。';
+    return '';
+  },
+  onApply: record => {
+    const snapshot = createSkillAttachment(record);
+    state.attachments = [...state.attachments.filter(item => item.type !== 'skill'), snapshot];
+    renderAttachments(); updateComposer(); input.focus();
+  },
+  onNotice: (message, kind) => toast(message, kind),
+});
+$('#skills-button')?.addEventListener('click', () => { toggleAttachMenu(false); void skillLibraryView.open(); });
 const selectionChats = new Set();
 let selectionChatsDisposed = false;
 selectionChatSessions = createSelectionChatSessions({ getConversationId: () => state.conversation?.id,
@@ -2588,6 +2612,8 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
 });
 const startupController = new AbortController();
 window.addEventListener('pagehide', () => {
+  skillLibraryView.dispose();
+  skillLibrary.dispose();
   if (typeof articleSelectionMenu !== 'undefined') articleSelectionMenu.dispose();
   if (typeof articleQuoteView !== 'undefined') articleQuoteView.dispose();
   if (typeof selectionChats !== 'undefined') {

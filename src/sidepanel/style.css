@@ -76,6 +76,9 @@
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; overflow: hidden; background: var(--surface-alt); color: var(--ink); }
+.message-skill { max-width: 100%; margin-top: 8px; font-size: 12px; overflow-wrap: anywhere; }
+.message-skill summary { cursor: pointer; color: var(--teal); padding: 4px 0; }
+.message-skill pre { max-height: 240px; margin: 6px 0; padding: 10px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.6 ui-monospace, monospace; background: var(--surface-alt); border: 1px solid var(--line); border-radius: 8px; }
 button, textarea, input, select { font: inherit; }
 button { -webkit-tap-highlight-color: transparent; cursor: pointer; }
 button:disabled { cursor: not-allowed; }

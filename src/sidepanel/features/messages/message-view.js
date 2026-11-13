@@ -103,9 +103,11 @@ function userMessageMarkup(message) {
     item.type === 'image' && safeAttachmentDataUrl(item.dataUrl)), (item) =>
     `<img class="message-image" data-image-preview tabindex="0" role="button" aria-haspopup="dialog" aria-label="查看图片 ${escapeHtml(item.name)}" title="点击放大" src="${safeAttachmentDataUrl(item.dataUrl)}" alt="${escapeHtml(item.name)}" />`)
     .join('');
-  const names = map(files, (item) =>
+  const names = map(files.filter(item => item.type !== 'skill'), (item) =>
     `<span class="message-file">${icon(item.type === 'image' ? 'image' : 'file')}<span>${escapeHtml(item.name)}</span></span>`)
     .join('');
+  const skills = files.filter(item => item.type === 'skill').map(item =>
+    `<details class="message-skill"><summary>Skill · ${escapeHtml(item.name || '本轮指南')}</summary><pre>${escapeHtml(item.skill?.raw || '本轮 Skill 记录不可用，请回退重新选择。')}</pre></details>`).join('');
   const imageErrors = files.map(imageAttachmentLoadError).filter(Boolean)
     .map(error => `<small class="message-file-error">${escapeHtml(error)}</small>`).join('');
   const bodyText = message.displayContent ?? message.content;
@@ -127,7 +129,7 @@ function userMessageMarkup(message) {
       ${icon('copy')}
     </button>
   </div>`;
-  return `<article class="message user-message" data-message-id="${message.id}">${messageModeBadgeMarkup(message)}${selection}${images}${body}${names ? `<div class="message-files">${names}</div>` : ''}${imageErrors}${actions}</article>`;
+  return `<article class="message user-message" data-message-id="${message.id}">${messageModeBadgeMarkup(message)}${selection}${images}${body}${names ? `<div class="message-files">${names}</div>` : ''}${skills}${imageErrors}${actions}</article>`;
 }
 
 function sourcesMarkup(message) {

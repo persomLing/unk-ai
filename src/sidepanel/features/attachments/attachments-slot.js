@@ -12,6 +12,7 @@ export function attachmentIcon(attachment) {
 }
 
 export function attachmentDetail(attachment) {
+  if (attachment?.type === 'skill') return 'Skill · 仅用于本次提问';
   if (attachment?.type === 'image') return `${attachment.width || '—'} × ${attachment.height || '—'}`;
   return [
     formatBytes(attachment?.size),

@@ -4,25 +4,34 @@ import { pageForResearchScope, readSourcesForPage } from '../utils/research-cont
 import { suggestionMessages, parseSuggestionResponse } from '../sidepanel/features/messages/model-suggestions.js';
 import { samePrompt } from '../sidepanel/features/messages/retry-flow.js';
 import { runResearchAnswer } from '../sidepanel/features/web-research/research-answer-loop.js';
+import { hasSelectedSkill, selectedSkill, SKILL_PROVIDER_ID } from '../sidepanel/features/skills/skill-context.js';
 
 /** Optional provider data uses only spare budget, never displaces the question,
  * page evidence or system rules, and enters as clearly delimited user data. */
-export function appendProviderContext(messages, blocks, contextWindow, maxTokens = 0) {
+export function appendProviderContext(messages, blocks, contextWindow, maxTokens = 0, { required = [] } = {}) {
   const output = structuredClone(messages);
   let remaining = Math.floor(contextWindow * 0.97) - Number(maxTokens || 0) - estimateMessagesTokens(output) - 64;
   const included = [];
-  for (const block of blocks || []) {
+  const requiredIds = new Set(required), includedIds = new Set();
+  const budgetError = () => Object.assign(new Error('本轮选用的 Skill 或必需上下文无法完整放入模型容量，请缩短指南或问题，或换用更大上下文的模型。'), { code: 'ERR_CONTEXT_BUDGET' });
+  const ordered = [...(blocks || [])].sort((a, b) => Number(requiredIds.has(b.providerId)) - Number(requiredIds.has(a.providerId)));
+  for (const block of ordered) {
+    const necessary = requiredIds.has(block.providerId);
+    if (necessary && block.truncated) throw budgetError();
     if (remaining < 64) break;
     const heading = `[补充资料 ${JSON.stringify({ provider: block.providerId, source: block.source, truncated: block.truncated })}]\n`;
-    const wrapperCost = estimateMessagesTokens([{ role: 'user', content: '<reference_data>\n\n</reference_data>' }]);
-    const content = trimTextToTokenBudget(heading + block.content, Math.min(remaining - wrapperCost, 3000));
+    const tag = block.trust === 'configured-skill' ? 'selected_skill' : 'reference_data';
+    const wrapperCost = estimateMessagesTokens([{ role: 'user', content: `<${tag}>\n\n</${tag}>` }]);
+    const content = necessary ? heading + block.content : trimTextToTokenBudget(heading + block.content, Math.min(remaining - wrapperCost, 3000));
     if (!content) continue;
-    const message = { role: 'user', content: `<reference_data>\n${content}\n</reference_data>` };
+    const message = { role: 'user', content: `<${tag}>\n${content}\n</${tag}>` };
     const cost = estimateMessagesTokens([message]);
-    if (cost > remaining) continue;
+    if (cost > remaining) { if (necessary) throw budgetError(); else continue; }
     included.push(message);
+    includedIds.add(block.providerId);
     remaining -= cost;
   }
+  if ([...requiredIds].some(id => !includedIds.has(id))) throw budgetError();
   const lastUser = output.findLastIndex(message => message.role === 'user');
   output.splice(lastUser < 0 ? output.length : lastUser, 0, ...included);
   return output;
@@ -86,6 +95,9 @@ export function createChatService({ repository, runner, modelGateway, contextAss
       const user = conversation.messages.slice(0, index).findLast(message => message.role === 'user');
       if (!user) { run.fail(new Error('找不到本轮提问。')); return null; }
       if (!run.ref) run.bind({ conversation, user, assistant });
+      selectedSkill(user.attachments);
+      const requiredContext = hasSelectedSkill(user.attachments) ? [SKILL_PROVIDER_ID] : [];
+      if (requiredContext.length && !contextAssembler) throw new Error('本轮 Skill 上下文能力未装配，无法执行所选指南。');
       const ref = run.ref;
       if (!profile) { run.fail(new Error('请先在设置中添加至少一个模型。')); return null; }
       const fixedProfile = structuredClone(profile);
@@ -122,9 +134,9 @@ export function createChatService({ repository, runner, modelGateway, contextAss
             ...ref, signal: run.signal, deadlineAt: run.deadlineAt, mode: 'chat',
             model: connection.modelInfo, target: pageSourceFor(requestPage),
             budget: { contextWindow, maxTokens: fixedProfile.maxTokens || 0 },
-          });
+          }, { required: requiredContext });
           run.assertCurrent();
-          messages = appendProviderContext(messages, collected.blocks, contextWindow, requestReserve);
+          messages = appendProviderContext(messages, collected.blocks, contextWindow, requestReserve, { required: requiredContext });
           if (collected.issues.length) run.update({ contextIssues: collected.issues.map(issue => ({ providerId: issue.providerId || issue.id, code: issue.code })) });
         }
         run.phase('waiting-model');

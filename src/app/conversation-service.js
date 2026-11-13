@@ -18,6 +18,7 @@ import { normalizeAgentReferenceImages, assertAgentReferenceTarget, assertAgentV
 import { assertPageTarget } from '../utils/page-target.js';
 import { captureReadingHistory, normalizeReadingOptions, readingOptionsAtSubmission } from '../utils/reading-options.js';
 import { assertImageAttachmentsAvailable } from '../utils/attachments.js';
+import { selectedSkill } from '../sidepanel/features/skills/skill-context.js';
 
 /** Application command service. The state object is a compatibility projection
  * consumed by the existing presenters; browser/storage are injected ports.
@@ -129,7 +130,7 @@ export function createConversationService(deps) {
 
     if (!content && !attachments.length && !selection?.text) return;
     if (!state.ready || state.preparingAttachments) return;
-    try { assertImageAttachmentsAvailable(attachments); }
+    try { assertImageAttachmentsAvailable(attachments); selectedSkill(attachments, { agentTask }); }
     catch (error) { toast(error.message, 'error'); return; }
     // Capture the target at the click/queue event, before configuration or storage awaits.
     const pageTargetPromise = independent ? Promise.resolve(null) : options.pageTargetPromise || capturePageTarget({
