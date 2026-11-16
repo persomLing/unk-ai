@@ -13,7 +13,8 @@ export function createContextService({ state, modelGateway, profileFor, save,
   let requestSequence = 0;
   let disposed = false, activeController = null;
   const emit = event => { if (!disposed) { try { onEvent(event); } catch {} } };
-  async function compress(conversation, beforeAssistantId, { manual = false, signal, profile: suppliedProfile, modelRun } = {}) {
+  async function compress(conversation, beforeAssistantId, { manual = false, signal, profile: suppliedProfile, modelRun,
+    reserveTokens, page: requestedPage, contextWindow: suppliedWindow } = {}) {
     if (disposed) return false;
     signal?.throwIfAborted();
     if (state.compressing || !conversation) return false;
@@ -22,9 +23,13 @@ export function createContextService({ state, modelGateway, profileFor, save,
     try {
       const profile = structuredClone(suppliedProfile || profileFor());
       if (!profile) return false;
-      const contextWindow = contextWindowFor(profile, state.config);
-      const usage = contextUsageFor(conversation, beforeAssistantId, conversation.pageContext, contextWindow);
-      if (!manual && (!usage.shouldCompress || usage.used < 8000)) return false;
+      const contextWindow = suppliedWindow || contextWindowFor(profile, state.config);
+      const usage = contextUsageFor(conversation, beforeAssistantId,
+        requestedPage === undefined ? conversation.pageContext : requestedPage, contextWindow, {
+          maxTokens: profile.maxTokens,
+          additionalInputTokens: Math.max(0, Number(reserveTokens || 0) - Number(profile.maxTokens || 0)),
+        });
+      if (!manual && !usage.shouldCompress) return false;
       const source = compressionSource(conversation, beforeAssistantId, contextWindow, profile.maxTokens);
       if (!source.length) {
         if (manual) emit({ type: 'notice', message: '没有可整理的较早记录；当前单条内容过长时请减少输入。' });

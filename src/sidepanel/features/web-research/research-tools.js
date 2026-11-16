@@ -34,6 +34,11 @@ const TOOL_SCHEMAS = freeze([
     strict: true, parameters: { type: 'object', properties: { sourceId: { type: 'string', minLength: 1, maxLength: 80, description: '本轮 web_search 返回的 sourceId。' } }, required: ['sourceId'], additionalProperties: false } } },
 ]);
 
+/** The preview and request budget share the exact enabled tool definitions. */
+export function researchToolSchemas(fetchEnabled = true) {
+  return TOOL_SCHEMAS.filter(item => fetchEnabled || item.function.name !== 'read_webpage');
+}
+
 function error(code, message, name = 'Error') {
   return Object.assign(new Error(message), { code, name });
 }
@@ -319,7 +324,7 @@ export function createResearchToolSession({ connection, signal, deadlineAt,
     } catch (failure) { return Promise.reject(failure); }
   }
 
-  return Object.freeze({ tools: freeze(TOOL_SCHEMAS.filter(item => fetchEnabled || item.function.name !== 'read_webpage')),
+  return Object.freeze({ tools: freeze(researchToolSchemas(fetchEnabled)),
     validate, execute, sources: () => structuredClone([...delivered.values()]),
     dispose() {
       if (disposed) return;

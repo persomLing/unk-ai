@@ -1,4 +1,6 @@
 import { icon } from '../../icons.js';
+import { renderTurnPreview } from './turn-preview.js';
+import { presentVideoNotesMessage } from '../video-notes/video-notes-presentation.js';
 
 const MAX_PREVIEW = 220;
 const HIDE_DELAY = 120;
@@ -154,6 +156,10 @@ export function createTurnNavigator({
     const title = previewRow('turn-preview-title', turn.question || '未命名提问');
     title.title = turn.question || '';
     const answer = previewRow('turn-preview-answer', turn.answer || previewTextFor(turn.assistant));
+    const display = presentVideoNotesMessage(turn.assistant, [turn.user, turn.assistant]);
+    if (display?.content) renderTurnPreview(answer, display.content);
+    answer.setAttribute('role', 'region');
+    answer.setAttribute('aria-label', '回答预览');
     preview.append(title, answer);
 
     const sourceUrl = String(turn.pageSource?.url || '');
@@ -251,6 +257,7 @@ export function createTurnNavigator({
   preview.addEventListener('pointerenter', () => { clearTimer(hideTimer); hideTimer = null; });
   preview.addEventListener('pointerleave', scheduleWithdraw);
   preview.addEventListener('focusout', scheduleWithdraw);
+  preview.addEventListener('keydown', onKeyDown);
   view.addEventListener('scroll', scheduleUpdate, { passive: true });
   globalThis.addEventListener?.('resize', resize);
   if (typeof ResizeObserver === 'function') {
@@ -273,6 +280,7 @@ export function createTurnNavigator({
       rail.removeEventListener('focusin', onFocusIn);
       rail.removeEventListener('focusout', scheduleWithdraw);
       rail.removeEventListener('keydown', onKeyDown);
+      preview.removeEventListener('keydown', onKeyDown);
       view.removeEventListener('scroll', scheduleUpdate);
       globalThis.removeEventListener?.('resize', resize);
       withdrawPreview();

@@ -18,6 +18,7 @@ import { thinkingPresentation } from './thinking-view.js';
 import { parseSuggestionResponse } from './model-suggestions.js';
 import { articleQuotes } from './article-quote-draft.js';
 import { shouldCollapseMessageText } from './text-preview.js';
+import { videoAttachmentName } from '../video-notes/video-notes-presentation.js';
 
 export { normalizeMessageError, syncMessageErrorToggle } from './message-decorations.js';
 
@@ -104,7 +105,7 @@ function userMessageMarkup(message) {
     `<img class="message-image" data-image-preview tabindex="0" role="button" aria-haspopup="dialog" aria-label="查看图片 ${escapeHtml(item.name)}" title="点击放大" src="${safeAttachmentDataUrl(item.dataUrl)}" alt="${escapeHtml(item.name)}" />`)
     .join('');
   const names = map(files.filter(item => item.type !== 'skill'), (item) =>
-    `<span class="message-file">${icon(item.type === 'image' ? 'image' : 'file')}<span>${escapeHtml(item.name)}</span></span>`)
+    `<span class="message-file">${icon(item.type === 'image' ? 'image' : 'file')}<span>${escapeHtml(videoAttachmentName(item))}</span></span>`)
     .join('');
   const skills = files.filter(item => item.type === 'skill').map(item =>
     `<details class="message-skill"><summary>Skill · ${escapeHtml(item.name || '本轮指南')}</summary><pre>${escapeHtml(item.skill?.raw || '本轮 Skill 记录不可用，请回退重新选择。')}</pre></details>`).join('');

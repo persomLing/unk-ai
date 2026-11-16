@@ -1,41 +1,12 @@
-import { estimateMessagesTokens, fitMessagesToBudget, requestMessagesFor, trimTextToTokenBudget } from '../utils/context.js';
+import { fitMessagesToBudget, requestMessagesFor } from '../utils/context.js';
 import { pageSourceFor, sourceMatchesPage } from '../utils/turn-source.js';
 import { pageForResearchScope, readSourcesForPage } from '../utils/research-context.js';
 import { suggestionMessages, parseSuggestionResponse } from '../sidepanel/features/messages/model-suggestions.js';
 import { samePrompt } from '../sidepanel/features/messages/retry-flow.js';
-import { runResearchAnswer } from '../sidepanel/features/web-research/research-answer-loop.js';
+import { runResearchAnswer, researchContextReserve } from '../sidepanel/features/web-research/research-answer-loop.js';
 import { hasSelectedSkill, selectedSkill, SKILL_PROVIDER_ID } from '../sidepanel/features/skills/skill-context.js';
-
-/** Optional provider data uses only spare budget, never displaces the question,
- * page evidence or system rules, and enters as clearly delimited user data. */
-export function appendProviderContext(messages, blocks, contextWindow, maxTokens = 0, { required = [] } = {}) {
-  const output = structuredClone(messages);
-  let remaining = Math.floor(contextWindow * 0.97) - Number(maxTokens || 0) - estimateMessagesTokens(output) - 64;
-  const included = [];
-  const requiredIds = new Set(required), includedIds = new Set();
-  const budgetError = () => Object.assign(new Error('本轮选用的 Skill 或必需上下文无法完整放入模型容量，请缩短指南或问题，或换用更大上下文的模型。'), { code: 'ERR_CONTEXT_BUDGET' });
-  const ordered = [...(blocks || [])].sort((a, b) => Number(requiredIds.has(b.providerId)) - Number(requiredIds.has(a.providerId)));
-  for (const block of ordered) {
-    const necessary = requiredIds.has(block.providerId);
-    if (necessary && block.truncated) throw budgetError();
-    if (remaining < 64) break;
-    const heading = `[补充资料 ${JSON.stringify({ provider: block.providerId, source: block.source, truncated: block.truncated })}]\n`;
-    const tag = block.trust === 'configured-skill' ? 'selected_skill' : 'reference_data';
-    const wrapperCost = estimateMessagesTokens([{ role: 'user', content: `<${tag}>\n\n</${tag}>` }]);
-    const content = necessary ? heading + block.content : trimTextToTokenBudget(heading + block.content, Math.min(remaining - wrapperCost, 3000));
-    if (!content) continue;
-    const message = { role: 'user', content: `<${tag}>\n${content}\n</${tag}>` };
-    const cost = estimateMessagesTokens([message]);
-    if (cost > remaining) { if (necessary) throw budgetError(); else continue; }
-    included.push(message);
-    includedIds.add(block.providerId);
-    remaining -= cost;
-  }
-  if ([...requiredIds].some(id => !includedIds.has(id))) throw budgetError();
-  const lastUser = output.findLastIndex(message => message.role === 'user');
-  output.splice(lastUser < 0 ? output.length : lastUser, 0, ...included);
-  return output;
-}
+import { appendProviderContext, requiredContextReserve } from './context-request.js';
+export { appendProviderContext } from './context-request.js';
 
 function friendlyError(error) {
   if (error?.name === 'AbortError') return error;
@@ -47,6 +18,7 @@ function friendlyError(error) {
  * this service never reads current UI state or owns an assistant DOM element. */
 export function createChatService({ repository, runner, modelGateway, contextAssembler,
   researchTools = null,
+  replyPolicyFor = () => ({}),
   compress = async () => {}, now = Date.now, setInterval: every = globalThis.setInterval,
   clearInterval: clearEvery = globalThis.clearInterval } = {}) {
   const effects = new Set();
@@ -96,13 +68,15 @@ export function createChatService({ repository, runner, modelGateway, contextAss
       if (!user) { run.fail(new Error('找不到本轮提问。')); return null; }
       if (!run.ref) run.bind({ conversation, user, assistant });
       selectedSkill(user.attachments);
-      const requiredContext = hasSelectedSkill(user.attachments) ? [SKILL_PROVIDER_ID] : [];
-      if (requiredContext.length && !contextAssembler) throw new Error('本轮 Skill 上下文能力未装配，无法执行所选指南。');
+      const policy = replyPolicyFor(structuredClone(user));
+      const formatContent = policy.formatContent || (content => content);
+      const requiredContext = [...new Set([...(hasSelectedSkill(user.attachments) ? [SKILL_PROVIDER_ID] : []), ...(policy.requiredContext || [])])];
+      if (requiredContext.length && !contextAssembler) throw new Error('本轮 Skill 或必需上下文能力未装配，无法执行所选任务。');
       const ref = run.ref;
       if (!profile) { run.fail(new Error('请先在设置中添加至少一个模型。')); return null; }
       const fixedProfile = structuredClone(profile);
-      const researchEnabled = typeof researchTools === 'function' && fixedProfile.webSearchEnabled !== false;
-      const requestPage = user.pageContextEnabled === false
+      const researchEnabled = policy.research !== false && typeof researchTools === 'function' && fixedProfile.webSearchEnabled !== false;
+      const requestPage = policy.isolated || user.pageContextEnabled === false
         || (user.pageSource && !sourceMatchesPage(user.pageSource, conversation.pageContext))
         ? null : structuredClone(pageForResearchScope(conversation.pageContext, user.readingPolicy ?? user.researchEnabled));
       const question = user.displayContent || user.content || '';
@@ -118,27 +92,35 @@ export function createChatService({ repository, runner, modelGateway, contextAss
         reasoningFinishedAt = now();
       };
       run.update({ content: '', reasoning: '', reasoningSeconds: 0, reasoningStartedAt: undefined,
-        reasoningFinishedAt: undefined, model: fixedProfile.model, modelId: fixedProfile.model, reasoningEffort: fixedProfile.reasoningEffort });
+        reasoningFinishedAt: undefined, model: fixedProfile.model, modelId: fixedProfile.model, reasoningEffort: fixedProfile.reasoningEffort,
+        ...policy.assistantFields });
       const result = await run.execute(async () => {
-        run.phase('compressing');
-        await compress(conversation, assistant.id, { signal: run.signal, profile: fixedProfile, modelRun: connection });
-        run.assertCurrent();
-        // Optional providers must leave room for tool schemas and the loop's
-        // own instructions instead of making a previously valid answer fail.
-        const requestReserve = Number(fixedProfile.maxTokens || 0) + (researchEnabled ? 1200 : 0);
-        let messages = fitMessagesToBudget(conversation, requestMessagesFor(conversation, assistant.id, requestPage), contextWindow, requestReserve);
+        let collected = { blocks: [], issues: [] };
         if (contextAssembler) {
           run.phase('collecting-context');
-          const collected = await contextAssembler.collect({ question,
+          collected = await contextAssembler.collect({ question,
             selection: user.selection || null, attachments: user.attachments || [] }, {
             ...ref, signal: run.signal, deadlineAt: run.deadlineAt, mode: 'chat',
             model: connection.modelInfo, target: pageSourceFor(requestPage),
             budget: { contextWindow, maxTokens: fixedProfile.maxTokens || 0 },
           }, { required: requiredContext });
           run.assertCurrent();
-          messages = appendProviderContext(messages, collected.blocks, contextWindow, requestReserve, { required: requiredContext });
           if (collected.issues.length) run.update({ contextIssues: collected.issues.map(issue => ({ providerId: issue.providerId || issue.id, code: issue.code })) });
         }
+        // Required provider data is known before compression. Reserve it along
+        // with the real tool definitions/instructions and configured output.
+        const requestReserve = Number(fixedProfile.maxTokens || 0)
+          + (researchEnabled ? researchContextReserve({ fetchEnabled: fixedProfile.webFetchEnabled !== false, now: now() }) : 0);
+        const baseReserve = requestReserve + requiredContextReserve(collected.blocks, requiredContext);
+        if (!policy.isolated) {
+          run.phase('compressing');
+          await compress(conversation, assistant.id, { signal: run.signal, profile: fixedProfile, modelRun: connection,
+            reserveTokens: baseReserve, contextWindow, page: requestPage });
+        }
+        run.assertCurrent();
+        const requestConversation = policy.isolated ? { messages: [user, assistant] } : conversation;
+        let messages = fitMessagesToBudget(requestConversation, requestMessagesFor(requestConversation, assistant.id, requestPage), contextWindow, baseReserve);
+        messages = appendProviderContext(messages, collected.blocks, contextWindow, requestReserve, { required: requiredContext });
         run.phase('waiting-model');
         timer = every(() => {
           if (reasoningSegmentAt !== null) run.update({ reasoningSeconds: duration() });
@@ -148,7 +130,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
             if (!full) return;
             pauseReasoning();
             run.phase('answering');
-            if (run.update({ content: full, reasoningFinishedAt: reasoningFinishedAt || undefined, reasoningSeconds: duration() })) repository.schedule(ref);
+            if (run.update({ content: formatContent(full), reasoningFinishedAt: reasoningFinishedAt || undefined, reasoningSeconds: duration() })) repository.schedule(ref);
           },
           onReasoning: (_delta, full) => {
             reasoning = full;
@@ -159,7 +141,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
               reasoningFinishedAt: reasoningFinishedAt || undefined, reasoningSeconds: duration() })) repository.schedule(ref);
           },
         };
-        const pageSources = readSourcesForPage(requestPage, favicon);
+        const pageSources = [...(policy.sources || []), ...readSourcesForPage(requestPage, favicon)];
         const result = researchEnabled
           ? await runResearchAnswer({ connection, run, messages, createTools: researchTools, contextWindow,
             maxTokens: fixedProfile.maxTokens, fetchEnabled: fixedProfile.webFetchEnabled !== false, now, ...callbacks,
@@ -176,9 +158,10 @@ export function createChatService({ repository, runner, modelGateway, contextAss
           const repo = conversation.repository;
           sources.push({ title: `${repo.owner}/${repo.name}`, url: repo.url, domain: 'github.com', favicon: 'https://github.githubassets.com/favicons/favicon.svg' });
         }
-        return { content: result.content, reasoning, reasoningSeconds: duration(), sources, pageSource: pageSourceFor(requestPage) };
+        return { content: formatContent(result.content), reasoning, reasoningSeconds: duration(), sources,
+          pageSource: pageSourceFor(requestPage), ...policy.assistantFields, ...policy.completionFields };
       });
-      if (run.status === 'completed' && result?.content) void suggest(ref, fixedProfile, result.content);
+      if (policy.suggestions !== false && run.status === 'completed' && result?.content) void suggest(ref, fixedProfile, result.content);
       return result;
     } catch (error) { run.fail(friendlyError(error)); return null; }
     finally { clearEvery(timer); if (!modelRun) connection?.dispose(); }

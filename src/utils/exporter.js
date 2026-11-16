@@ -1,3 +1,5 @@
+import { presentVideoNotesMessage } from '../sidepanel/features/video-notes/video-notes-presentation.js';
+
 function string(value) {
   return typeof value === 'string' ? value : '';
 }
@@ -73,7 +75,8 @@ export function exportConversationMarkdown(conversation) {
   if (createdAt) lines.push(`Created: ${inline(createdAt)}`, '');
 
   const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
-  for (const message of messages) {
+  for (const storedMessage of messages) {
+    const message = presentVideoNotesMessage(storedMessage, messages);
     if (!message || typeof message !== 'object') continue;
     const role = message.role === 'assistant' ? 'Assistant' : 'User';
     lines.push(`## ${role}`, '');

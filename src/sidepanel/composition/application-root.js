@@ -10,6 +10,9 @@ import { readSourcesForPage } from '../../utils/research-context.js';
 import { createResearchToolSession } from '../features/web-research/research-tools.js';
 import { createPublicResearchTransport } from '../features/web-research/public-research-transport.js';
 import { createSkillContextProvider } from '../features/skills/skill-context.js';
+import { createVideoContextProvider } from '../features/video-notes/transcript-context.js';
+import { createVideoNotesCommand, videoReplyPolicy } from '../features/video-notes/video-notes-command.js';
+import { readVideoTranscript as readTranscriptFromPort } from '../features/video-notes/video-reading-client.js';
 
 export function readingDiagnosticEvidence(page) {
   return { hasPageContext: Boolean(page?.text?.trim()), textChars: page?.text?.length || 0,
@@ -21,6 +24,7 @@ export function readingDiagnosticEvidence(page) {
  * descriptors; they never need to change submit/retry or the model stream. */
 export function createSidepanelApplication({ state, conversationSaver, browser, agentSlot,
   modelGateway = createModelGateway(), contextProviders = [],
+  readVideoTranscript = (target, options) => readTranscriptFromPort(browser?.connect, target, options),
   researchTools = createResearchToolSession, researchOptions = {}, recordDiagnostic = () => {}, ...ports }) {
   // Config loads after this composition and may change later. ChatService
   // checks the search setting from each turn's frozen model profile.
@@ -46,19 +50,21 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
       summarize: result => name === 'ensureConfigured' ? { ok: result === true }
         : name === 'getDirectoryInfo' ? { permissionGranted: result?.granted === true } : { ok: Boolean(result?.id) } });
   }
-  const contextAssembler = createContextAssembler({ providers: [createSkillContextProvider(), ...contextProviders] });
+  const pageCommands = Object.freeze({ 'video-notes': createVideoNotesCommand({ readTranscript: readVideoTranscript }) });
+  const contextAssembler = createContextAssembler({ providers: [createSkillContextProvider(), createVideoContextProvider(), ...contextProviders] });
   const contextService = createContextService({ state, modelGateway, profileFor: ports.profileFor,
     createId: ports.makeId, now: ports.now,
     save: conversation => conversationSaver.schedule(conversation),
     onEvent: event => emit(event.type === 'settled' ? { ...event, type: 'compression-settled' } : event) });
   const chatService = createChatService({ repository, runner, modelGateway, contextAssembler,
+    replyPolicyFor: videoReplyPolicy,
     compress: contextService.compress, researchTools: researchTools ? options => {
       const session = researchTools({ ...options, fallbackSearch: publicResearch.search, fallbackFetch: publicResearch.fetch });
       return { ...session, execute: diagnostics.wrap(session.execute, { event: 'research', source: 'web-research', stage: 'research',
         summarize: result => ({ resultCount: result?.sources?.length || (result?.source ? 1 : 0) }) }) };
     } : null });
   const conversations = createConversationService({ state, browser, agentSlot, runner, repository,
-    modelGateway, replyService: chatService, ...observedPorts });
+    modelGateway, replyService: chatService, ...observedPorts, pageCommands });
   conversations.subscribe(emit);
   runner.subscribe(event => { try { diagnostics.observe(event); } catch { /* UI remains independent of diagnostics. */ } emit({ ...event, type: `run:${event.type}` }); });
   return Object.freeze({ conversations, runner, repository, contextService, contextAssembler, modelGateway,

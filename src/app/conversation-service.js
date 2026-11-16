@@ -19,6 +19,7 @@ import { assertPageTarget } from '../utils/page-target.js';
 import { captureReadingHistory, normalizeReadingOptions, readingOptionsAtSubmission } from '../utils/reading-options.js';
 import { assertImageAttachmentsAvailable } from '../utils/attachments.js';
 import { selectedSkill } from '../sidepanel/features/skills/skill-context.js';
+import { selectedVideoTranscript } from '../sidepanel/features/video-notes/video-request.js';
 
 /** Application command service. The state object is a compatibility projection
  * consumed by the existing presenters; browser/storage are injected ports.
@@ -32,6 +33,7 @@ export function createConversationService(deps) {
     now = () => new Date().toISOString(), truncateText = text => String(text).slice(0, 34),
     waitWithTimeout = awaitWithTimeout } = deps;
   const agentSlot = deps.agentSlot;
+  const pageCommands = deps.pageCommands || {};
   const listeners = new Set();
   let disposed = false;
   const profiles = new Map(), connections = new Map();
@@ -107,33 +109,52 @@ export function createConversationService(deps) {
   async function sendMessage(text = draft.value, options = {}) {
     if (disposed) return;
     const submittedText = plainText(text).trim();
+    let command = null, commandRequest = null, commandResult = null;
+    if (options.pageCommand) {
+      try {
+        command = Object.hasOwn(pageCommands, options.pageCommand.kind) ? pageCommands[options.pageCommand.kind] : null;
+        if (!command) throw new Error('这个页面命令尚不可用，请重新打开侧栏。');
+        commandRequest = command.capture(options.pageCommand);
+      } catch (error) { toast(error.message, 'error'); return; }
+      if (state.disablePageContext) { toast('请先选中当前页面，再使用视频笔记。'); return; }
+      if (options.fromQueue || state.generatingId || state.isSubmitting || state.compressing || agentSlot?.isBusy()) {
+        toast('请等待当前任务完成或停止后，再整理视频笔记。'); return;
+      }
+    }
+    // Explicit page commands own their input; they never consume a concurrent draft.
+    const preserveDraft = Boolean(command);
     const modelId = options.modelId || state.selectedModelId;
     const effort = options.effort || state.selectedEffort;
-    let content = submittedText;
-    const requestSource = normalizeDraftSource(options.fromQueue || Object.hasOwn(options, 'requestSource')
+    const commandProfile = command ? structuredClone(profileFor(modelId, effort)) : null;
+    let content = command?.prompt || submittedText;
+    const requestSource = preserveDraft ? null : normalizeDraftSource(options.fromQueue || Object.hasOwn(options, 'requestSource')
       ? options.requestSource : state.draftSource);
     const independent = requestSource?.scope === 'independent';
-    let directModelRequest = independent || (options.directModelRequest ?? (state.directModelRequest === content));
-    let attachments = structuredClone(options.fromQueue ? options.attachments || [] : state.attachments);
-    const capturedSelection = independent ? null : options.fromQueue ? options.selection : state.pageSelection;
+    let directModelRequest = !command && (independent || (options.directModelRequest ?? (state.directModelRequest === content)));
+    let attachments = preserveDraft ? [] : structuredClone(options.fromQueue ? options.attachments || [] : state.attachments);
+    const capturedSelection = preserveDraft || independent ? null : options.fromQueue ? options.selection : state.pageSelection;
     const selection = capturedSelection ? structuredClone(capturedSelection) : null;
-    const agentTask = !independent && Boolean(options.agentTask ?? agentSlot?.isMode());
-    const pageContextEnabled = !agentTask && (options.pageContextEnabled ?? !state.disablePageContext) && !directModelRequest;
+    const agentTask = !command && !independent && Boolean(options.agentTask ?? agentSlot?.isMode());
+    const pageContextEnabled = !command && !agentTask && (options.pageContextEnabled ?? !state.disablePageContext) && !directModelRequest;
     let readingPolicy = (!independent && options.readingPolicy) || readingPolicyForTurn({ question: submittedText, pageContextEnabled,
       directModelRequest, selection, attachments, mode: agentTask ? 'agent' : 'chat', pageTitle: state.activePageSignal?.title });
     const readingOptions = readingOptionsAtSubmission(state, options, pageContextEnabled && readingPolicy.scope !== 'none');
     const readingHistory = options.fromQueue && options.readingHistory
       ? captureReadingHistory(options.readingHistory) : captureReadingHistory(state.conversation?.messages);
     const researchEnabled = false; // Legacy field; new turns use the versioned reading policy.
-    const replaceActiveReply = state.directReplaceReply === true;
-    state.directReplaceReply = false;
+    const replaceActiveReply = !preserveDraft && state.directReplaceReply === true;
+    if (!preserveDraft) state.directReplaceReply = false;
 
     if (!content && !attachments.length && !selection?.text) return;
     if (!state.ready || state.preparingAttachments) return;
-    try { assertImageAttachmentsAvailable(attachments); selectedSkill(attachments, { agentTask }); }
+    try {
+      assertImageAttachmentsAvailable(attachments);
+      selectedSkill(attachments, { agentTask });
+      selectedVideoTranscript(attachments, { agentTask });
+    }
     catch (error) { toast(error.message, 'error'); return; }
     // Capture the target at the click/queue event, before configuration or storage awaits.
-    const pageTargetPromise = independent ? Promise.resolve(null) : options.pageTargetPromise || capturePageTarget({
+    const pageTargetPromise = command || independent ? Promise.resolve(null) : options.pageTargetPromise || capturePageTarget({
       queryActiveTab: () => browser.queryActiveTab(),
       sendMessage: message => browser.sendMessage(message),
       bindDocument: agentTask || (pageContextEnabled && readingPolicy.scope !== 'none'),
@@ -147,7 +168,7 @@ export function createConversationService(deps) {
       return;
     }
 
-    const stoppedReply = !options.fromQueue && !replaceActiveReply ? stoppedReplyForPrompt(state.conversation?.messages, submittedText, {
+    const stoppedReply = !command && !options.fromQueue && !replaceActiveReply ? stoppedReplyForPrompt(state.conversation?.messages, submittedText, {
       pageSource: pageContextEnabled ? pageSourceFor(state.activePageSignal) : null,
       pageContextEnabled, researchEnabled, readingPolicy, readingOptions, agentTask, selection, attachments,
     }) : null;
@@ -160,7 +181,8 @@ export function createConversationService(deps) {
       return;
     }
 
-    const fingerprint = sendFingerprint({ text: submittedText, selection, attachments, agentTask, pageContextEnabled, readingPolicy, readingOptions });
+    const fingerprint = command ? JSON.stringify(commandRequest)
+      : sendFingerprint({ text: submittedText, selection, attachments, agentTask, pageContextEnabled, readingPolicy, readingOptions });
     if (!options.fromQueue && !replaceActiveReply && isDuplicateSend({
       fingerprint,
       lastFingerprint: state.lastSentFingerprint,
@@ -223,7 +245,7 @@ export function createConversationService(deps) {
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
     state.submissionController = submissionController;
     state.submissionOwner = submissionOwner;
-    if (!agentTask && pageContextEnabled && readingPolicy.scope !== 'none') pagePreparations.add(submissionOwner);
+    if (command || (!agentTask && pageContextEnabled && readingPolicy.scope !== 'none')) pagePreparations.add(submissionOwner);
     state.lastSentFingerprint = fingerprint;
     state.lastSentAt = Date.now();
     const releaseSendLocks = () => {
@@ -252,6 +274,7 @@ export function createConversationService(deps) {
         );
         renderConversation();
       }
+      if (preserveDraft) { updateComposer(); return; }
       const hasNewDraft = Boolean(draft.value.trim());
       draft.value = hasNewDraft ? draft.value + '\n\n' + content : content;
       // Do not transfer a failed submission's scope onto text drafted later.
@@ -264,7 +287,7 @@ export function createConversationService(deps) {
       updateComposer();
     };
     // 立即清空输入框并重置尺寸，提供即时响应感，阻断短时间重复点击/回车
-    if (!options.fromQueue) {
+    if (!options.fromQueue && !preserveDraft) {
       draft.value = '';
       state.draft = '';
       state.draftSource = null;
@@ -275,8 +298,14 @@ export function createConversationService(deps) {
     updateComposer();
 
     try {
-      const intendedTab = pageContextEnabled || agentTask ? await waitForPreparation(pageTargetPromise, '获取当前页面超时，请重试。') : null;
+      const intendedTab = command
+        ? commandRequest.target.documentId ? commandRequest.target : await waitForPreparation(capturePageTarget({
+          queryActiveTab: async () => ({ ...commandRequest.target, id: commandRequest.target.tabId }),
+          sendMessage: message => browser.sendMessage(message), signal: submissionController.signal,
+        }), '确认原视频页面超时，请重试。')
+        : pageContextEnabled || agentTask ? await waitForPreparation(pageTargetPromise, '获取当前页面超时，请重试。') : null;
       assertSubmission();
+      if (command) commandRequest = command.capture({ ...commandRequest, target: intendedTab });
       earlyConversation = await waitForPreparation(ensureConversation(submissionController.signal), '准备会话超时，输入已保留，请重试。');
       assertSubmission();
       // Queueing is also possible while the first conversation is being created.
@@ -294,7 +323,8 @@ export function createConversationService(deps) {
           id: makeId(),
           role: 'user',
           content: messageWithSelection(content, selection),
-          displayContent: content,
+          displayContent: command?.label || content,
+          ...(command ? { pageCommand: structuredClone(commandRequest) } : {}),
           pageContextEnabled: pageContextEnabled && readingPolicy.scope !== 'none',
           researchEnabled,
           readingPolicy,
@@ -318,23 +348,40 @@ export function createConversationService(deps) {
           modelId: activeChatProfile()?.id || '',
           reasoningEffort: state.selectedEffort,
           optimistic: true,
+          ...command?.assistantFields,
         };
         earlyConversation.messages.push(earlyUserMessage, earlyAssistantMessage);
         submissionOwner.bind({ conversation: earlyConversation, user: earlyUserMessage, assistant: earlyAssistantMessage });
         if (!earlyConversation.title || earlyConversation.title === '新对话') {
-          earlyConversation.title = conversationTitle(content, attachments);
+          earlyConversation.title = conversationTitle(command?.label || content, attachments);
         }
         renderConversation({ scroll: true });
         setAssistantPhase(earlyAssistantMessage, 'preparing');
         // Do not persist the optimistic streaming bubble; storage normalization
         // would turn it into a stopped message before the request starts.
       }
-      if (!await waitForPreparation(ensureConfigured(submissionController.signal), '读取模型配置超时，请重试。')) {
-        restoreDraft();
-        return;
+      if (command) {
+        setAssistantPhase(earlyAssistantMessage, 'reading');
+        commandResult = await waitForPreparation(command.prepare(commandRequest, {
+          run: submissionOwner, allowPageRead: () => !state.disablePageContext,
+        }), '读取视频字幕超时，请重试。', 21000);
+        assertSubmission();
+        commandRequest = commandResult.request;
+        attachments = structuredClone(commandResult.attachments);
+        const accepted = repository.get(submissionOwner.ref);
+        if (accepted) { accepted.user.pageCommand = structuredClone(commandRequest); accepted.user.attachments = structuredClone(attachments); }
+        pagePreparations.delete(submissionOwner);
+      }
+      if (!commandResult?.reply) {
+        if (!await waitForPreparation(ensureConfigured(submissionController.signal), '读取模型配置超时，请重试。')) {
+          if (command) throw new Error('字幕已读取，请在设置中添加模型后重试。');
+          restoreDraft();
+          return;
+        }
+        assertSubmission();
+        profiles.set(submissionOwner.runId, command ? commandProfile : structuredClone(profileFor(modelId, effort)));
       }
       assertSubmission();
-      profiles.set(submissionOwner.runId, structuredClone(profileFor(modelId, effort)));
       const savedSelectedImages = !agentTask ? retainedSelectionVisuals(selection, attachments) : [];
       if (!agentTask && selection?.visuals?.length && (!pageContextEnabled || readingPolicy.scope === 'none')) {
         throw new Error('选区包含图片，请开启“基于当前页”后重新发送。');
@@ -424,7 +471,7 @@ export function createConversationService(deps) {
           // Privileged pages may block script execution; keep the captured text.
         }
       }
-      if (!pageContextEnabled || readingPolicy.scope === 'none') state.pendingPage = null;
+      if (!preserveDraft && (!pageContextEnabled || readingPolicy.scope === 'none')) state.pendingPage = null;
       let requestPage = null;
       if (pageContextEnabled && readingPolicy.scope !== 'none') {
         const target = intendedTab;
@@ -502,7 +549,7 @@ export function createConversationService(deps) {
       }
       const firstMessage = conversation.messages.length === 0;
       if (requestPage) conversation.pageContext = requestPage;
-      state.pendingPage = null;
+      if (!preserveDraft) state.pendingPage = null;
       renderContextChip();
       setAssistantPhase(earlyAssistantMessage, 'saving');
       const storage = await waitForPreparation(getDirectoryInfo(), '获取保存位置超时，请重试。');
@@ -530,7 +577,8 @@ export function createConversationService(deps) {
         earlyUserMessage.readingOptions = readingOptions;
         if (requestSource) earlyUserMessage.requestSource = requestSource;
         earlyUserMessage.content = messageText;
-        earlyUserMessage.displayContent = content;
+        earlyUserMessage.displayContent = command?.label || content;
+        if (command) earlyUserMessage.pageCommand = structuredClone(commandRequest);
         earlyUserMessage.selection = selectionForMessage;
         earlyUserMessage.includeVisual = includeVisual;
         earlyUserMessage.attachments = attachments.slice(0, 6);
@@ -546,7 +594,8 @@ export function createConversationService(deps) {
             readingOptions,
             ...(requestSource ? { requestSource } : {}),
             agentTask,
-            displayContent: content,
+            displayContent: command?.label || content,
+            ...(command ? { pageCommand: structuredClone(commandRequest) } : {}),
             selection: selectionForMessage,
             status: 'complete',
             createdAt: now(),
@@ -554,22 +603,24 @@ export function createConversationService(deps) {
             ...(attachments.length ? { attachments: attachments.slice(0, 6) } : {}),
           };
         earlyAssistantMessage = { id: makeId(), role: 'assistant', content: '', status: 'streaming', createdAt: now(), model: activeChatProfile()?.id || '', modelId: activeChatProfile()?.id || '', reasoningEffort: state.selectedEffort, selectionUsed: selectionForMessage };
+        Object.assign(earlyAssistantMessage, command?.assistantFields);
         conversation.messages.push(earlyUserMessage, earlyAssistantMessage);
         submissionOwner.bind({ conversation, user: earlyUserMessage, assistant: earlyAssistantMessage });
       }
-      if (firstMessage) conversation.title = conversationTitle(content || selectionForMessage?.text || '', attachments);
+      if (firstMessage) conversation.title = conversationTitle(command?.label || content || selectionForMessage?.text || '', attachments);
       if (selectionForMessage && !options.fromQueue) {
         state.pageSelection = selectionForMessage;
         renderPageSelection();
       }
-      if (!options.fromQueue) state.attachments = [];
+      if (!options.fromQueue && !preserveDraft) state.attachments = [];
       renderAttachments();
       if (earlyUserMessage && earlyAssistantMessage) finalizePendingTurn(conversation, earlyUserMessage.id, earlyAssistantMessage.id);
       renderConversation({ scroll: true });
       setAssistantPhase(conversation.messages.at(-1), 'saving');
       await waitForPreparation((submissionOwner.ref ? repository.save(submissionOwner.ref, { required: true }) : saveCurrent({ required: true })), '保存消息超时，尚未请求模型，请重试。');
       assertSubmission();
-      await generateReply(earlyAssistantMessage, submissionOwner);
+      if (commandResult?.reply) { submissionOwner.complete(commandResult.reply); renderConversation(); }
+      else await generateReply(earlyAssistantMessage, submissionOwner);
     } catch (error) {
       const cancelled = error.name === 'AbortError' || submissionController.signal.aborted;
       submissionOwner.fail(cancelled ? new DOMException('请求已取消。', 'AbortError') : error);
@@ -725,6 +776,20 @@ export function createConversationService(deps) {
     const conversation = state.conversation;
     if (!conversation?.messages.some((message) => message.id === assistantId && message.role === 'assistant')) return;
     if (conversation.messages.find(message => message.id === assistantId)?.agent) return;
+    const retryIndex = conversation.messages.findIndex(message => message.id === assistantId);
+    const originalQuestion = conversation.messages.slice(0, retryIndex).findLast(message => message.role === 'user');
+    let command = null, commandRequest = null, commandAttachments = [];
+    if (originalQuestion?.pageCommand) {
+      try {
+        command = Object.hasOwn(pageCommands, originalQuestion.pageCommand.kind) ? pageCommands[originalQuestion.pageCommand.kind] : null;
+        if (!command) throw new Error('本轮页面命令尚不可用，不能改用普通提问重试。');
+        // Refuse unknown versions before replacing any existing answer, and
+        // capture a private copy before the retry's first asynchronous wait.
+        const snapshot = command.captureRetry(originalQuestion);
+        commandRequest = snapshot.request;
+        commandAttachments = snapshot.attachments;
+      } catch (error) { toast(error.message, 'error'); return; }
+    }
     stopActiveReply();
     state.messageQueue = [];
     const submissionOwner = runner.begin({ commandId: makeId(), mode: 'chat' });
@@ -736,15 +801,17 @@ export function createConversationService(deps) {
     state.sendInFlight = true;
     renderQueueBar();
     updateComposer();
-    const retryIndex = conversation.messages.findIndex(message => message.id === assistantId);
-    const originalQuestion = conversation.messages.slice(0, retryIndex).findLast(message => message.role === 'user');
+    const commandNeedsRead = command?.needsRead({ attachments: commandAttachments });
+    const commandProfile = command ? structuredClone(profileFor(modelId, effort)) : null;
+    let commandResult = null;
     // Freeze verified evidence before any configuration, browser or storage wait.
-    const retainedPage = retainedPageForRetry(conversation, originalQuestion);
-    if (originalQuestion && readingPolicyForRetry(originalQuestion).scope !== 'none'
+    const retainedPage = commandRequest ? null : retainedPageForRetry(conversation, originalQuestion);
+    if (commandNeedsRead) pagePreparations.add(submissionOwner);
+    if (!commandRequest && originalQuestion && readingPolicyForRetry(originalQuestion).scope !== 'none'
       && (originalQuestion.pageContextEnabled === true || originalQuestion.pageSource?.url)
       && !(retainedPage && state.disablePageContext)) pagePreparations.add(submissionOwner);
     const readingHistory = captureReadingHistory(conversation.messages.slice(0, Math.max(0, conversation.messages.indexOf(originalQuestion))));
-    const retryTargetPromise = originalQuestion
+    const retryTargetPromise = commandRequest ? Promise.resolve({ target: null, page: null }) : originalQuestion
       ? prepareRetryContext({ ...originalQuestion }, retainedPage, submissionController.signal).then(context => {
         if (context.page) pagePreparations.delete(submissionOwner);
         return context;
@@ -775,14 +842,17 @@ export function createConversationService(deps) {
       if (signal.aborted) cancel();
     });
     try {
-      const configured = await waitWithTimeout(ensureConfigured(submissionController.signal), { signal: submissionController.signal, message: '读取模型配置超时，请重试。' });
-      assertCurrent();
-      if (!configured) return;
-      profiles.set(submissionOwner.runId, structuredClone(profileFor(modelId, effort)));
+      if (!command) {
+        const configured = await waitWithTimeout(ensureConfigured(submissionController.signal), { signal: submissionController.signal, message: '读取模型配置超时，请重试。' });
+        assertCurrent();
+        if (!configured) return;
+        profiles.set(submissionOwner.runId, structuredClone(profileFor(modelId, effort)));
+      }
       const messages = conversation.messages;
       const assistant = find(messages, (message) => message.id === assistantId);
       if (!assistant || assistant.role !== 'assistant') return;
       const replacement = { id: makeId(), role: 'assistant', content: '', status: 'streaming', requestPhase: 'preparing', createdAt: now(), model: activeChatProfile()?.id || '', modelId: activeChatProfile()?.id || '', reasoningEffort: state.selectedEffort };
+      Object.assign(replacement, command?.assistantFields);
       const replacementMessages = messagesForRetry(messages, assistantId, replacement);
       if (!replacementMessages) throw new Error('找不到这条回答对应的提问，无法重新生成。');
       const question = replacementMessages.findLast((message) => message.role === 'user');
@@ -797,7 +867,24 @@ export function createConversationService(deps) {
       submissionOwner.bind({ conversation, user: retained.user, assistant: next });
       renderConversation({ scroll: true });
       setAssistantPhase(next, 'preparing');
-      if (retainedReading) {
+      if (command) {
+        setAssistantPhase(next, commandNeedsRead ? 'reading' : 'preparing');
+        commandResult = await waitWithTimeout(command.prepare(commandRequest, {
+          attachments: commandAttachments, run: submissionOwner, allowPageRead: () => !state.disablePageContext,
+        }), { signal: submissionController.signal, timeoutMs: 21000, message: '读取原视频字幕超时，请重试。' });
+        assertCurrent();
+        retained.user.pageCommand = structuredClone(commandResult.request);
+        retained.user.attachments = structuredClone(commandResult.attachments);
+        pagePreparations.delete(submissionOwner);
+        if (!commandResult.reply) {
+          const configured = await waitWithTimeout(ensureConfigured(submissionController.signal), {
+            signal: submissionController.signal, message: '读取模型配置超时，请重试。',
+          });
+          assertCurrent();
+          if (!configured) throw new Error('字幕已保留，请在设置中添加模型后重试。');
+          profiles.set(submissionOwner.runId, commandProfile);
+        }
+      } else if (retainedReading) {
         pagePreparations.delete(submissionOwner);
         conversation.pageContext = retainedReading;
         state.pendingPage = null;
@@ -826,7 +913,8 @@ export function createConversationService(deps) {
       await waitWithTimeout((submissionOwner.ref ? repository.save(submissionOwner.ref, { required: true }) : saveCurrent({ required: true })), { signal: submissionController.signal, message: '保存消息超时，尚未请求模型，请重试。' });
       assertCurrent();
       if (!conversation.messages.includes(next)) return;
-      await waitForCurrent(generateReply(next, submissionOwner));
+      if (commandResult?.reply) { submissionOwner.complete(commandResult.reply); renderConversation(); }
+      else await waitForCurrent(generateReply(next, submissionOwner));
     } catch (error) {
       const cancelled = submissionController.signal.aborted || error.name === 'AbortError';
       submissionOwner.fail(cancelled ? new DOMException('请求已取消。', 'AbortError') : error);

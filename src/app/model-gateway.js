@@ -6,6 +6,7 @@ import {
   streamChatCompletion,
   streamChatToolCompletion,
 } from '../utils/llm-client.js';
+import { requestTokenUsage } from '../utils/token-usage.js';
 
 export const MODEL_PURPOSES = Object.freeze([
   'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions',
@@ -284,7 +285,11 @@ export function createModelGateway({
       controller.signal.addEventListener('abort', cancelRun, { once: true });
       if (!live()) return entry.promise;
       entry.timer = schedule(timeout, Math.max(0, deadline - now()));
-      emit('model.request.started', entry);
+      // Publish only numbers from the final frozen request, after providers,
+      // tools and trimming. Auxiliary requests cannot replace answer usage.
+      const inputUsage = purpose === 'answer' ? freeze(requestTokenUsage({ messages: input.messages,
+        tools: input.tools, contextWindow: config.contextLength, maxTokens: input.maxTokens })) : null;
+      emit('model.request.started', entry, inputUsage ? { inputUsage } : {});
       Promise.resolve().then(() => {
         if (!live()) return undefined;
         return transport({ purpose, profile: config, request: input, signal: requestController.signal,

@@ -1,4 +1,5 @@
 import { assertImageAttachmentsAvailable, safeAttachmentDataUrl } from '../../../utils/attachments.js';
+import { presentVideoNotesMessage, videoAttachmentName } from '../video-notes/video-notes-presentation.js';
 
 const MAX_TURNS = 50;
 const MAX_TEXT = 120_000;
@@ -23,7 +24,7 @@ function sourceFor(value) {
 
 function attachmentFor(file) {
   const image = file?.type === 'image' && safeAttachmentDataUrl(file.dataUrl);
-  return { name: text(file?.name) || '附件', type: file?.type === 'image' ? 'image' : 'document',
+  return { name: text(videoAttachmentName(file)) || '附件', type: file?.type === 'image' ? 'image' : 'document',
     ...(image ? { dataUrl: image } : file?.type === 'image' ? {
       ...(text(file.imagePath) ? { imagePath: file.imagePath } : {}),
       ...(text(file.loadError) ? { loadError: file.loadError } : {}),
@@ -35,7 +36,9 @@ export function createExportSnapshot(conversation) {
   if (!conversation?.id) throw new Error('当前没有可导出的对话。');
   const turns = [];
   let turn;
-  for (const message of Array.isArray(conversation.messages) ? conversation.messages : []) {
+  const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
+  for (const storedMessage of messages) {
+    const message = presentVideoNotesMessage(storedMessage, messages);
     if (message?.role === 'user') {
       const index = turns.length + 1;
       turn = { id: `turn-${index}`, index,

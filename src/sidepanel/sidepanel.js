@@ -56,10 +56,11 @@ import {
   restoreConversationDirectory,
 } from '../utils/local-directory.js';
 import {
-  contextUsageFor,
   contextWindowFor,
   formatTokenCount,
 } from '../utils/context.js';
+import { estimateDraftContext, createContextUsageTracker } from './features/context/context-usage.js';
+import { renderContextUsageView } from './features/context/context-usage-view.js';
 import { normalizeProviderConfig, requestProfile } from '../utils/profiles.js';
 import { exportConversationMarkdown } from '../utils/exporter.js';
 import { createMessageCopy } from './features/messages/message-copy.js';
@@ -80,6 +81,9 @@ import { readPdfFromUrl } from '../utils/pdf-reader.js';
 import { findOpenTabForSource, pageTargetFields } from '../utils/page-target.js';
 import { normalizePageUrl, resolvePageSource } from './features/page-reading/page-source.js';
 import { createComposerAddMenu } from './features/composer/composer-add-menu.js';
+import { createVideoNotesEntry } from './features/video-notes/video-notes-entry.js';
+import { presentVideoNotesMessage } from './features/video-notes/video-notes-presentation.js';
+import { createVideoTimestampNavigation } from './features/video-notes/video-timestamp-navigation.js';
 import './features/composer/composer-add-menu.css';
 import { createNetworkReadingClient } from './features/page-reading/network-reading-client.js';
 import { createSupplementalReader } from './features/page-reading/supplemental-reading.js';
@@ -186,6 +190,7 @@ let historyRefreshVersion = 0;
 let historyOrganization = null;
 let deletedActiveConversationId = null;
 let selectionChatSessions = null;
+let contextUsageRefreshTimer = null;
 const conversationOrganization = createConversationOrganizationStore();
 
 const state = {
@@ -210,6 +215,7 @@ const state = {
   compressing: false,
   contextClosed: true,
   contextUsage: null,
+  contextUsageScope: 'preview',
   pageSelection: null,
   activePageSignal: null,
   directModelRequest: '',
@@ -233,6 +239,8 @@ const state = {
 };
 
 let composerAddMenu = null;
+let videoNotesEntry = null;
+let videoTimestampNavigation = null;
 
 const now = () => new Date().toISOString();
 const makeId = () => crypto.randomUUID();
@@ -398,6 +406,7 @@ const pastedText = createPastedTextDraft({ input, container: $('#pasted-text-lis
   onChange: value => {
     if (!String(state.draft || '').trim() && value.trim()) state.draftPageTarget = state.activePageSignal ? { ...state.activePageSignal } : null;
     state.draft = value;
+    state.contextUsageScope = 'preview';
     if (!value.trim()) state.draftSource = null;
     resizeInput();
     updateComposer();
@@ -609,6 +618,7 @@ function clearPageSelection() {
 function renderAttachments() {
   renderAttachmentList(state.attachments);
   $('#attach-button').disabled = state.preparingAttachments;
+  scheduleContextUsageRefresh();
 }
 
 function toggleAttachMenu(open = $('#attach-menu').hidden) {
@@ -893,15 +903,19 @@ function activeContextWindow() {
 }
 
 function currentContextUsage({ beforeAssistantId } = {}) {
-  if (!state.conversation) {
-    return contextUsageFor({ messages: [] }, beforeAssistantId, state.pendingPage, activeContextWindow());
-  }
-  return contextUsageFor(
-    state.conversation,
-    beforeAssistantId,
-    state.pendingPage || state.conversation.pageContext,
-    activeContextWindow(),
-  );
+  const recent = contextUsageTracker.get(state.conversation);
+  if (state.contextUsageScope === 'request' && recent) return recent;
+  return estimateDraftContext({ conversation: state.conversation, beforeAssistantId,
+    draft: state.draft, attachments: state.attachments, selection: state.pageSelection,
+    page: state.pendingPage || state.conversation?.pageContext, target: state.activePageSignal,
+    pageEnabled: !state.disablePageContext,
+    independent: Boolean(normalizeDraftSource(state.draftSource)) || Boolean(state.directModelRequest && state.directModelRequest === state.draft),
+    profile: activeChatProfile() || {}, config: state.config });
+}
+
+function scheduleContextUsageRefresh() {
+  clearTimeout(contextUsageRefreshTimer);
+  contextUsageRefreshTimer = setTimeout(() => { contextUsageRefreshTimer = null; refreshContextUsage(); }, 180);
 }
 
 function renderStorageBadge() {
@@ -931,32 +945,8 @@ function setContextPanel(open) {
 function renderContextUsage(options) {
   const usage = currentContextUsage(options);
   state.contextUsage = usage;
-  const button = $('#context-meter-button');
-  const percent = Math.min(100, usage.percent);
-  const exceedsCapacity = usage.used > usage.total;
-  const activeModel = activeChatProfile();
-  button.classList.toggle('warning', usage.percent >= 75 && usage.percent < 90);
-  button.classList.toggle('danger', usage.percent >= 90);
-  const capacityLabel = exceedsCapacity ? `资料估算为容量的 ${usage.percent}%，发送前将按预算裁剪` : `容量已用 ${usage.percent}%`;
-  const description = `会话整理 · ${capacityLabel}，点击查看详情与整理`;
-  button.setAttribute('aria-label', description);
-  button.title = description;
-  button.dataset.tooltip = description;
-  button.hidden = !activeModel;
-  const progressBar = $('#context-progress-bar');
-  if (progressBar) progressBar.style.width = `${percent}%`;
-  const label = $('#context-meter-label');
-  if (label) label.textContent = exceedsCapacity ? '待裁剪' : `${usage.percent}%`;
-  const modelName = $('#context-model-name');
-  if (modelName) modelName.textContent = activeModel ? activeModel.name : '';
-  const usedPercent = $('#context-used-percent');
-  if (usedPercent) usedPercent.textContent = exceedsCapacity ? '资料超过模型容量' : `${usage.percent}% 已用`;
-  const remainingPercent = $('#context-remaining-percent');
-  if (remainingPercent) remainingPercent.textContent = `（剩余 ${usage.remainingPercent}%）`;
-  const tokenCount = $('#context-token-count');
-  if (tokenCount) tokenCount.textContent = `${exceedsCapacity ? '裁剪前估算' : '已用'} ${formatTokenCount(usage.used)} Tokens，模型容量 ${formatTokenCount(usage.total)}`;
-  const thresholdLabel = $('#context-threshold-label');
-  if (thresholdLabel) thresholdLabel.textContent = exceedsCapacity ? '发送前整理历史并按来源分配正文预算，以上不是实际发送量或账单用量。' : `达到 ${formatTokenCount(usage.threshold)}（90%）自动整理较早记录`;
+  renderContextUsageView({ find: $, usage, hasModel: Boolean(activeChatProfile()),
+    hasRequest: Boolean(contextUsageTracker.get(state.conversation)) });
   const summary = state.conversation?.contextSummary;
   const summaryRow = $('#context-summary-row');
   if (summaryRow) {
@@ -1001,7 +991,6 @@ function renderContextUsage(options) {
 }
 
 function refreshContextUsage(options) {
-  state.contextUsage = currentContextUsage(options);
   renderContextUsage(options);
   return state.contextUsage;
 }
@@ -1022,6 +1011,7 @@ function renderLocalPrompt() {
 }
 
 function renderConversation({ scroll = false } = {}) {
+  videoTimestampNavigation?.sync();
   if (typeof articleSelectionMenu !== 'undefined') articleSelectionMenu.hide();
   if (typeof selectionChatSessions !== 'undefined') selectionChatSessions?.syncConversation(state.conversation?.id);
   if (state.pageSelection?.source === 'conversation' && state.articleQuoteDraftOwnerId
@@ -1052,7 +1042,7 @@ function renderConversation({ scroll = false } = {}) {
     .find((message) => message.role === 'assistant');
   const latestMessageRole = conversation?.messages.at(-1)?.role || '';
   messagesElement.innerHTML = hasMessages
-    ? conversation.messages.map((message) => messageMarkup(message, {
+    ? conversation.messages.map((message) => messageMarkup(presentVideoNotesMessage(message, conversation.messages), {
       showSuggestions: showSuggestionsFor(message, latestAssistant?.id, latestMessageRole),
     })).join('')
     : '';
@@ -1060,7 +1050,7 @@ function renderConversation({ scroll = false } = {}) {
     if (message.role === 'assistant') {
       renderMessageContent(
         messagesElement.querySelector(`[data-message-id="${message.id}"] [data-message-content]`),
-        message.content,
+        presentVideoNotesMessage(message, conversation.messages).content,
         message.status === 'streaming',
       );
     }
@@ -1186,6 +1176,7 @@ function updatePageToolbar() {
         : '';
   }
   composerAddMenu?.sync();
+  videoNotesEntry?.sync();
   if (input && state.ready) input.placeholder = draftSource ? '编辑独立话题…（本轮不携带当前网页）'
     : agentSlot?.isMode() ? '描述要在当前页面完成的任务…' : !active || state.disablePageContext ? '输入问题…' : '问问这个页面，例如：这些配置怎么选？';
 
@@ -1210,6 +1201,7 @@ function syncActivePageSignal(tab = null) {
   const toggle = $('#composer-page-toggle');
   if (toggle) toggle.checked = enabled;
   state.activePageSignal = next;
+  videoTimestampNavigation?.sync();
   renderWelcomePrompts();
   return next;
 }
@@ -1274,6 +1266,7 @@ function activePageTitle() {
 }
 
 function updateComposer() {
+  scheduleContextUsageRefresh();
   const generating = Boolean(state.generatingId);
   const agentMode = Boolean(agentSlot?.isMode());
   const agentBusy = Boolean(agentSlot?.isBusy());
@@ -1681,7 +1674,16 @@ async function restoreAgentTurn(turn, { signal } = {}) {
   return agentTurnCallbacks.restore(turn, { signal });
 }
 
-const modelGateway = createModelGateway({ onEvent: event => observeModelDiagnostic(recordDiagnostic, event) });
+const contextUsageTracker = createContextUsageTracker({ getActiveRun: () => application.runner.active(),
+  onChange: conversationId => {
+    if (state.conversation?.id !== conversationId) return;
+    state.contextUsageScope = 'request';
+    renderContextUsage();
+  } });
+const modelGateway = createModelGateway({ onEvent: event => {
+  observeModelDiagnostic(recordDiagnostic, event);
+  contextUsageTracker.observe(event);
+} });
 const composition = createSidepanelComposition({
   reading: {
   sendMessage: (message) => chrome.runtime.sendMessage(message),
@@ -1749,6 +1751,7 @@ const application = createSidepanelApplication({
   browser: {
     queryActiveTab: () => chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => tab || null),
     sendMessage: message => chrome.runtime.sendMessage(message),
+    connect: options => chrome.runtime.connect(options),
   },
   ensureConversation, ensureConfigured, saveCurrent, scheduleSave, getDirectoryInfo,
   promoteTemporaryConversation, readCurrentPageForRequest, autoVisualAttachments, enhancePageReading,
@@ -1756,6 +1759,22 @@ const application = createSidepanelApplication({
   conversationTitle, hasVision, makeId, now, truncateText,
 });
 const skillLibrary = createSkillLibrary({ storage: chrome.storage.local, locks: navigator.locks });
+videoNotesEntry = createVideoNotesEntry({
+  button: $('#video-notes-button'),
+  getState: () => ({ ready: state.ready, pageEnabled: !state.disablePageContext && !normalizeDraftSource(state.draftSource),
+    target: state.activePageSignal,
+    busy: Boolean(state.generatingId || state.isSubmitting || state.compressing || state.preparingAttachments
+      || historyMutationBusy || agentTaskRestart.isPending() || agentSlot?.isBusy()) }),
+  submit: (text, options) => application.conversations.sendMessage(text, options),
+  closeMenu: () => composerAddMenu?.close({ restoreFocus: true }),
+  leaveAgent: () => { if (agentSlot?.isMode()) agentSlot.setMode(false); },
+  onNotice: (message, kind) => toast(message, kind), createId: makeId,
+});
+videoTimestampNavigation = createVideoTimestampNavigation({ root: messagesElement,
+  getConversation: () => state.conversation, getPlaybackTarget: () => state.activePageSignal,
+  connect: options => chrome.runtime.connect(options),
+  onNotice: (message, kind) => toast(message, kind),
+});
 function skillApplyBlockReason() {
   if (!state.ready || state.preparingAttachments || historyMutationBusy || state.compressing || agentTaskRestart.isPending()) return '请等待当前准备完成后选择技能。';
   if (agentSlot?.isMode() || agentSlot?.isBusy()) return '技能用于普通提问，请先关闭页面操作。';
@@ -1962,6 +1981,7 @@ application.subscribe(event => {
 
 
 function updateStreamingMessage(id) {
+  videoTimestampNavigation?.sync();
   const message = find(state.conversation?.messages, (item) => item.id === id);
   const article = messagesElement.querySelector(`[data-message-id="${id}"]`);
   const latestAssistant = [...(state.conversation?.messages || [])]
@@ -1969,7 +1989,7 @@ function updateStreamingMessage(id) {
     .find((item) => item.role === 'assistant');
   const latestMessageRole = state.conversation?.messages.at(-1)?.role || '';
   updateMessageView({
-    message,
+    message: presentVideoNotesMessage(message, state.conversation?.messages),
     article,
     messagesElement,
     conversationView,
@@ -2204,6 +2224,10 @@ $('#setup-required').addEventListener('click', async (event) => {
 $('#context-meter-button').addEventListener('click', (event) => {
   event.stopPropagation();
   setContextPanel($('#context-popover').hidden);
+});
+$('#context-usage-scope').addEventListener('change', event => {
+  state.contextUsageScope = event.target.value === 'request' ? 'request' : 'preview';
+  renderContextUsage();
 });
 $('#save-conversation').addEventListener('click', async () => {
   if (historyMutationBusy) { toast('正在整理历史对话，请稍后保存。'); return; }
@@ -2535,7 +2559,7 @@ messagesElement.addEventListener('click', async (event) => {
     return;
   }
   if (button.dataset.action === 'copy') {
-    messageCopy.open({ button, message, conversationId: state.conversation?.id });
+    messageCopy.open({ button, message: presentVideoNotesMessage(message, state.conversation?.messages), conversationId: state.conversation?.id });
     return;
   } else if (button.dataset.action === 'regenerate' || button.dataset.action === 'retry') {
     await regenerate(id);
@@ -2596,7 +2620,11 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
 });
 const startupController = new AbortController();
 window.addEventListener('pagehide', () => {
+  clearTimeout(contextUsageRefreshTimer);
+  contextUsageTracker.dispose();
   composerAddMenu?.dispose();
+  videoNotesEntry?.dispose();
+  videoTimestampNavigation?.dispose();
   skillLibraryView.dispose();
   skillLibrary.dispose();
   if (typeof articleSelectionMenu !== 'undefined') articleSelectionMenu.dispose();

@@ -20,6 +20,8 @@ export function replyProgressLabel(message, now = Date.now()) {
   if (message?.status !== 'streaming' || message.content || message.reasoning || message.agent) return '';
   const phase = message.requestPhase || 'waiting-model';
   const elapsed = message.phaseStartedAt ? Math.max(0, Math.floor((now - message.phaseStartedAt) / 1000)) : 0;
-  const label = `${PHASE_LABELS[phase] || PHASE_LABELS['waiting-model']}${elapsed ? ` · ${elapsed} 秒` : ''}…`;
+  const videoLabel = message.videoNotesVersion === 1
+    ? ({ reading: '正在读取视频字幕', 'collecting-context': '正在核对视频字幕', 'waiting-model': '正在整理视频笔记' })[phase] : '';
+  const label = `${videoLabel || PHASE_LABELS[phase] || PHASE_LABELS['waiting-model']}${elapsed ? ` · ${elapsed} 秒` : ''}…`;
   return phase === 'waiting-model' && elapsed >= 15 ? `${label} 尚未收到正文或思考内容。` : label;
 }

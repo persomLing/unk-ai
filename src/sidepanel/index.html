@@ -156,6 +156,7 @@
                   <button type="button" role="menuitem" data-attach-kind="document"><i data-icon="file"></i><span class="add-menu-name">上传文档</span><span class="add-menu-description">PDF、Word、文本等</span></button>
                   <div id="composer-modes" class="composer-add-section" role="group" aria-label="页面能力" hidden>
                     <button id="agent-toggle" type="button" role="menuitem" aria-label="页面操作" aria-pressed="false" title="在授权后点击、输入和导航"><i data-icon="globe"></i><span class="add-menu-name">页面操作</span><span class="add-menu-description">协助点击与填写</span><i class="add-menu-check" data-icon="check"></i></button>
+                    <button id="video-notes-button" type="button" role="menuitem" aria-label="视频笔记" title="请先选中当前页面" disabled><i data-icon="video"></i><span class="add-menu-name">视频笔记</span><span class="add-menu-description">读取字幕，中文整理</span></button>
                   </div>
                   <div class="add-menu-heading" role="presentation"><span>技能</span><button id="skills-button" class="add-menu-manage" type="button" role="menuitem" data-menu-action="skills" aria-label="管理技能" aria-haspopup="dialog" aria-controls="skills-dialog">管理</button></div>
                   <div data-menu-skills role="group" aria-label="已导入技能"></div>
@@ -176,14 +177,25 @@
                     <span class="context-popover-title">会话整理</span>
                     <span id="context-model-name" class="context-model-name"></span>
                   </div>
-                  <p class="context-help">整理较早记录，为后续对话留出空间。</p>
+                  <select id="context-usage-scope" class="context-usage-scope" aria-label="Token 统计范围">
+                    <option value="preview">下一次提问 · 预估</option>
+                    <option id="context-request-option" value="request" disabled>最近请求 · 估算</option>
+                  </select>
                   <div class="context-percent-row">
-                    <strong id="context-used-percent">0% 已用</strong>
-                    <span id="context-remaining-percent">（剩余 100%）</span>
+                    <strong id="context-used-percent">0% 输入估算</strong>
+                    <span id="context-remaining-percent">（100% 可用）</span>
                   </div>
-                  <div id="context-token-count" class="context-token-count">已用 0 Tokens，共 128k</div>
+                  <div id="context-token-count" class="context-token-count"></div>
                   <div class="context-progress" aria-hidden="true"><i id="context-progress-bar"></i></div>
-                  <small id="context-threshold-label">达到 90% 自动整理较早记录</small>
+                  <dl class="context-token-breakdown" aria-label="输入 Token 估算组成">
+                    <div><dt title="系统消息与以系统消息携带的历史摘要">系统提示</dt><dd id="context-tokens-system"></dd></div>
+                    <div><dt title="工具定义、工具调用与工具返回内容">工具</dt><dd id="context-tokens-tools"></dd></div>
+                    <div><dt title="提问、历史回答、页面正文、文档、Skill 和视频字幕等消息内容">消息与资料</dt><dd id="context-tokens-messages"></dd></div>
+                    <div><dt title="消息格式开销、图片估算与其他已知元数据；未知的文件内容会另行说明">其他</dt><dd id="context-tokens-other"></dd></div>
+                  </dl>
+                  <div id="context-reserve-label" class="context-reserve-label"></div>
+                  <small id="context-threshold-label"></small>
+                  <p id="context-estimate-note" class="context-estimate-note"></p>
                   <div id="context-summary-row" class="context-summary-row" hidden>
                     <span>已整理较早记录 <time id="context-summary-time"></time></span>
                     <span id="context-summary-count" class="context-summary-count"></span>
@@ -194,7 +206,6 @@
                     <strong id="context-page-title"></strong>
                     <p id="context-page-detail"></p>
                   </div>
-                  <button id="context-compress-button" class="context-compress-button" type="button">立即整理</button>
                 </div>
               </div>
               <button id="send-message" class="send-button" type="button" aria-label="发送消息" title="发送消息" disabled><i data-icon="arrow-up"></i></button>
