@@ -2,9 +2,10 @@ import { assertPageTarget, pageTargetFields } from '../../../utils/page-target.j
 
 export const VIDEO_READING_PORT = 'unk-ai-video-notes';
 export const VIDEO_PROVIDER_ID = 'video-transcript';
-export const VIDEO_CONTEXT_MAX_CHARS = 15000;
+// Working context only. Longer transcripts are summarized in full before collection.
+export const VIDEO_CONTEXT_MAX_CHARS = 100000;
 export const VIDEO_LIMITS = Object.freeze({ timeoutMs: 20000, requestMs: 8000,
-  maxBytes: 2 * 1024 * 1024, maxCues: 20000, maxChars: 300000 });
+  maxBytes: 2 * 1024 * 1024 }); // Metadata responses; subtitle bodies have no size gate.
 export const videoError = (code, message) => Object.assign(new Error(message), { code });
 const invalid = () => videoError('VIDEO_DATA_INVALID', '视频字幕资料不完整或版本不支持，请回到原视频重新整理。');
 const integer = value => Number.isSafeInteger(value) && value > 0;
@@ -43,17 +44,16 @@ export function captureVideoRequest(value) {
 }
 
 export function normalizeVideoCues(values, duration) {
-  if (!Array.isArray(values) || values.length > VIDEO_LIMITS.maxCues) throw invalid();
+  if (!Array.isArray(values)) throw invalid();
   const cues = [];
-  let chars = 0, previousStart = -1;
+  let previousStart = -1;
   for (const value of values) {
     if (!value || !Number.isFinite(value.startMs) || !Number.isFinite(value.endMs)
+      || !Number.isSafeInteger(Math.round(value.startMs)) || !Number.isSafeInteger(Math.round(value.endMs))
       || value.startMs < 0 || value.endMs <= value.startMs || value.endMs > (duration + 10) * 1000
       || value.startMs < previousStart || typeof value.text !== 'string') throw invalid();
     previousStart = value.startMs;
     const text = value.text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '').trim();
-    chars += text.length;
-    if (chars > VIDEO_LIMITS.maxChars) throw videoError('VIDEO_INPUT_BUDGET', '字幕超出读取上限，尚未整理整片视频。');
     if (text) cues.push({ id: 'c' + (cues.length + 1), startMs: Math.round(value.startMs),
       endMs: Math.round(value.endMs), text });
   }
@@ -69,7 +69,7 @@ export function validateVideoResult(value, expectedTarget) {
     || !integer(video.aid) || !integer(video.cid) || video.part !== parsed.part
     || (video.partCount !== undefined && (!integer(video.partCount) || video.partCount < video.part || video.partCount > 99999))
     || (parsed.bvid && parsed.bvid !== video.bvid) || (parsed.aid && parsed.aid !== video.aid)
-    || !Number.isFinite(video.duration) || video.duration <= 0 || video.duration > 172800
+    || !Number.isFinite(video.duration) || video.duration <= 0 || !Number.isSafeInteger(Math.round(video.duration * 1000))
     || !field(video.title, 512) || !Number.isFinite(Date.parse(value.capturedAt))) throw invalid();
   const result = { version: 1, kind: value.kind, target,
     video: { platform: 'bilibili', bvid: video.bvid, aid: video.aid, cid: video.cid,

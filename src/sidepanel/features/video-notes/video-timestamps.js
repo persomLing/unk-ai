@@ -16,7 +16,7 @@ const markdown = new MarkdownIt({ html: false });
 markdown.inline.ruler.before('link', 'video_time_link', (state, silent) => {
   const rewrite = state.env.videoRewrite;
   if (!rewrite?.compact || state.src !== rewrite.source || state.linkLevel || silent) return false;
-  const match = state.src.slice(state.pos).match(/^\[\[((?:\d{2}:)?\d{2}:\d{2})\]\]\(([^\s()]+)(?:[ \t]+"[^"\n]*")?\)/);
+  const match = state.src.slice(state.pos).match(/^\[\[((?:\d{2,}:)?\d{2}:\d{2})\]\]\(([^\s()]+)(?:[ \t]+"[^"\n]*")?\)/);
   if (!match) return false;
   const time = rewrite.times.get(match[1]);
   if (time !== undefined && match[2] === videoTimestampUrl(rewrite.video, time)) {
@@ -29,10 +29,10 @@ markdown.inline.ruler.before('link', 'video_time_link', (state, silent) => {
 markdown.inline.ruler.after('link', 'video_reference', (state, silent) => {
   const rewrite = state.env.videoRewrite;
   if (!rewrite || state.src !== rewrite.source || state.linkLevel || silent) return false;
-  const match = state.src.slice(state.pos).match(/^\[\[(c\d+)\]\]|^\[((?:\d{2}:)?\d{2}:\d{2})\]/);
+  const match = state.src.slice(state.pos).match(/^\[\[(c\d+)\]\]|^\[((?:\d{2,}:)?\d{2}:\d{2})\]/);
   if (!match || (!match[1] && !rewrite.legacy)) return false;
   const following = state.src.slice(state.pos + match[0].length);
-  const nextCitation = /^\[(?:\[c\d+\]|\[?(?:\d{2}:)?\d{2}:\d{2}\]?)\]/.test(following);
+  const nextCitation = /^\[(?:\[c\d+\]|\[?(?:\d{2,}:)?\d{2}:\d{2}\]?)\]/.test(following);
   // Adjacent references ([[c1]][[c2]], [00:14][00:20]) are independent
   // citations, not a Markdown reference-link suffix. Existing links have
   // already been claimed by Markdown's own rule above.
@@ -95,7 +95,7 @@ export function linkVideoReferences(content, transcript, { legacy = false, compa
 
 /** Only our original video, P, verified second and link label can request a seek. */
 export function videoTimeForLink(transcript, href, label) {
-  const stamp = String(label || '').match(/^\[((?:\d{2}:)?\d{2}:\d{2})\]$/)?.[1];
+  const stamp = String(label || '').match(/^\[((?:\d{2,}:)?\d{2}:\d{2})\]$/)?.[1];
   const time = stamp ? videoCueTimes(transcript).get(stamp) : undefined;
   return time !== undefined && href === videoTimestampUrl(transcript.video, time) ? time : null;
 }

@@ -21,7 +21,7 @@ export function captureVideoNavigation(value) {
     || video.platform !== 'bilibili' || !Number.isSafeInteger(video.aid) || video.aid <= 0
     || !Number.isSafeInteger(video.cid) || video.cid <= 0 || video.part !== parsed.part
     || (parsed.bvid && parsed.bvid !== video.bvid) || (parsed.aid && parsed.aid !== video.aid)
-    || !Number.isFinite(video.duration) || video.duration <= 0 || video.duration > 172800
+    || !Number.isFinite(video.duration) || video.duration <= 0 || !Number.isSafeInteger(Math.round(video.duration * 1000))
     || (action === 'seek' && (!Number.isSafeInteger(value.startMs) || value.startMs < 0 || value.startMs >= video.duration * 1000))
     || (action === 'open' && value.startMs !== undefined)
     || !videoNavigationToken(value.conversationId) || !videoNavigationToken(value.messageId)

@@ -8,6 +8,7 @@ output/
 /tests/
 /*.md
 !/README.md
+!/CHANGELOG.md
 /docs/*
 !/docs/USER-GUIDE.md
 !/docs/USER-GUIDE.html

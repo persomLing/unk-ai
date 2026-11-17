@@ -167,12 +167,14 @@ export function createContextAssembler({
     }
   }
 
-  async function collect(input, run, { required = [] } = {}) {
+  async function collect(input, run, { required = [], maxChars: collectionMaxChars } = {}) {
     if (!run || typeof run.runId !== 'string' || !run.runId) throw new TypeError('Context collection requires a runId.');
     run.signal?.throwIfAborted();
     application.signal.throwIfAborted();
     if (Number.isFinite(run.deadlineAt) && run.deadlineAt <= Date.now()) throw new DOMException('上下文收集超时。', 'TimeoutError');
     const requiredIds = new Set(required);
+    // Explicit working budgets belong to this collection, never to future turns.
+    const collectionChars = limit(collectionMaxChars, totalChars, 100000);
     for (const id of requiredIds) {
       if (!policies.some(policy => policy.id === id)) throw new ContextProviderError(id, new Error('未注册该能力'));
     }
@@ -181,7 +183,7 @@ export function createContextAssembler({
       .sort((left, right) => Number(right.required) - Number(left.required) || right.priority - left.priority || left.index - right.index);
     const results = await awaitWithAbort(Promise.all(selected.map(async policy => {
       try {
-        if (!totalChars || !totalBlocks || !policy.maxChars || !policy.maxBlocks) throw new Error('上下文预算为零');
+        if (!collectionChars || !totalBlocks || !policy.maxChars || !policy.maxBlocks) throw new Error('上下文预算为零');
         const result = await collectOne(policy, input, run);
         return { policy, ...result };
       } catch (error) { return { policy, error }; }
@@ -192,7 +194,7 @@ export function createContextAssembler({
     const blocks = [];
     const issues = [];
     const contentSeen = new Set();
-    let remaining = totalChars;
+    let remaining = collectionChars;
     for (const result of results) {
       const { policy } = result;
       if (result.error) {

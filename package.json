@@ -1,12 +1,14 @@
 {
   "name": "unk-ai",
-  "version": "0.18.3",
+  "version": "0.18.4",
   "author": "shiyu",
   "private": true,
   "type": "module",
   "description": "A private, local-first AI reading companion for Chrome.",
   "scripts": {
     "docs:build": "node scripts/render-user-guide.mjs",
+    "release:package": "pwsh -NoProfile -File scripts/package-release.ps1",
+    "release": "node scripts/release.mjs",
     "dev": "vite build --watch",
     "build": "vite build",
     "preview": "vite preview",

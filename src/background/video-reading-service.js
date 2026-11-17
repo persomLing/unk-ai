@@ -52,7 +52,7 @@ export function createVideoReadingService({ chrome: api = globalThis.chrome, fet
     session.target = actual;
     return actual;
   }
-  async function json(session, url, credentials, video) {
+  async function json(session, url, credentials, video, { fullTranscript = false } = {}) {
     await verify(session, video);
     check(session);
     const controller = new AbortController();
@@ -72,7 +72,7 @@ export function createVideoReadingService({ chrome: api = globalThis.chrome, fet
           response.status === 401 || response.status === 403
             ? 'B 站拒绝了视频字幕请求，请确认登录状态和访问权限。' : 'B 站字幕请求失败，请稍后重试。');
       }
-      if (Number(response.headers.get('content-length')) > VIDEO_LIMITS.maxBytes) throw videoError('VIDEO_INPUT_BUDGET', '字幕响应超出读取上限。');
+      if (!fullTranscript && Number(response.headers.get('content-length')) > VIDEO_LIMITS.maxBytes) throw videoError('VIDEO_INPUT_BUDGET', '视频信息响应超出读取上限。');
       reader = response.body?.getReader();
       if (!reader) throw videoError('VIDEO_API_INVALID', '字幕接口返回了空响应。');
       const decoder = new TextDecoder(), chunks = [];
@@ -82,7 +82,7 @@ export function createVideoReadingService({ chrome: api = globalThis.chrome, fet
         check(session); controller.signal.throwIfAborted();
         if (done) break;
         size += value.byteLength;
-        if (size > VIDEO_LIMITS.maxBytes) throw videoError('VIDEO_INPUT_BUDGET', '字幕响应超出读取上限，尚未整理整片视频。');
+        if (!fullTranscript && size > VIDEO_LIMITS.maxBytes) throw videoError('VIDEO_INPUT_BUDGET', '视频信息响应超出读取上限。');
         chunks.push(decoder.decode(value, { stream: true }));
       }
       chunks.push(decoder.decode());
@@ -106,7 +106,7 @@ export function createVideoReadingService({ chrome: api = globalThis.chrome, fet
     const playerUrl = 'https://api.bilibili.com/x/player/wbi/v2?aid=' + video.aid + '&cid=' + video.cid;
     const track = biliSubtitleTrack(await json(session, playerUrl, 'include', video), video);
     let result = { kind: 'unavailable', reason: 'no-subtitles' };
-    if (track) result = biliSubtitleBody(await json(session, track.url, 'omit', video), video);
+    if (track) result = biliSubtitleBody(await json(session, track.url, 'omit', video, { fullTranscript: true }), video);
     await verify(session, video);
     check(session);
     // Do not return CDN signed URLs, player payloads, cookies or request headers.

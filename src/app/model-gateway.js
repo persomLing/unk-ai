@@ -9,12 +9,12 @@ import {
 import { requestTokenUsage } from '../utils/token-usage.js';
 
 export const MODEL_PURPOSES = Object.freeze([
-  'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions',
+  'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions', 'video-summary',
 ]);
 export const DEFAULT_MODEL_TIMEOUTS = Object.freeze({
   answer: 120000, 'agent-decision': 60000, 'visual-decision': 8000,
   'reading-decision': 8000,
-  'research-decision': 8000, 'web-search': 25000, 'web-fetch': 25000, compression: 30000, suggestions: 15000,
+  'research-decision': 8000, 'web-search': 25000, 'web-fetch': 25000, compression: 30000, suggestions: 15000, 'video-summary': 60000,
 });
 
 const MODEL_FIELDS = ['model', 'temperature', 'contextLength', 'maxTokens',

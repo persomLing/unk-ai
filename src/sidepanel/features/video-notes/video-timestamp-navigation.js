@@ -31,7 +31,7 @@ export function createVideoTimestampNavigation({ root, getConversation, getPlayb
     if (startMs === null && !title) {
       // A missing old snapshot must not turn a time-control click into a link
       // navigation. Keep ordinary links and title links usable.
-      if (message?.videoNotesVersion === 1 && /^\[(?:\d{2}:)?\d{2}:\d{2}\]$/.test(link.textContent)) {
+      if (message?.videoNotesVersion === 1 && /^\[(?:\d{2,}:)?\d{2}:\d{2}\]$/.test(link.textContent)) {
         event.preventDefault(); onNotice('这条笔记的字幕记录不可用，暂时无法控制播放进度。', 'error'); return true;
       }
       return false;

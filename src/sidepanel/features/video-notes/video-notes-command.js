@@ -1,10 +1,11 @@
 import { awaitWithAbort } from '../../../utils/abortable.js';
 import { assertPageTarget } from '../../../utils/page-target.js';
 import { captureVideoRequest, validateVideoResult, hasVideoTranscript, selectedVideoTranscript,
-  createVideoAttachment, VIDEO_PROVIDER_ID, videoError } from './video-request.js';
+  createVideoAttachment, VIDEO_PROVIDER_ID, VIDEO_CONTEXT_MAX_CHARS, videoError } from './video-request.js';
 import { unavailableVideoReply, formatVideoAnswer, videoSource } from './transcript-context.js';
+import { prepareVideoContext } from './video-summary.js';
 
-const PROMPT = '请仅依据本轮提供的完整视频字幕，用简体中文整理当前视频的笔记。'
+const PROMPT = '请仅依据本轮提供的视频字幕资料（原文或覆盖全部字幕的分段摘要），用简体中文整理当前视频的笔记。'
   + '按“内容概览、主要内容、重点与结论”组织 Markdown，保留字幕支持的关键观点、步骤和例子；没有的信息不要补写。'
   + '标题和来源由应用显示，不要重复输出视频信息。引用原字幕句时使用 [[c1]] 这样的真实句编号，不自行编造时间码。'
   + '时间引用只标在需要回看的关键要点上；每个段落或列表要点最多一个，选择该要点开始处的字幕句，不逐句引用或连续堆叠编号。'
@@ -16,6 +17,7 @@ export function createVideoNotesCommand({ readTranscript }) {
   return Object.freeze({
     capture: captureVideoRequest,
     label: '整理当前视频的笔记',
+    executionTimeoutMs: 24 * 60 * 60 * 1000,
     prompt: PROMPT,
     assistantFields: Object.freeze({ videoNotesVersion: 1 }),
     needsRead: user => !hasVideoTranscript(user?.attachments),
@@ -56,9 +58,16 @@ export function videoReplyPolicy(user) {
   if (!request && !transcript) return {};
   if (request && !transcript) throw videoError('VIDEO_CONTEXT_MISSING', '本轮视频字幕资料缺失，请回到原视频重新整理。');
   if (request) assertPageTarget(request.target, transcript.target);
-  return { requiredContext: [VIDEO_PROVIDER_ID],
+  let summarized = false;
+  return { requiredContext: [VIDEO_PROVIDER_ID], contextMaxChars: VIDEO_CONTEXT_MAX_CHARS,
+    async prepareContext(options) {
+      const prepared = await prepareVideoContext(transcript, options);
+      options.assertCurrent();
+      summarized = prepared.summarized;
+      return { videoContext: prepared.block };
+    },
     ...(request ? { isolated: true, research: false, suggestions: false,
-      formatContent: content => formatVideoAnswer(transcript, content),
+      formatContent: content => formatVideoAnswer(transcript, content, { summarized }),
       sources: [videoSource(transcript)], assistantFields: { videoNotesVersion: 1 },
       completionFields: { videoNotesOutcome: 'notes' } } : {}) };
 }

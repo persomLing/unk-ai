@@ -6,6 +6,8 @@ import { samePrompt } from '../sidepanel/features/messages/retry-flow.js';
 import { runResearchAnswer, researchContextReserve } from '../sidepanel/features/web-research/research-answer-loop.js';
 import { hasSelectedSkill, selectedSkill, SKILL_PROVIDER_ID } from '../sidepanel/features/skills/skill-context.js';
 import { appendProviderContext, requiredContextReserve } from './context-request.js';
+import { awaitWithAbort } from '../utils/abortable.js';
+import { ContextProviderError } from './context-assembler.js';
 export { appendProviderContext } from './context-request.js';
 
 function friendlyError(error) {
@@ -58,7 +60,8 @@ export function createChatService({ repository, runner, modelGateway, contextAss
     return pending;
   }
 
-  async function executeGeneration({ conversation, assistant, profile, contextWindow, run, modelRun, favicon = '' }) {
+  async function executeGeneration({ conversation, assistant, profile, contextWindow, run, modelRun,
+    favicon = '', assertOwner = () => {} }) {
     let connection, timer = null;
     try {
       if (disposed) { run.cancel(); return null; }
@@ -68,11 +71,17 @@ export function createChatService({ repository, runner, modelGateway, contextAss
       if (!user) { run.fail(new Error('找不到本轮提问。')); return null; }
       if (!run.ref) run.bind({ conversation, user, assistant });
       selectedSkill(user.attachments);
-      const policy = replyPolicyFor(structuredClone(user));
+      const submittedUser = structuredClone(user);
+      const policy = replyPolicyFor(submittedUser);
       const formatContent = policy.formatContent || (content => content);
       const requiredContext = [...new Set([...(hasSelectedSkill(user.attachments) ? [SKILL_PROVIDER_ID] : []), ...(policy.requiredContext || [])])];
       if (requiredContext.length && !contextAssembler) throw new Error('本轮 Skill 或必需上下文能力未装配，无法执行所选任务。');
       const ref = run.ref;
+      const assertCurrent = () => {
+        run.assertCurrent();
+        assertOwner();
+        if (disposed || !repository.get(ref)) throw new DOMException('本轮消息已被替换或运行环境已关闭。', 'AbortError');
+      };
       if (!profile) { run.fail(new Error('请先在设置中添加至少一个模型。')); return null; }
       const fixedProfile = structuredClone(profile);
       const researchEnabled = policy.research !== false && typeof researchTools === 'function' && fixedProfile.webSearchEnabled !== false;
@@ -95,30 +104,58 @@ export function createChatService({ repository, runner, modelGateway, contextAss
         reasoningFinishedAt: undefined, model: fixedProfile.model, modelId: fixedProfile.model, reasoningEffort: fixedProfile.reasoningEffort,
         ...policy.assistantFields });
       const result = await run.execute(async () => {
+        assertCurrent();
+        const requestReserve = Number(fixedProfile.maxTokens || 0)
+          + (researchEnabled ? researchContextReserve({ fetchEnabled: fixedProfile.webFetchEnabled !== false, now: now() }) : 0);
+        const requestConversation = policy.isolated ? { messages: [submittedUser, assistant] } : conversation;
+        let contextInput = { question, selection: submittedUser.selection || null, attachments: submittedUser.attachments || [] };
+        if (policy.prepareContext) {
+          // Registration failures must precede any auxiliary model work.
+          for (const id of requiredContext) {
+            try {
+              const status = contextAssembler.status?.(id);
+              if (status?.status === 'disabled' || status?.status === 'failed') throw new Error(status.error?.message || '能力已停用');
+            } catch (error) { throw new ContextProviderError(id, new Error('未注册或无法使用该能力', { cause: error })); }
+          }
+          run.phase('collecting-context');
+          const prepared = await awaitWithAbort(Promise.resolve().then(() => {
+            assertCurrent();
+            return policy.prepareContext({ input: structuredClone(contextInput),
+              // Reserve the real current question and wrappers; history can be
+              // compressed after required data has been prepared.
+              messages: requestMessagesFor({ messages: [submittedUser, assistant] }, assistant.id, requestPage),
+              contextWindow, maxTokens: requestReserve, signal: run.signal, assertCurrent,
+              requestText: async ({ requestId, messages, maxTokens }) => {
+                assertCurrent();
+                const raw = await connection.request({ requestId, messages, maxTokens,
+                  purpose: 'video-summary', timeoutMs: 60000, temperature: 0 });
+                assertCurrent();
+                return raw;
+              } });
+          }), run.signal);
+          assertCurrent();
+          contextInput = { ...contextInput, ...prepared };
+        }
         let collected = { blocks: [], issues: [] };
         if (contextAssembler) {
           run.phase('collecting-context');
-          collected = await contextAssembler.collect({ question,
-            selection: user.selection || null, attachments: user.attachments || [] }, {
+          collected = await contextAssembler.collect(contextInput, {
             ...ref, signal: run.signal, deadlineAt: run.deadlineAt, mode: 'chat',
             model: connection.modelInfo, target: pageSourceFor(requestPage),
             budget: { contextWindow, maxTokens: fixedProfile.maxTokens || 0 },
-          }, { required: requiredContext });
-          run.assertCurrent();
+          }, { required: requiredContext, ...(policy.contextMaxChars === undefined ? {} : { maxChars: policy.contextMaxChars }) });
+          assertCurrent();
           if (collected.issues.length) run.update({ contextIssues: collected.issues.map(issue => ({ providerId: issue.providerId || issue.id, code: issue.code })) });
         }
         // Required provider data is known before compression. Reserve it along
         // with the real tool definitions/instructions and configured output.
-        const requestReserve = Number(fixedProfile.maxTokens || 0)
-          + (researchEnabled ? researchContextReserve({ fetchEnabled: fixedProfile.webFetchEnabled !== false, now: now() }) : 0);
         const baseReserve = requestReserve + requiredContextReserve(collected.blocks, requiredContext);
         if (!policy.isolated) {
           run.phase('compressing');
           await compress(conversation, assistant.id, { signal: run.signal, profile: fixedProfile, modelRun: connection,
             reserveTokens: baseReserve, contextWindow, page: requestPage });
         }
-        run.assertCurrent();
-        const requestConversation = policy.isolated ? { messages: [user, assistant] } : conversation;
+        assertCurrent();
         let messages = fitMessagesToBudget(requestConversation, requestMessagesFor(requestConversation, assistant.id, requestPage), contextWindow, baseReserve);
         messages = appendProviderContext(messages, collected.blocks, contextWindow, requestReserve, { required: requiredContext });
         run.phase('waiting-model');
@@ -142,6 +179,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
           },
         };
         const pageSources = [...(policy.sources || []), ...readSourcesForPage(requestPage, favicon)];
+        assertCurrent();
         const result = researchEnabled
           ? await runResearchAnswer({ connection, run, messages, createTools: researchTools, contextWindow,
             maxTokens: fixedProfile.maxTokens, fetchEnabled: fixedProfile.webFetchEnabled !== false, now, ...callbacks,
@@ -151,7 +189,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
               if (run.update({ sources: [...pageSources, ...values] })) repository.schedule(ref);
             } })
           : { content: await connection.request({ requestId: 'answer', purpose: 'answer', messages, timeoutMs: 120000, ...callbacks }), sources: [] };
-        run.assertCurrent();
+        assertCurrent();
         pauseReasoning();
         const sources = [...pageSources, ...result.sources];
         if (requestPage && conversation.repository?.url === requestPage.url && !sources.some(source => source.url === requestPage.url)) {

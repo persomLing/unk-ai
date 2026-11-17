@@ -76,6 +76,11 @@ export function createConversationService(deps) {
       const profile = profiles.get(run.runId);
       return await replyService.generate({ conversation: repository.get(run.ref).conversation, assistant, run,
         profile, modelRun: modelFor(run), contextWindow: contextWindowFor(profile, state.config),
+        assertOwner: () => {
+          if (disposed || state.replyOwner !== run || state.conversation?.id !== run.ref.conversationId) {
+            throw new DOMException('本轮所属会话已切换或执行已被替换。', 'AbortError');
+          }
+        },
         favicon: state.activePageSignal?.favIconUrl || '' });
     } finally {
       if (state.replyOwner === run) {
@@ -240,7 +245,8 @@ export function createConversationService(deps) {
       return;
     }
 
-    const submissionOwner = runner.begin({ commandId: options.commandId || options.id || makeId(), mode: agentTask ? 'agent' : 'chat' });
+    const submissionOwner = runner.begin({ commandId: options.commandId || options.id || makeId(), mode: agentTask ? 'agent' : 'chat',
+      ...(command ? { timeoutMs: command.executionTimeoutMs } : {}) });
     if (['completed', 'failed', 'cancelled'].includes(submissionOwner.status)) return;
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
     state.submissionController = submissionController;
@@ -792,7 +798,8 @@ export function createConversationService(deps) {
     }
     stopActiveReply();
     state.messageQueue = [];
-    const submissionOwner = runner.begin({ commandId: makeId(), mode: 'chat' });
+    const submissionOwner = runner.begin({ commandId: makeId(), mode: 'chat',
+      ...(command ? { timeoutMs: command.executionTimeoutMs } : {}) });
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
     const modelId = state.selectedModelId, effort = state.selectedEffort;
     state.submissionOwner = submissionOwner;
