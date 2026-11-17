@@ -88,6 +88,13 @@
                 <div id="model-meta" class="model-meta" hidden></div>
               </div>
               <div id="model-library" class="model-library" aria-live="polite"></div>
+              <div class="field" id="image-model-field">
+                <label for="image-model-select">默认生图模型 <span>可选</span></label>
+                <select id="image-model-select" name="selectedImageModelId">
+                  <option value="">未配置</option>
+                </select>
+                <p class="hint">在回答中生成图片，或为视频笔记配图时使用。仅列出用途为“生图模型”的条目。</p>
+              </div>
             </section>
 
             <section id="parameters-section" class="form-section" data-settings-section aria-labelledby="parameters-title">
@@ -95,7 +102,16 @@
                 <span class="section-symbol"><i data-icon="settings"></i></span>
                 <div><h2 id="parameters-title">生成参数</h2><p>留空时跟随模型或服务商默认值。</p><span id="parameters-model-name" class="parameters-model-name" hidden></span></div>
               </div>
-              <div class="field-row">
+              <div class="field" id="model-kind-field">
+                <label for="model-kind">模型用途</label>
+                <select id="model-kind" name="modelKind">
+                  <option value="chat">对话模型</option>
+                  <option value="image">生图模型</option>
+                </select>
+                <p class="hint">生图模型用于在回答中生成图片，不参与对话；下方对话参数对它不生效。</p>
+              </div>
+              <p id="image-model-hint" class="hint" hidden>当前编辑的是生图模型。请在上方“模型库”中选择默认生图模型；回答需要配图时会自动调用它。</p>
+              <div class="field-row" id="generation-fields">
                 <div class="field">
                   <label for="context-length">上下文长度 <span>Tokens</span></label>
                   <input id="context-length" name="contextLength" type="number" min="1" step="1" placeholder="模型默认" aria-describedby="context-length-hint" />

@@ -1,9 +1,9 @@
 import { awaitWithAbort, awaitWithTimeout } from '../utils/abortable.js';
 import { assertPageTarget } from '../utils/page-target.js';
 import { videoError, videoPageUrl, videoTarget } from '../sidepanel/features/video-notes/video-request.js';
-import { VIDEO_NAVIGATION_PORT, VIDEO_NAVIGATION_TIMEOUT_MS, videoNavigationToken,
-  captureVideoNavigation, matchesVideoPage } from '../sidepanel/features/video-notes/video-navigation-request.js';
-import { seekBilibiliVideo } from '../sidepanel/features/video-notes/bilibili-player.js';
+import { VIDEO_NAVIGATION_PORT, VIDEO_NAVIGATION_TIMEOUT_MS, VIDEO_CAPTURE_TIMEOUT_MS, videoNavigationToken,
+  captureVideoNavigation, matchesVideoPage, validVideoCapture } from '../sidepanel/features/video-notes/video-navigation-request.js';
+import { seekBilibiliVideo, captureBilibiliFrame } from '../sidepanel/features/video-notes/bilibili-player.js';
 
 const uncertain = () => videoError('VIDEO_NAVIGATION_UNCERTAIN', '无法确认视频定位结果，请先核对播放器位置；不会自动重复定位。');
 const missingTab = error => /No tab with id|Invalid tab ID/i.test(error?.message || '');
@@ -20,17 +20,18 @@ function trusted(api, sender) {
  * live URL/document before acting. Disconnect revokes remaining work, not an
  * effect already dispatched. Seeking can never fall back to navigation. */
 export function createVideoNavigationService({ chrome: api = globalThis.chrome,
-  timeoutMs = VIDEO_NAVIGATION_TIMEOUT_MS, ioTimeoutMs = 2000 } = {}) {
+  timeoutMs = VIDEO_NAVIGATION_TIMEOUT_MS, ioTimeoutMs = 2000,
+  captureTimeoutMs = VIDEO_CAPTURE_TIMEOUT_MS, captureIoTimeoutMs = 8500 } = {}) {
   const ports = new Map(), locks = new Map();
   let disposed = false;
   function check(job) {
     job.controller.signal.throwIfAborted();
     if (disposed || job.finished || Date.now() >= job.deadlineAt) throw uncertain();
   }
-  async function wait(job, operation) {
+  async function wait(job, operation, ioMs = ioTimeoutMs) {
     check(job);
     const result = await awaitWithTimeout(Promise.resolve().then(() => { check(job); return operation(); }),
-      { signal: job.controller.signal, timeoutMs: Math.max(1, Math.min(ioTimeoutMs, job.deadlineAt - Date.now())),
+      { signal: job.controller.signal, timeoutMs: Math.max(1, Math.min(ioMs, job.deadlineAt - Date.now())),
         message: '核对原视频页面超时，请稍后重试。' });
     check(job);
     return result;
@@ -42,11 +43,11 @@ export function createVideoNavigationService({ chrome: api = globalThis.chrome,
   function release(job) {
     if (job.finished && !job.effects) for (const key of job.keys) if (locks.get(key) === job) locks.delete(key);
   }
-  async function effect(job, operation) {
+  async function effect(job, operation, ioMs = ioTimeoutMs) {
     check(job); job.effects++;
     const pending = Promise.resolve().then(() => { check(job); return operation(); });
     void pending.then(() => { job.effects--; release(job); }, () => { job.effects--; release(job); });
-    try { return await wait(job, () => pending); }
+    try { return await wait(job, () => pending, ioMs); }
     catch (error) {
       if (error.name === 'TimeoutError') throw uncertain();
       throw error;
@@ -94,6 +95,55 @@ export function createVideoNavigationService({ chrome: api = globalThis.chrome,
     if (result.startMs !== startMs) throw uncertain();
     return { outcome: 'seeked', tabId: bound.tabId, startMs };
   }
+  async function capture(job) {
+    const { target, video, startMs } = job.request;
+    let tab;
+    try { tab = await wait(job, () => api.tabs.get(target.tabId)); }
+    catch (error) { if (missingTab(error)) throw pageRequired(); throw error; }
+    if (tab.id !== target.tabId || !matchesVideoPage(tab.url, video)) throw pageChanged();
+    if (!tab.active) throw pageRequired();
+    if (tab.status === 'loading' || (tab.pendingUrl && tab.pendingUrl !== tab.url)) {
+      throw videoError('VIDEO_PLAYER_NOT_READY', '视频页面正在加载，请稍后再截取画面。');
+    }
+    job.windowId = tab.windowId;
+    const live = { tabId: tab.id, url: tab.url };
+    assertPageTarget({ tabId: target.tabId, url: target.url }, live);
+    const input = { expectedUrl: live.url, bvid: video.bvid, cid: video.cid, part: video.part,
+      duration: video.duration, startMs, deadlineAt: job.deadlineAt };
+    const observed = await wait(job, () => api.scripting.executeScript({
+      target: { tabId: live.tabId, frameIds: [0] }, world: 'MAIN', injectImmediately: true,
+      func: seekBilibiliVideo, args: [{ ...input, inspectOnly: true }],
+    }));
+    const frame = observed?.find(entry => entry.frameId === 0);
+    assertPlayer(frame?.result, 'ready');
+    const bound = videoTarget({ ...live, url: frame.result.url, documentId: frame.documentId }, { documentRequired: true });
+    assertPageTarget(live, bound);
+    assertPageTarget(target, bound);
+    if (frame.result.bvid !== video.bvid || frame.result.cid !== video.cid) throw pageChanged();
+    job.target = bound;
+    let result;
+    try {
+      const frames = await effect(job, () => api.scripting.executeScript({
+        target: { tabId: bound.tabId, documentIds: [bound.documentId] }, world: 'MAIN', injectImmediately: true,
+        func: captureBilibiliFrame, args: [input],
+      }), captureIoTimeoutMs);
+      result = frames?.find(entry => entry.frameId === 0 && entry.documentId === bound.documentId)?.result;
+    } catch (error) { if (missingDocument(error)) throw pageChanged(); throw error; }
+    if (!result || result.ok !== true) {
+      const reason = result?.reason;
+      if (reason === 'changed') throw pageChanged();
+      if (reason === 'identity-unavailable') throw videoError('VIDEO_PLAYER_IDENTITY_UNAVAILABLE', '暂时无法确认播放器的当前分集，请等视频加载完成后再截取画面。');
+      if (reason === 'unavailable') throw videoError('VIDEO_PLAYER_NOT_READY', '当前视频播放器尚未就绪，请等待视频加载后再截取画面。');
+      if (reason === 'capture-blocked') throw videoError('VIDEO_CAPTURE_BLOCKED', '该视频画面受保护或跨域，无法截取真实画面。');
+      throw uncertain();
+    }
+    if (result.restored !== true) throw videoError('VIDEO_NAVIGATION_UNCERTAIN', '无法确认播放器已恢复原位置，请先核对播放状态；不会继续自动截帧。');
+    const captured = { outcome: 'captured', tabId: bound.tabId, startMs, dataUrl: result.dataUrl,
+      width: result.width, height: result.height, currentTime: result.currentTime,
+      blackFrame: result.blackFrame === true, restored: result.restored === true };
+    if (!validVideoCapture(captured, job.request)) throw uncertain();
+    return captured;
+  }
   async function open(job) {
     const { target, video } = job.request;
     const tabs = await wait(job, () => api.tabs.query({ url: [
@@ -136,11 +186,12 @@ export function createVideoNavigationService({ chrome: api = globalThis.chrome,
       try {
         if (disposed || request?.type !== 'navigate' || !videoNavigationToken(request.requestId)) throw videoError('VIDEO_NAVIGATION_INVALID', '视频定位请求无效。');
         const fixed = captureVideoNavigation(request);
+        const capMs = fixed.action === 'capture' ? captureTimeoutMs : timeoutMs;
         job = { request: fixed, controller: new AbortController(), effects: 0, finished: false, keys: new Set(),
-          deadlineAt: Math.min(Date.now() + timeoutMs, Number.isFinite(request.deadlineAt) ? request.deadlineAt : 0) };
-        acquire(job, fixed.action === 'seek' ? 'tab:' + fixed.target.tabId : 'video:' + fixed.video.bvid + ':' + fixed.video.part);
+          deadlineAt: Math.min(Date.now() + capMs, Number.isFinite(request.deadlineAt) ? request.deadlineAt : 0) };
+        acquire(job, fixed.action === 'open' ? 'video:' + fixed.video.bvid + ':' + fixed.video.part : 'tab:' + fixed.target.tabId);
         job.timer = setTimeout(() => job.controller.abort(uncertain()), Math.max(1, job.deadlineAt - Date.now()));
-        void awaitWithAbort(fixed.action === 'seek' ? seek(job) : open(job), job.controller.signal).then(result => {
+        void awaitWithAbort(fixed.action === 'seek' ? seek(job) : fixed.action === 'capture' ? capture(job) : open(job), job.controller.signal).then(result => {
           check(job); port.postMessage({ requestId: request.requestId, result });
         }).catch(error => fail(request, error)).finally(() => { disconnect(); try { port.disconnect(); } catch {} });
       } catch (error) { fail(request, error); disconnect(); try { port.disconnect(); } catch {} }
@@ -154,7 +205,7 @@ export function createVideoNavigationService({ chrome: api = globalThis.chrome,
   };
   const removed = tabId => updated(tabId, { status: 'loading' });
   const activated = ({ tabId, windowId }) => {
-    for (const job of new Set(locks.values())) if (job.request.action === 'seek' && Number.isInteger(job.windowId)
+    for (const job of new Set(locks.values())) if (['seek', 'capture'].includes(job.request.action) && Number.isInteger(job.windowId)
       && job.windowId === windowId && job.request.target.tabId !== tabId) job.controller.abort(pageRequired());
   };
   api.runtime.onConnect.addListener(onConnect);

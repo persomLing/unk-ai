@@ -2,6 +2,7 @@ import { updateProfileGenerationSettings } from '../utils/profiles.js';
 
 export function updateModelDraft(profile, settings) {
   return { ...updateProfileGenerationSettings(profile, settings),
+    kind: settings.kind === 'image' ? 'image' : 'chat',
     contextLength: settings.contextLength ?? null,
     maxOutputTokens: settings.maxOutputTokens ?? null,
     temperature: settings.temperature ?? null };

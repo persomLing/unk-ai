@@ -156,7 +156,10 @@
                   <button type="button" role="menuitem" data-attach-kind="document"><i data-icon="file"></i><span class="add-menu-name">上传文档</span><span class="add-menu-description">PDF、Word、文本等</span></button>
                   <div id="composer-modes" class="composer-add-section" role="group" aria-label="页面能力" hidden>
                     <button id="agent-toggle" type="button" role="menuitem" aria-label="页面操作" aria-pressed="false" title="在授权后点击、输入和导航"><i data-icon="globe"></i><span class="add-menu-name">页面操作</span><span class="add-menu-description">协助点击与填写</span><i class="add-menu-check" data-icon="check"></i></button>
-                    <button id="video-notes-button" type="button" role="menuitem" aria-label="视频笔记" title="请先选中当前页面" disabled><i data-icon="video"></i><span class="add-menu-name">视频笔记</span><span class="add-menu-description">读取字幕，中文整理</span></button>
+                    <div class="add-menu-video-row">
+                      <button id="video-notes-button" type="button" role="menuitem" aria-label="视频笔记" title="请先选中当前页面" disabled><i data-icon="video"></i><span class="add-menu-name">视频笔记</span><span class="add-menu-description">读取字幕，中文整理</span></button>
+                      <button id="video-illustration-mode" type="button" class="add-menu-mode" role="menuitem" aria-label="视频配图方式：关" title="视频配图方式：关（点击切换）">配图·关</button>
+                    </div>
                   </div>
                   <div class="add-menu-heading" role="presentation"><span>技能</span><button id="skills-button" class="add-menu-manage" type="button" role="menuitem" data-menu-action="skills" aria-label="管理技能" aria-haspopup="dialog" aria-controls="skills-dialog">管理</button></div>
                   <div data-menu-skills role="group" aria-label="已导入技能"></div>

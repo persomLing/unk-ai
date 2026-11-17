@@ -6,7 +6,7 @@ const MUTABLE_FIELDS = new Set([
   'requestPhase', 'phaseStartedAt', 'model', 'modelId', 'reasoningEffort',
   'sources', 'pageSource', 'suggestions', 'selectionUsed', 'includeVisual',
   'errorMessage', 'errorDetail', 'errorCode', 'contextIssues',
-  'videoNotesVersion', 'videoNotesOutcome',
+  'videoNotesVersion', 'videoNotesOutcome', 'attachments', 'illustration', 'videoIllustration',
 ]);
 const keyFor = (conversationId, assistantId) => JSON.stringify([conversationId, assistantId]);
 const clone = value => structuredClone(value);
@@ -218,15 +218,35 @@ export function createConversationRepository({
     return true;
   }
 
-  /** Optional follow-up suggestions may decorate a successful result only. */
-  function decorate(ref, { suggestions } = {}) {
+  /** Optional follow-up suggestions and illustrations may decorate a successful
+   * result only. They never change the answer text, identity or terminal status. */
+  function decorate(ref, { suggestions, attachments, illustration, videoIllustration } = {}) {
     const pair = get(ref);
     if (!pair || pair.assistant.status !== 'complete' || pair.assistant.terminalRunId !== ref.runId) return false;
-    if (!Array.isArray(suggestions) || suggestions.some(value => typeof value !== 'string')) {
-      throw new TypeError('suggestions must be an array of strings.');
+    const patch = {};
+    if (suggestions !== undefined) {
+      if (!Array.isArray(suggestions) || suggestions.some(value => typeof value !== 'string')) {
+        throw new TypeError('suggestions must be an array of strings.');
+      }
+      patch.suggestions = suggestions;
     }
-    if (JSON.stringify(pair.assistant.suggestions || []) === JSON.stringify(suggestions)) return false;
-    pair.assistant.suggestions = clone(suggestions);
+    if (attachments !== undefined) {
+      if (!Array.isArray(attachments) || attachments.some(item => !item || item.type !== 'image' || typeof item.id !== 'string')) {
+        throw new TypeError('attachments must be an array of image attachments.');
+      }
+      patch.attachments = attachments;
+    }
+    if (videoIllustration !== undefined) {
+      if (!videoIllustration || typeof videoIllustration !== 'object') throw new TypeError('videoIllustration must be an object.');
+      patch.videoIllustration = videoIllustration;
+    }
+    if (illustration !== undefined) {
+      if (!illustration || typeof illustration !== 'object' || Array.isArray(illustration)) throw new TypeError('illustration must be an object.');
+      patch.illustration = illustration;
+    }
+    if (!Object.keys(patch).length) return false;
+    if (Object.entries(patch).every(([key, value]) => JSON.stringify(pair.assistant[key] ?? null) === JSON.stringify(value))) return false;
+    for (const [key, value] of Object.entries(patch)) pair.assistant[key] = clone(value);
     pair.assistant.runRevision += 1;
     changed(ref, pair, 'decorate');
     return true;

@@ -141,6 +141,8 @@ import { createSelectionChatRuntime } from './features/messages/selection-chat-r
 import { createSelectionChatView } from './features/messages/selection-chat-view.js';
 import { createSelectionChatSessions } from './features/messages/selection-chat-sessions.js';
 import { createMessageRewind } from './features/messages/message-rewind.js';
+import { rewoundCommandForDraft, rewoundCommandHint } from './features/messages/rewound-command.js';
+import { hasVideoTranscript } from './features/video-notes/video-request.js';
 import { createAgentTaskRestart, agentRestartControl } from './features/agent/agent-task-restart.js';
 import {
   activeModel,
@@ -208,6 +210,7 @@ const state = {
   saveTimer: null,
   draft: '',
   draftSource: null,
+  rewoundCommand: null,
   attachments: [],
   preparingAttachments: false,
   autoVisualRunning: false,
@@ -321,6 +324,7 @@ function recallQueueItem() {
   pastedText.setValue(item.content || '');
   state.draft = pastedText.getValue();
   state.draftSource = normalizeDraftSource(item.requestSource);
+  state.rewoundCommand = null;
   state.attachments = item.attachments || [];
   renderAttachments();
   setPageSelection(item.selection || null);
@@ -381,7 +385,12 @@ const messageRewind = createMessageRewind({
     pastedText.setValue(draft.text);
     state.draft = draft.text;
     state.draftSource = draft.requestSource;
+    state.rewoundCommand = draft.rewoundCommand;
+    state.draftPageTarget = draft.rewoundCommand ? { ...draft.rewoundCommand.pageCommand.target } : null;
     state.attachments = draft.attachments;
+    state.directModelRequest = '';
+    state.directReplaceReply = false;
+    if (draft.rewoundCommand) agentSlot?.setMode(false);
     state.lastSentFingerprint = '';
     state.lastSentAt = 0;
     renderAttachments();
@@ -407,7 +416,7 @@ const pastedText = createPastedTextDraft({ input, container: $('#pasted-text-lis
     if (!String(state.draft || '').trim() && value.trim()) state.draftPageTarget = state.activePageSignal ? { ...state.activePageSignal } : null;
     state.draft = value;
     state.contextUsageScope = 'preview';
-    if (!value.trim()) state.draftSource = null;
+    if (!value.trim()) { state.draftSource = null; state.rewoundCommand = null; }
     resizeInput();
     updateComposer();
   },
@@ -1011,6 +1020,7 @@ function renderLocalPrompt() {
 }
 
 function renderConversation({ scroll = false } = {}) {
+  if (state.rewoundCommand?.conversationId !== state.conversation?.id) state.rewoundCommand = null;
   videoTimestampNavigation?.sync();
   if (typeof articleSelectionMenu !== 'undefined') articleSelectionMenu.hide();
   if (typeof selectionChatSessions !== 'undefined') selectionChatSessions?.syncConversation(state.conversation?.id);
@@ -1097,6 +1107,7 @@ function updatePageToolbar() {
   const page = normalizePageContext(state.pendingPage || state.conversation?.pageContext);
   const active = state.activePageSignal;
   const draftSource = normalizeDraftSource(state.draftSource);
+  const restoredCommand = rewoundCommandForDraft(state, pastedText.getValue());
   const pageEnabled = !state.disablePageContext && !draftSource;
   pageQuestionChoice.refresh();
   if (!pastedText.getValue().trim()) state.draftPageTarget = null;
@@ -1169,8 +1180,8 @@ function updatePageToolbar() {
   }
   const modeHint = $('#composer-mode-hint');
   if (modeHint) {
-    modeHint.hidden = !draftSource && !(agentSlot?.isMode() && pageEnabled && control.available);
-    modeHint.textContent = draftSource
+    modeHint.hidden = !restoredCommand && !draftSource && !(agentSlot?.isMode() && pageEnabled && control.available);
+    modeHint.textContent = restoredCommand ? rewoundCommandHint(restoredCommand, hasVideoTranscript(state.attachments)) : draftSource
       ? `独立话题 · ${draftSource.label} · 本轮不携带当前网页`
       : agentSlot?.isMode() && pageEnabled && control.available ? '页面操作已开启 · 点击 ＋ 可关闭'
         : '';
@@ -1178,6 +1189,7 @@ function updatePageToolbar() {
   composerAddMenu?.sync();
   videoNotesEntry?.sync();
   if (input && state.ready) input.placeholder = draftSource ? '编辑独立话题…（本轮不携带当前网页）'
+    : restoredCommand ? '编辑原视频的笔记要求…'
     : agentSlot?.isMode() ? '描述要在当前页面完成的任务…' : !active || state.disablePageContext ? '输入问题…' : '问问这个页面，例如：这些配置怎么选？';
 
 }
@@ -1399,6 +1411,7 @@ async function selectConversation(id) {
     toast('请先停止当前任务，再切换会话。');
     return;
   }
+  application.cancelIllustrations();
   const floatingChat = typeof selectionChats === 'undefined' ? null
     : [...selectionChats].find(chat => chat.conversationId === id);
   if (floatingChat) return floatingChat.openInMain();
@@ -1414,6 +1427,7 @@ async function selectConversation(id) {
       state.conversation = conversation;
       agentTurnCallbacks.reconcile(conversation);
       application.repository.reconcile(conversation);
+      application.reconcileIllustrations(conversation);
       state.pendingPage = null;
       setHistoryOpen(false);
       renderConversation({ scroll: true });
@@ -1428,6 +1442,7 @@ async function newConversation(groupId = null) {
     toast('请先停止当前任务，再新建会话。');
     return null;
   }
+  application.cancelIllustrations();
   return historyNavigation.run(async operation => {
     visualPreparation.cancel();
     let storageInfo = await operation.read(getDirectoryInfo());
@@ -1468,6 +1483,7 @@ async function newConversation(groupId = null) {
       state.conversation = created;
       agentTurnCallbacks.reconcile(created);
       application.repository.reconcile(created);
+      application.reconcileIllustrations(created);
       state.pendingPage = null;
       state.attachments = [];
       state.followToPage = true;
@@ -1575,7 +1591,7 @@ historySidebar = createHistorySidebar({
           if (state.conversation || deletedActiveConversationId !== originalId) return;
           operation.commit(() => {
             state.conversation = restored;
-            if (restored) { agentTurnCallbacks.reconcile(restored); application.repository.reconcile(restored); }
+            if (restored) { agentTurnCallbacks.reconcile(restored); application.repository.reconcile(restored); application.reconcileIllustrations(restored); }
             deletedActiveConversationId = null;
             renderConversation();
           });
@@ -1724,7 +1740,7 @@ const composition = createSidepanelComposition({
     updateTurn: updateAgentTurn,
     endTurn: endAgentTurn,
     onStateChange: () => {
-      if (agentSlot?.isMode()) state.draftSource = null;
+      if (agentSlot?.isMode()) { state.draftSource = null; state.rewoundCommand = null; }
       updateComposer();
       updatePageToolbar();
       if (!agentSlot?.isBusy() && !state.generatingId && !state.isSubmitting) {
@@ -1761,6 +1777,7 @@ const application = createSidepanelApplication({
 const skillLibrary = createSkillLibrary({ storage: chrome.storage.local, locks: navigator.locks });
 videoNotesEntry = createVideoNotesEntry({
   button: $('#video-notes-button'),
+  modeButton: $('#video-illustration-mode'),
   getState: () => ({ ready: state.ready, pageEnabled: !state.disablePageContext && !normalizeDraftSource(state.draftSource),
     target: state.activePageSignal,
     busy: Boolean(state.generatingId || state.isSubmitting || state.compressing || state.preparingAttachments
@@ -1846,6 +1863,7 @@ async function replaceWithSelectionChat(runtime, { signal, isCurrent }) {
     };
     check();
     visualPreparation.cancel();
+    application.cancelIllustrations();
     conversationSaver.flush();
     if (state.conversation?.messages.length) await operation.read(saveCurrent({ required: true }));
     check();
@@ -1855,6 +1873,7 @@ async function replaceWithSelectionChat(runtime, { signal, isCurrent }) {
       state.conversation = conversation;
       agentTurnCallbacks.reconcile(conversation);
       application.repository.reconcile(conversation);
+      application.reconcileIllustrations(conversation);
       state.pendingPage = null;
       state.pageSelection = null;
       state.draftSource = null;
@@ -1920,6 +1939,7 @@ const articleSelectionMenu = createArticleSelectionMenu({ document, root: messag
     agentSlot?.setMode(false);
     pageQuestionChoice.clear();
     state.draftSource = null;
+    state.rewoundCommand = null;
     setPageSelection(next);
     input.focus({ preventScroll: true });
     return true;
@@ -2017,7 +2037,9 @@ async function sendMessage(text = pastedText.getValue(), options = {}) {
     return;
   }
   state.draft = pastedText.getValue();
+  const restoredCommand = rewoundCommandForDraft(state, text, options);
   if (state.ready && !options.fromQueue && !options.requirePage && !Object.hasOwn(options, 'pageContextEnabled')
+    && !restoredCommand
     && needsPageQuestionChoice({ question: text, enabled: !state.disablePageContext,
       active: state.activePageSignal, messages: state.conversation?.messages,
       attachments: state.attachments, selection: state.pageSelection,
@@ -2054,6 +2076,7 @@ async function summarizePage() {
   const summaryPrompt = (!normalizeDraftSource(state.draftSource) && pastedText.getValue().trim())
     || '请总结这个网页的主要内容、核心观点和关键结论。用简洁清晰的 Markdown 组织回答。';
   state.draftSource = null;
+  state.rewoundCommand = null;
   state.lastSentFingerprint = '';
   await sendMessage(summaryPrompt, { requirePage: true });
 }
@@ -2334,6 +2357,7 @@ $('#welcome')?.addEventListener('click', async (event) => {
     pastedText.setValue(prompt);
     state.draft = prompt;
     state.draftSource = normalizeDraftSource(topic?.draftSource);
+    state.rewoundCommand = null;
     if (state.draftSource) {
       agentSlot?.setMode(false);
       clearPageSelection();
@@ -2465,6 +2489,7 @@ messagesElement.addEventListener('click', async (event) => {
     state.directReplaceReply = true;
     pastedText.setValue(tryNextChip.dataset.suggestion);
     state.draftSource = null;
+    state.rewoundCommand = null;
     resizeInput();
     await sendMessage();
     return;
@@ -2489,6 +2514,10 @@ messagesElement.addEventListener('click', async (event) => {
   const id = messageElement.dataset.messageId;
   const message = find(state.conversation?.messages, (item) => item.id === id);
   if (!message) return;
+  if (button.dataset.action === 'cancel-illustration') {
+    application.cancelIllustrations(id);
+    return;
+  }
   if (button.dataset.action === 'export-diagnostics') {
     if (diagnosticExportBusy) return;
     button.disabled = true;
@@ -2711,6 +2740,7 @@ async function initialize() {
         await waitStartup(saveCurrent(), '保存恢复后的会话');
       }
     }
+    application.reconcileIllustrations(state.conversation);
     await initTheme(startupController.signal);
     state.ready = true;
     renderWelcomePrompts();

@@ -1,5 +1,6 @@
 import { CONVERSATION_SELECTION_LIMITS, normalizeConversationSelection,
   conversationSelectionContextForModel } from '../../../utils/selection.js';
+import { articleTextForRange, articleTextSnapshot, isArticleDecoration } from './article-text.js';
 
 export const ARTICLE_SELECTION_LIMITS = CONVERSATION_SELECTION_LIMITS;
 export const normalizeArticleSelection = normalizeConversationSelection;
@@ -57,11 +58,16 @@ export function captureArticleSelection({ selection, root, conversation, now = (
     const article = body?.closest?.('.assistant-message[data-message-id]');
     if (!body || body !== endBody || !article || !contains(root, article)
       || body.isConnected === false || article.isConnected === false
-      || !contains(body, range.startContainer) || !contains(body, range.endContainer)) return null;
+      || !contains(body, range.startContainer) || !contains(body, range.endContainer)
+      || isArticleDecoration(range.startContainer) || isArticleDecoration(range.endContainer)) return null;
     const answerIndex = conversation.messages.findIndex(message => message?.id === article.dataset?.messageId);
     const answer = conversation.messages[answerIndex];
     if (!answer || answer.role !== 'assistant') return null;
-    const rawText = range.toString();
+    const hasIllustrations = Boolean(body.querySelectorAll?.('.message-illustrations')?.length);
+    const snapshot = hasIllustrations ? articleTextSnapshot(body) : null;
+    if (hasIllustrations && !snapshot) return null;
+    const textForRange = selectedRange => snapshot ? articleTextForRange(selectedRange, snapshot) : selectedRange.toString();
+    const rawText = textForRange(range);
     const text = normalizedText(rawText);
     if (!text) return null;
     const beforeRange = range.cloneRange();
@@ -70,9 +76,9 @@ export function captureArticleSelection({ selection, root, conversation, now = (
     const afterRange = range.cloneRange();
     afterRange.selectNodeContents(body);
     afterRange.setStart(range.endContainer, range.endOffset);
-    const rawBefore = beforeRange.toString();
+    const rawBefore = textForRange(beforeRange);
     const before = normalizedText(rawBefore);
-    const after = normalizedText(afterRange.toString());
+    const after = normalizedText(textForRange(afterRange));
     const context = [
       before ? `前文：\n${before.slice(-ARTICLE_SELECTION_LIMITS.nearby)}` : '',
       after ? `后文：\n${after.slice(0, ARTICLE_SELECTION_LIMITS.nearby)}` : '',

@@ -30,6 +30,7 @@ export function normalizeProfile(profile) {
     : [];
   return {
     id,
+    kind: profile.kind === 'image' ? 'image' : 'chat',
     endpointUrl: String(profile.endpointUrl || ''),
     name: String(profile.name || id),
     description: String(profile.description || ''),
@@ -70,10 +71,12 @@ export function normalizeProviderConfig(config) {
     : [];
   if (!profiles.length && config.model) profiles = [normalizeProfile(config)];
   profiles = profiles.map((profile) => ({ ...profile, endpointUrl: profile.endpointUrl || String(config.endpointUrl || '') }));
-  const selected = profiles.find((profile) => profile.id === config.selectedModelId)
-    || profiles.find((profile) => profile.id === config.model)
-    || profiles[0]
+  const chatProfiles = profiles.filter((profile) => profile.kind !== 'image');
+  const selected = chatProfiles.find((profile) => profile.id === config.selectedModelId)
+    || chatProfiles.find((profile) => profile.id === config.model)
+    || chatProfiles[0]
     || null;
+  const selectedImage = profiles.find((profile) => profile.kind === 'image' && profile.id === config.selectedImageModelId) || null;
   return {
     version: 4,
     endpointUrl: String(config.endpointUrl || ''),
@@ -88,6 +91,7 @@ export function normalizeProviderConfig(config) {
     selectedModelId: selected?.id || '',
     selectedModelName: String(config.selectedModelName || selected?.name || selected?.id || ''),
     selectedEffort: normalizeEffort(config.selectedEffort || selected?.reasoningDefaultEffort),
+    selectedImageModelId: selectedImage?.id || '',
     models: profiles,
   };
 }
@@ -95,15 +99,24 @@ export function normalizeProviderConfig(config) {
 export function selectedModel(config) {
   const normalized = normalizeProviderConfig(config);
   if (!normalized) return null;
-  return normalized.models.find((model) => model.id === normalized.selectedModelId) || normalized.models[0] || null;
+  return normalized.models.find((model) => model.kind !== 'image' && model.id === normalized.selectedModelId)
+    || normalized.models.find((model) => model.kind !== 'image') || null;
+}
+
+/** The configured image-generation model, or null when none is selected. */
+export function selectedImageModel(config) {
+  const normalized = normalizeProviderConfig(config);
+  if (!normalized) return null;
+  return normalized.models.find((model) => model.kind === 'image' && model.id === normalized.selectedImageModelId) || null;
 }
 
 /** Build request-level settings for the selected model without mutating config. */
 export function requestProfile(config, overrides = {}) {
   const normalized = normalizeProviderConfig(config);
   if (!normalized) return null;
-  const model = normalized.models.find((item) => item.id === (overrides.modelId || normalized.selectedModelId))
-    || normalized.models[0]
+  const chatModels = normalized.models.filter((item) => item.kind !== 'image');
+  const model = chatModels.find((item) => item.id === (overrides.modelId || normalized.selectedModelId))
+    || chatModels[0]
     || null;
   if (!model) return null;
   const reasoningEnabled = overrides.reasoningEnabled ?? model.supportsReasoning;
@@ -113,6 +126,7 @@ export function requestProfile(config, overrides = {}) {
     ? Number(normalized.temperature)
     : null;
   const temperature = overrides.temperature ?? model.temperature ?? storedTemperature;
+  const imageModel = normalized.models.find((item) => item.kind === 'image' && item.id === normalized.selectedImageModelId) || null;
   return {
     endpointUrl: normalized.endpointUrl,
     apiKey: normalized.apiKey,
@@ -127,5 +141,6 @@ export function requestProfile(config, overrides = {}) {
     reasoningEnabled,
     reasoningEffort: effort,
     supportsVision: model.supportsVision,
+    ...(imageModel ? { imageProfile: { model: imageModel.id } } : {}),
   };
 }

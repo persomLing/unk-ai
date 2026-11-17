@@ -2,9 +2,11 @@ import { assertPageTarget, pageTargetFields } from '../../../utils/page-target.j
 
 export const VIDEO_READING_PORT = 'unk-ai-video-notes';
 export const VIDEO_PROVIDER_ID = 'video-transcript';
+export const VIDEO_ILLUSTRATION_MODES = Object.freeze(['off', 'frame', 'generate']);
 // Working context only. Longer transcripts are summarized in full before collection.
 export const VIDEO_CONTEXT_MAX_CHARS = 100000;
-export const VIDEO_LIMITS = Object.freeze({ timeoutMs: 20000, requestMs: 8000,
+// Bound network stalls, not the video length. Metadata and subtitles are fetched sequentially.
+export const VIDEO_LIMITS = Object.freeze({ timeoutMs: 90000, requestMs: 30000,
   maxBytes: 2 * 1024 * 1024 }); // Metadata responses; subtitle bodies have no size gate.
 export const videoError = (code, message) => Object.assign(new Error(message), { code });
 const invalid = () => videoError('VIDEO_DATA_INVALID', '视频字幕资料不完整或版本不支持，请回到原视频重新整理。');
@@ -40,7 +42,8 @@ export function videoTarget(value, { documentRequired = false } = {}) {
 
 export function captureVideoRequest(value) {
   if (!value || value.kind !== 'video-notes' || value.version !== 1) throw invalid();
-  return { kind: 'video-notes', version: 1, target: videoTarget(value.target) };
+  const illustration = VIDEO_ILLUSTRATION_MODES.includes(value.illustration) ? value.illustration : 'off';
+  return { kind: 'video-notes', version: 1, target: videoTarget(value.target), illustration };
 }
 
 export function normalizeVideoCues(values, duration) {

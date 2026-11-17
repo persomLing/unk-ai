@@ -1,7 +1,9 @@
 import {
+  IMAGE_SIZES,
   requestAgentDecision,
   requestGatewayWebFetch,
   requestGatewayWebSearch,
+  requestImageGeneration,
   requestTextCompletion,
   streamChatCompletion,
   streamChatToolCompletion,
@@ -9,18 +11,21 @@ import {
 import { requestTokenUsage } from '../utils/token-usage.js';
 
 export const MODEL_PURPOSES = Object.freeze([
-  'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions', 'video-summary',
+  'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions', 'video-summary', 'image-generation', 'illustration-plan',
 ]);
 export const DEFAULT_MODEL_TIMEOUTS = Object.freeze({
   answer: 120000, 'agent-decision': 60000, 'visual-decision': 8000,
   'reading-decision': 8000,
-  'research-decision': 8000, 'web-search': 25000, 'web-fetch': 25000, compression: 30000, suggestions: 15000, 'video-summary': 60000,
+  'research-decision': 8000, 'web-search': 25000, 'web-fetch': 25000, compression: 30000, suggestions: 15000, 'video-summary': 60000, 'image-generation': null, 'illustration-plan': 15000,
 });
 
 const MODEL_FIELDS = ['model', 'temperature', 'contextLength', 'maxTokens',
   'reasoningEnabled', 'reasoningEffort', 'supportsVision',
   'webSearchEndpoint', 'webFetchEndpoint', 'webSearchEnabled', 'webFetchEnabled'];
-const PROFILE_FIELDS = ['endpointUrl', 'apiKey', ...MODEL_FIELDS];
+// Structured classifiers output tiny JSON and must not spend the chat model's
+// reasoning budget thinking, which can leave the answer body empty.
+const NON_REASONING_PURPOSES = new Set(['illustration-plan', 'visual-decision']);
+const PROFILE_FIELDS = ['endpointUrl', 'apiKey', 'imageProfile', ...MODEL_FIELDS];
 const TRANSPORT_EVENTS = new Set(['started', 'headers', 'first-byte', 'progress', 'first-reasoning', 'first-content',
   'fallback', 'body-started', 'body-completed', 'completed', 'failed', 'cancelled'].map(value => `transport.${value}`));
 const DIAGNOSTIC_REASONS = new Set(['complete', 'empty', 'reasoning-only', 'truncated', 'malformed', 'error-event',
@@ -83,7 +88,7 @@ function safeFailure(error, key, purpose) {
   const failure = errorWith(code, redact(error?.message || error, key), name);
   // A read-only capability adapter may fall back only after a confirmed HTTP
   // absence. Preserve the bounded status, never raw endpoints or error objects.
-  if (name === 'Error' && ['web-search', 'web-fetch'].includes(purpose)
+  if (name === 'Error' && ['web-search', 'web-fetch', 'image-generation', 'illustration-plan', 'visual-decision'].includes(purpose)
     && Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599) failure.status = error.status;
   return failure;
 }
@@ -102,6 +107,7 @@ export function createModelTransport({ fetchImpl } = {}) {
       return complete({ ...input, onDelta, onReasoning });
     }
     if (purpose === 'agent-decision') return requestAgentDecision(input);
+    if (purpose === 'image-generation') return requestImageGeneration({ ...input, model: profile.imageProfile?.model });
     if (purpose === 'web-search') return requestGatewayWebSearch({ ...input, endpointName: profile.webSearchEndpoint, maxResults: input.maxResults });
     if (purpose === 'web-fetch') return requestGatewayWebFetch({ ...input, endpointName: profile.webFetchEndpoint });
     return requestTextCompletion(input);
@@ -184,7 +190,16 @@ export function createModelGateway({
       if (purpose === 'web-fetch' && config.webFetchEnabled === false) {
         return Promise.reject(errorWith('ERR_WEB_FETCH_DISABLED', '网页抓取已在设置中关闭。'));
       }
-      if (!['web-search', 'web-fetch'].includes(purpose) && !Array.isArray(options.messages)) {
+      if (purpose === 'image-generation') {
+        if (!config.imageProfile?.model) return Promise.reject(errorWith('ERR_IMAGE_MODEL_MISSING', '未配置生图模型。'));
+        if (typeof options.prompt !== 'string' || !options.prompt.trim() || options.prompt.length > 4000) {
+          return Promise.reject(new TypeError('生图需要 1 到 4000 字的描述。'));
+        }
+        if (options.size !== undefined && !IMAGE_SIZES.includes(options.size)) {
+          return Promise.reject(new TypeError('生图尺寸无效。'));
+        }
+      }
+      if (!['web-search', 'web-fetch', 'image-generation'].includes(purpose) && !Array.isArray(options.messages)) {
         return Promise.reject(new TypeError('Model request messages must be an array.'));
       }
       if (options.tools !== undefined && (!['answer', 'agent-decision'].includes(purpose) || !Array.isArray(options.tools))) {
@@ -194,32 +209,39 @@ export function createModelGateway({
         || !['auto', 'none'].includes(options.toolChoice))) {
         return Promise.reject(errorWith('ERR_MODEL_PURPOSE', '工具选择只允许带工具数组的主回答使用 auto 或 none。'));
       }
-      const timeoutMs = options.timeoutMs ?? DEFAULT_MODEL_TIMEOUTS[purpose];
-      if (!Number.isFinite(timeoutMs) || timeoutMs < 0
+      // Only image generation may wait without a timer. Its owner still
+      // cancels it on Stop, a new turn, a conversation switch or disposal.
+      const timeoutMs = options.timeoutMs === undefined ? DEFAULT_MODEL_TIMEOUTS[purpose] : options.timeoutMs;
+      const unlimitedImage = purpose === 'image-generation' && timeoutMs === null;
+      if ((!unlimitedImage && (!Number.isFinite(timeoutMs) || timeoutMs < 0))
         || (options.deadlineAt !== undefined && !Number.isFinite(options.deadlineAt))) {
         return Promise.reject(new TypeError('Model request timeout/deadline must be finite.'));
       }
       const defaultTokens = ['answer', 'agent-decision', 'suggestions'].includes(purpose) ? config.maxTokens
-        : purpose === 'visual-decision' ? 80
+        : purpose === 'visual-decision' ? 400
           : purpose === 'research-decision' ? 120
-            : config.maxTokens ? Math.min(4000, config.maxTokens) : undefined;
+            : purpose === 'illustration-plan' ? 1000
+              : config.maxTokens ? Math.min(4000, config.maxTokens) : undefined;
       const defaultTemperature = purpose === 'compression' ? undefined
-        : ['agent-decision', 'visual-decision', 'research-decision'].includes(purpose) ? 0 : config.temperature;
+        : ['agent-decision', 'visual-decision', 'research-decision', 'illustration-plan'].includes(purpose) ? 0 : config.temperature;
       let input;
       let fingerprint;
       try {
-        input = freeze(structuredClone({ ...(['web-search', 'web-fetch'].includes(purpose) ? {} : { messages: options.messages }),
+        input = freeze(structuredClone({ ...(['web-search', 'web-fetch', 'image-generation'].includes(purpose) ? {} : { messages: options.messages }),
           ...(purpose === 'agent-decision' ? { tools: options.tools || [] } : {}),
           ...(purpose === 'answer' && Array.isArray(options.tools) ? { tools: options.tools,
             toolChoice: options.toolChoice ?? 'auto' } : {}),
           ...(purpose === 'web-search' ? { query: options.query, maxResults: options.maxResults } : {}),
           ...(purpose === 'web-fetch' ? { url: options.url } : {}),
-          ...(['web-search', 'web-fetch'].includes(purpose) ? {} : {
+          ...(purpose === 'image-generation' ? { prompt: options.prompt, size: options.size ?? 'auto' } : {}),
+          ...(['web-search', 'web-fetch', 'image-generation'].includes(purpose) ? {} : {
             maxTokens: Object.hasOwn(options, 'maxTokens') ? options.maxTokens : defaultTokens,
             temperature: Object.hasOwn(options, 'temperature') ? options.temperature : defaultTemperature,
           }),
+          ...(NON_REASONING_PURPOSES.has(purpose) ? { reasoningEnabled: false } : {}),
         }));
-        fingerprint = JSON.stringify(canonical({ purpose, input, timeoutMs, deadlineAt: options.deadlineAt }));
+        fingerprint = JSON.stringify(canonical({ purpose, input, timeoutMs, deadlineAt: options.deadlineAt,
+          ...(purpose === 'image-generation' ? { imageProfile: config.imageProfile } : {}) }));
       } catch {
         return Promise.reject(new TypeError('Model request data must be serializable.'));
       }
@@ -228,7 +250,7 @@ export function createModelGateway({
         : Promise.reject(errorWith('ERR_MODEL_REQUEST_ID_REUSED', '相同 requestId 不可用于不同模型请求。'));
 
       const startedAt = now();
-      const deadline = Math.min(startedAt + timeoutMs, runDeadline ?? Infinity, options.deadlineAt ?? Infinity);
+      const deadline = Math.min(unlimitedImage ? Infinity : startedAt + timeoutMs, runDeadline ?? Infinity, options.deadlineAt ?? Infinity);
       const requestController = new AbortController();
       const entry = { id: requestId, purpose, fingerprint, startedAt, settled: false, timer: null, promise: null,
         diagnostics: {}, firstSignals: new Set() };
@@ -284,7 +306,7 @@ export function createModelGateway({
       signal?.addEventListener('abort', cancelRequest, { once: true });
       controller.signal.addEventListener('abort', cancelRun, { once: true });
       if (!live()) return entry.promise;
-      entry.timer = schedule(timeout, Math.max(0, deadline - now()));
+      if (Number.isFinite(deadline)) entry.timer = schedule(timeout, Math.max(0, deadline - now()));
       // Publish only numbers from the final frozen request, after providers,
       // tools and trimming. Auxiliary requests cannot replace answer usage.
       const inputUsage = purpose === 'answer' ? freeze(requestTokenUsage({ messages: input.messages,

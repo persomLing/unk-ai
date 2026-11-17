@@ -20,6 +20,7 @@ import { captureReadingHistory, normalizeReadingOptions, readingOptionsAtSubmiss
 import { assertImageAttachmentsAvailable } from '../utils/attachments.js';
 import { selectedSkill } from '../sidepanel/features/skills/skill-context.js';
 import { selectedVideoTranscript } from '../sidepanel/features/video-notes/video-request.js';
+import { rewoundCommandForDraft } from '../sidepanel/features/messages/rewound-command.js';
 
 /** Application command service. The state object is a compatibility projection
  * consumed by the existing presenters; browser/storage are injected ports.
@@ -115,29 +116,37 @@ export function createConversationService(deps) {
     if (disposed) return;
     const submittedText = plainText(text).trim();
     let command = null, commandRequest = null, commandResult = null;
-    if (options.pageCommand) {
+    let restoredCommand;
+    try { restoredCommand = rewoundCommandForDraft(state, submittedText, options); }
+    catch (error) { toast(error.message, 'error'); return; }
+    const requestedCommand = options.pageCommand || restoredCommand?.pageCommand;
+    if (requestedCommand) {
       try {
-        command = Object.hasOwn(pageCommands, options.pageCommand.kind) ? pageCommands[options.pageCommand.kind] : null;
+        command = Object.hasOwn(pageCommands, requestedCommand.kind) ? pageCommands[requestedCommand.kind] : null;
         if (!command) throw new Error('这个页面命令尚不可用，请重新打开侧栏。');
-        commandRequest = command.capture(options.pageCommand);
+        commandRequest = command.capture(requestedCommand);
       } catch (error) { toast(error.message, 'error'); return; }
-      if (state.disablePageContext) { toast('请先选中当前页面，再使用视频笔记。'); return; }
+      if (state.disablePageContext && (!restoredCommand || command.needsRead({ attachments: state.attachments }))) {
+        toast('请先选中原视频页面并开启页面读取，再使用视频笔记。'); return;
+      }
       if (options.fromQueue || state.generatingId || state.isSubmitting || state.compressing || agentSlot?.isBusy()) {
         toast('请等待当前任务完成或停止后，再整理视频笔记。'); return;
       }
     }
-    // Explicit page commands own their input; they never consume a concurrent draft.
-    const preserveDraft = Boolean(command);
+    // Menu commands preserve concurrent drafts; a restored command belongs to
+    // the question being edited and consumes that draft through the same run.
+    const preserveDraft = Boolean(command && !restoredCommand);
     const modelId = options.modelId || state.selectedModelId;
     const effort = options.effort || state.selectedEffort;
     const commandProfile = command ? structuredClone(profileFor(modelId, effort)) : null;
-    let content = command?.prompt || submittedText;
-    const requestSource = preserveDraft ? null : normalizeDraftSource(options.fromQueue || Object.hasOwn(options, 'requestSource')
+    let content = command?.promptFor?.(submittedText) || command?.prompt || submittedText;
+    const displayContent = command ? submittedText || command.label : content;
+    const requestSource = command ? null : normalizeDraftSource(options.fromQueue || Object.hasOwn(options, 'requestSource')
       ? options.requestSource : state.draftSource);
     const independent = requestSource?.scope === 'independent';
     let directModelRequest = !command && (independent || (options.directModelRequest ?? (state.directModelRequest === content)));
     let attachments = preserveDraft ? [] : structuredClone(options.fromQueue ? options.attachments || [] : state.attachments);
-    const capturedSelection = preserveDraft || independent ? null : options.fromQueue ? options.selection : state.pageSelection;
+    const capturedSelection = command || independent ? null : options.fromQueue ? options.selection : state.pageSelection;
     const selection = capturedSelection ? structuredClone(capturedSelection) : null;
     const agentTask = !command && !independent && Boolean(options.agentTask ?? agentSlot?.isMode());
     const pageContextEnabled = !command && !agentTask && (options.pageContextEnabled ?? !state.disablePageContext) && !directModelRequest;
@@ -180,6 +189,7 @@ export function createConversationService(deps) {
     if (stoppedReply) {
       if (draft.value.trim() === submittedText) draft.value = '';
       if (!options.fromQueue) state.draftSource = null;
+      if (!options.fromQueue) state.rewoundCommand = null;
       state.draft = draft.value;
       resizeInput();
       await regenerate(stoppedReply.id);
@@ -234,6 +244,7 @@ export function createConversationService(deps) {
       draft.value = '';
       state.draft = '';
       state.draftSource = null;
+      state.rewoundCommand = null;
       state.attachments = [];
       state.pageSelection = null;
       resizeInput();
@@ -282,9 +293,13 @@ export function createConversationService(deps) {
       }
       if (preserveDraft) { updateComposer(); return; }
       const hasNewDraft = Boolean(draft.value.trim());
-      draft.value = hasNewDraft ? draft.value + '\n\n' + content : content;
+      const restoredText = command ? submittedText || command.label : content;
+      draft.value = hasNewDraft ? draft.value + '\n\n' + restoredText : restoredText;
       // Do not transfer a failed submission's scope onto text drafted later.
-      if (!hasNewDraft) state.draftSource = normalizeDraftSource(requestSource);
+      if (!hasNewDraft) {
+        state.draftSource = normalizeDraftSource(requestSource);
+        state.rewoundCommand = restoredCommand ? structuredClone(restoredCommand) : null;
+      }
       state.draft = draft.value;
       state.attachments = [...state.attachments, ...attachments.filter(item => !state.attachments.some(existing => existing.id === item.id))];
       if (!state.pageSelection && selection) setPageSelection(selection);
@@ -297,6 +312,7 @@ export function createConversationService(deps) {
       draft.value = '';
       state.draft = '';
       state.draftSource = null;
+      state.rewoundCommand = null;
       state.attachments = [];
     }
     resizeInput();
@@ -329,7 +345,7 @@ export function createConversationService(deps) {
           id: makeId(),
           role: 'user',
           content: messageWithSelection(content, selection),
-          displayContent: command?.label || content,
+          displayContent,
           ...(command ? { pageCommand: structuredClone(commandRequest) } : {}),
           pageContextEnabled: pageContextEnabled && readingPolicy.scope !== 'none',
           researchEnabled,
@@ -359,7 +375,7 @@ export function createConversationService(deps) {
         earlyConversation.messages.push(earlyUserMessage, earlyAssistantMessage);
         submissionOwner.bind({ conversation: earlyConversation, user: earlyUserMessage, assistant: earlyAssistantMessage });
         if (!earlyConversation.title || earlyConversation.title === '新对话') {
-          earlyConversation.title = conversationTitle(command?.label || content, attachments);
+          earlyConversation.title = conversationTitle(command ? displayContent : content, attachments);
         }
         renderConversation({ scroll: true });
         setAssistantPhase(earlyAssistantMessage, 'preparing');
@@ -369,8 +385,9 @@ export function createConversationService(deps) {
       if (command) {
         setAssistantPhase(earlyAssistantMessage, 'reading');
         commandResult = await waitForPreparation(command.prepare(commandRequest, {
+          attachments,
           run: submissionOwner, allowPageRead: () => !state.disablePageContext,
-        }), '读取视频字幕超时，请重试。', 21000);
+        }), '读取视频字幕超时，请重试。', command.preparationTimeoutMs ?? 21000);
         assertSubmission();
         commandRequest = commandResult.request;
         attachments = structuredClone(commandResult.attachments);
@@ -583,7 +600,7 @@ export function createConversationService(deps) {
         earlyUserMessage.readingOptions = readingOptions;
         if (requestSource) earlyUserMessage.requestSource = requestSource;
         earlyUserMessage.content = messageText;
-        earlyUserMessage.displayContent = command?.label || content;
+        earlyUserMessage.displayContent = displayContent;
         if (command) earlyUserMessage.pageCommand = structuredClone(commandRequest);
         earlyUserMessage.selection = selectionForMessage;
         earlyUserMessage.includeVisual = includeVisual;
@@ -600,7 +617,7 @@ export function createConversationService(deps) {
             readingOptions,
             ...(requestSource ? { requestSource } : {}),
             agentTask,
-            displayContent: command?.label || content,
+            displayContent,
             ...(command ? { pageCommand: structuredClone(commandRequest) } : {}),
             selection: selectionForMessage,
             status: 'complete',
@@ -878,7 +895,7 @@ export function createConversationService(deps) {
         setAssistantPhase(next, commandNeedsRead ? 'reading' : 'preparing');
         commandResult = await waitWithTimeout(command.prepare(commandRequest, {
           attachments: commandAttachments, run: submissionOwner, allowPageRead: () => !state.disablePageContext,
-        }), { signal: submissionController.signal, timeoutMs: 21000, message: '读取原视频字幕超时，请重试。' });
+        }), { signal: submissionController.signal, timeoutMs: command.preparationTimeoutMs ?? 21000, message: '读取原视频字幕超时，请重试。' });
         assertCurrent();
         retained.user.pageCommand = structuredClone(commandResult.request);
         retained.user.attachments = structuredClone(commandResult.attachments);

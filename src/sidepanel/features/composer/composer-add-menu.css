@@ -26,6 +26,14 @@
 .add-menu-selected { flex: 0 0 auto; color: var(--teal); font-size: 10px; }
 .add-menu-check { width: 15px; height: 15px; margin-left: auto; opacity: 0; color: var(--teal); }
 #agent-toggle[aria-pressed="true"] .add-menu-check { opacity: 1; }
+.add-menu-video-row { display: flex; align-items: center; gap: 6px; }
+.add-menu-video-row > #video-notes-button { flex: 1 1 auto; width: auto; }
+.composer-add-menu .add-menu-mode {
+  flex: 0 0 auto; width: auto; min-height: 24px; padding: 3px 9px;
+  border: 1px solid var(--line); border-radius: 999px;
+  font-size: 10px; color: var(--muted); white-space: nowrap;
+}
+.composer-add-menu .add-menu-mode[aria-pressed="true"] { color: var(--teal); border-color: var(--teal); }
 [data-menu-skills] { color: var(--muted); font-size: 11px; }
 #attach-button[aria-expanded="true"], #attach-button.is-active { background: var(--teal-soft); color: var(--teal); }
 @media (pointer: coarse) { .composer-add-menu button { min-height: 44px; } }

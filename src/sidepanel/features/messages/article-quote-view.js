@@ -1,10 +1,9 @@
 import { articleQuotes } from './article-quote-draft.js';
+import { articleTextForRange, articleTextSnapshot } from './article-text.js';
 
 const HIGHLIGHT_NAME = 'unk-article-quotes';
 const normalized = value => String(value || '').replace(/\r\n?/g, '\n').trim();
 const markerSize = 22;
-const MAX_RENDER_TEXT = 2000000;
-const MAX_TEXT_NODES = 20000;
 
 /** Present a quote draft without owning submission, storage or its references. */
 export function createArticleQuoteView({ document = globalThis.document, root, host,
@@ -88,16 +87,7 @@ export function createArticleQuoteView({ document = globalThis.document, root, h
     reflectExpanded();
   }
   function textSnapshot(body) {
-    const nodes = [];
-    const walker = document.createTreeWalker(body, view?.NodeFilter?.SHOW_TEXT || 4);
-    let text = '', node;
-    while ((node = walker.nextNode())) {
-      const value = String(node.nodeValue ?? node.textContent ?? '');
-      if (nodes.length >= MAX_TEXT_NODES || text.length + value.length > MAX_RENDER_TEXT) return null;
-      nodes.push({ node, start: text.length, end: text.length + value.length });
-      text += value;
-    }
-    return { nodes, text };
+    return articleTextSnapshot(body);
   }
   function rangeFor(quote, body, snapshot) {
     let start = quote.anchor?.start, end = quote.anchor?.end;
@@ -118,7 +108,7 @@ export function createArticleQuoteView({ document = globalThis.document, root, h
       const range = document.createRange();
       range.setStart(...from);
       range.setEnd(...to);
-      const actual = normalized(range.toString());
+      const actual = normalized(articleTextForRange(range, snapshot));
       const matches = actual === quote.text || (quote.textTruncated && quote.originalLength >= actual.length
         && actual.startsWith(quote.text));
       return matches ? range : null;

@@ -1,4 +1,6 @@
 import { renderMessageContent } from '../messages/message-view.js';
+import { placeIllustrationNodes } from '../illustration/illustration-placement.js';
+import { illustrationLayoutStyle } from '../illustration/illustration-layout.js';
 import { awaitWithTimeout } from '../../../utils/abortable.js';
 import { EXPORT_LIMITS, assertExportActive, exportCanvasSize, paginateHeight } from './pagination.js';
 import paperCss from './export-document.css?inline';
@@ -30,6 +32,7 @@ function validateSnapshot(snapshot, includeQuestions) {
   for (const turn of snapshot.turns) {
     characters += String(turn.assistant?.content || '').length + String(turn.assistant?.errorMessage || '').length;
     for (const source of turn.assistant?.sources || []) characters += String(source.title || '').length + String(source.url || '').length;
+    for (const illustration of turn.assistant?.illustrations || []) imageData += String(illustration.dataUrl || '').length;
     if (includeQuestions) {
       characters += String(turn.user?.content || '').length;
       for (const attachment of turn.user?.attachments || []) {
@@ -86,11 +89,12 @@ export function buildExportDocument(snapshot, { document: targetDocument = globa
       section.append(question);
     }
     const answer = textElement(doc, 'div', 'export-answer', '');
+    let content;
     answer.append(textElement(doc, 'p', 'export-role', 'UNK AI'));
     const status = statusText(turn.assistant);
     if (status) answer.append(textElement(doc, 'p', 'export-status', status));
     if (turn.assistant?.content) {
-      const content = textElement(doc, 'div', 'export-markdown', '');
+      content = textElement(doc, 'div', 'export-markdown', '');
       renderMessageContent(content, String(turn.assistant.content));
       for (const img of content.querySelectorAll('img')) {
         // Even data images in Markdown remain text: only explicit local attachments are embedded.
@@ -113,6 +117,29 @@ export function buildExportDocument(snapshot, { document: targetDocument = globa
       list.append(textElement(doc, 'p', '', '来源'));
       sources.forEach((source, index) => list.append(textElement(doc, 'p', '', `${index + 1}. ${source.title || '来源'} — ${safeUrl(source.url)}`)));
       answer.append(list);
+    }
+    const illustrations = (turn.assistant?.illustrations || []).filter(item => RASTER_DATA.test(String(item.dataUrl || '')));
+    if (illustrations.length) {
+      if (!content) {
+        content = textElement(doc, 'div', 'export-markdown', '');
+        answer.insertBefore(content, answer.querySelector('.export-sources'));
+      }
+      const entries = [];
+      for (const item of illustrations) {
+        const figure = doc.createElement('figure');
+        figure.className = 'export-illustration';
+        figure.setAttribute('style', illustrationLayoutStyle(item.illustrationLayout, item));
+        const img = doc.createElement('img');
+        img.src = item.dataUrl;
+        img.alt = item.name;
+        const seconds = Math.max(0, Math.floor(Number(item.frameTime) || 0));
+        const badge = item.frameTime !== undefined
+          ? `视频画面 · ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}${item.frameVerified === false ? ' · 未做内容核对' : ''}`
+          : item.videoGenerated ? 'AI 生成示意图 · 非视频真实画面' : 'AI 生成';
+        figure.append(img, textElement(doc, 'figcaption', '', `${badge} · ${item.name}`));
+        entries.push({ node: figure, item });
+      }
+      placeIllustrationNodes(content, entries, { className: 'export-illustrations' });
     }
     section.append(answer);
     paper.append(section);

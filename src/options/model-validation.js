@@ -31,8 +31,9 @@ export function validateModelGeneration(config) {
   const selected = models.find(model => model.id === config.selectedModelId) || models[0];
   const selectedId = selected?.id || config.selectedModelId || '';
   const selectedName = selected?.name || config.selectedModelName || selectedId || '当前模型';
-  validateValues(config, selectedId, selectedName);
+  if (selected?.kind !== 'image') validateValues(config, selectedId, selectedName);
   for (const model of models) {
+    if (model.kind === 'image') continue;
     validateValues({
       temperature: model.temperature,
       contextLength: model.contextLength,

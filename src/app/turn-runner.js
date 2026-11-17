@@ -35,7 +35,7 @@ export function createTurnRunner({ repository, createId = () => crypto.randomUUI
     const isOpen = () => !TERMINAL.has(status) && active === run && !controller.signal.aborted;
     const emit = type => notify({ type, commandId, runId, mode, status, phase, seq: sequence,
       conversationId: ref?.conversationId || null, turnId: ref?.turnId || null,
-      assistantId: ref?.assistantId || null, startedAt, at: now() });
+      assistantId: ref?.assistantId || null, userId: ref?.userId || null, startedAt, at: now() });
 
     function settle(nextStatus, fields = {}) {
       if (!isOpen()) return false;

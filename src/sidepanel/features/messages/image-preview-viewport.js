@@ -1,15 +1,17 @@
 const PADDING = 12;
 const MAX_SCALE = 8;
 const ZOOM_STEP = 1.25;
+const DRAG_THRESHOLD = 4;
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 /** Local image navigation only. Owns no attachment, conversation or storage data. */
-export function createImagePreviewViewport({ viewport, image, sizeButton, zoomIn, zoomOut, scaleLabel }) {
+export function createImagePreviewViewport({ viewport, image, onClose = () => {} }) {
   const window = viewport.ownerDocument.defaultView;
   const removers = [];
   let disposed = false;
   let state = null;
   let drag = null;
+  let completedPointer = null;
 
   function listen(target, type, handler, options) {
     if (!target) return;
@@ -33,19 +35,13 @@ export function createImagePreviewViewport({ viewport, image, sizeButton, zoomIn
     image.style.transform = `translate3d(${state.x}px, ${state.y}px, 0) scale(${state.scale})`;
     viewport.classList.add('is-ready');
     viewport.classList.toggle('can-pan', width > state.width - PADDING * 2 || height > state.height - PADDING * 2);
-    scaleLabel.textContent = `${Math.round(state.scale * 1000) / 10}%`;
-    scaleLabel.setAttribute('aria-label', `缩放比例 ${scaleLabel.textContent}`);
-    zoomIn.disabled = state.scale >= MAX_SCALE - 1e-8;
-    zoomOut.disabled = state.scale <= minScale() + 1e-8;
-    sizeButton.disabled = false;
-    sizeButton.textContent = state.fit ? '原始尺寸' : '适应宽度';
-    sizeButton.setAttribute('aria-pressed', String(!state.fit));
   }
-  function endDrag() {
+  function endDrag({ allowClick = false } = {}) {
     const previous = drag;
     drag = null;
     viewport.classList.remove('is-dragging');
     if (previous) {
+      completedPointer = { id: previous.id, allowClick: allowClick && !previous.moved };
       try { viewport.releasePointerCapture(previous.id); } catch { /* Capture may already have been released. */ }
     }
   }
@@ -68,16 +64,6 @@ export function createImagePreviewViewport({ viewport, image, sizeButton, zoomIn
     state.scale = next;
     state.fit = false;
     render();
-  }
-  function toggleSize() {
-    if (!state) return;
-    if (!state.fit) fit();
-    else {
-      zoomTo(1);
-      // Even when fit already equals 100%, allow the next click to reset a pan.
-      state.fit = false;
-      render();
-    }
   }
   function measure() {
     if (disposed) return;
@@ -105,7 +91,6 @@ export function createImagePreviewViewport({ viewport, image, sizeButton, zoomIn
     return { x: clamp(event.clientX - rect.left, 0, state.width), y: clamp(event.clientY - rect.top, 0, state.height) };
   }
 
-  zoomIn.disabled = zoomOut.disabled = sizeButton.disabled = true;
   listen(image, 'load', measure);
   listen(viewport, 'wheel', event => {
     // Keep wheel navigation inside the modal, including at the zoom limits.
@@ -115,33 +100,70 @@ export function createImagePreviewViewport({ viewport, image, sizeButton, zoomIn
     const delta = clamp(event.deltaY * unit, -240, 240);
     zoomTo(state.scale * Math.exp(-delta * 0.002), pointAt(event));
   }, { passive: false });
-  listen(zoomIn, 'click', () => { if (state) zoomTo(state.scale * ZOOM_STEP); });
-  listen(zoomOut, 'click', () => { if (state) zoomTo(state.scale / ZOOM_STEP); });
-  listen(sizeButton, 'click', toggleSize);
-  listen(viewport, 'dblclick', event => { event.preventDefault(); toggleSize(); });
+  listen(viewport, 'click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    // Chrome's click PointerEvent has isPrimary=false even after a primary
+    // mouse press. Validate that flag on pointerdown instead of the click.
+    if (drag || (event.button !== undefined && event.button !== 0)) return;
+    const completed = completedPointer;
+    completedPointer = null;
+    // Pointer capture retargets image clicks to the viewport. Consume the click
+    // generated after a drag, even if the image was clamped or moved back.
+    if (completed && (!completed.allowClick ||
+      (Number.isInteger(event.pointerId) && event.pointerId !== completed.id))) return;
+    onClose();
+  });
   listen(viewport, 'dragstart', event => event.preventDefault());
   listen(viewport, 'pointerdown', event => {
-    if (!state || drag || event.button !== 0 || event.isPrimary === false) return;
+    if (drag) {
+      if (event.pointerId !== drag.id) drag.moved = true;
+      return;
+    }
+    if (event.button !== 0 || event.isPrimary === false) {
+      completedPointer = { id: event.pointerId, allowClick: false };
+      return;
+    }
+    completedPointer = null;
+    if (!state) return;
     event.preventDefault();
     viewport.focus({ preventScroll: true });
-    drag = { id: event.pointerId, startX: event.clientX, startY: event.clientY, x: state.x, y: state.y };
+    drag = { id: event.pointerId, startX: event.clientX, startY: event.clientY, x: state.x, y: state.y, moved: false };
     viewport.classList.add('is-dragging');
     try { viewport.setPointerCapture(event.pointerId); } catch { /* Document listeners also finish uncaptured drags. */ }
   });
+  function pan(event) {
+    const dx = event.clientX - drag.startX, dy = event.clientY - drag.startY;
+    if (Math.hypot(dx, dy) > DRAG_THRESHOLD) drag.moved = true;
+    if (!drag.moved) return;
+    state.x = drag.x + dx;
+    state.y = drag.y + dy;
+    render();
+  }
   listen(viewport.ownerDocument, 'pointermove', event => {
     if (!drag || event.pointerId !== drag.id) return;
     if (event.buttons === 0 && event.pointerType !== 'touch') { endDrag(); return; }
     event.preventDefault();
-    state.x = drag.x + event.clientX - drag.startX;
-    state.y = drag.y + event.clientY - drag.startY;
-    render();
+    pan(event);
   }, { passive: false });
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+  listen(viewport.ownerDocument, 'pointerup', event => {
+    if (event.pointerId !== drag?.id) return;
+    pan(event);
+    endDrag({ allowClick: true });
+  });
+  for (const type of ['pointercancel', 'lostpointercapture']) {
     listen(viewport.ownerDocument, type, event => { if (event.pointerId === drag?.id) endDrag(); });
   }
   listen(window, 'blur', endDrag);
   listen(viewport, 'keydown', event => {
-    if (!state || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    if (['Enter', ' '].includes(event.key)) {
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      return;
+    }
+    if (!state) return;
     const step = event.shiftKey ? 120 : 40;
     const movement = { ArrowLeft: [step, 0], ArrowRight: [-step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[event.key];
     if (movement) {
@@ -150,9 +172,14 @@ export function createImagePreviewViewport({ viewport, image, sizeButton, zoomIn
       state.x += movement[0];
       state.y += movement[1];
       render();
-    } else if (['+', '=', '-', '0'].includes(event.key)) {
+    } else if (['+', '=', '-', '0', '1'].includes(event.key)) {
       event.preventDefault();
       if (event.key === '0') fit();
+      else if (event.key === '1') {
+        zoomTo(1);
+        state.fit = false;
+        render();
+      }
       else zoomTo(state.scale * (event.key === '-' ? 1 / ZOOM_STEP : ZOOM_STEP));
     }
   });

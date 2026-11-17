@@ -1,9 +1,11 @@
 import { awaitWithAbort } from './abortable.js';
 
 const MAX_ERROR_LENGTH = 1000;
-const ENDPOINT_SUFFIX = /\/(?:chat\/completions|models|web_search|web_fetch)\/?$/i;
+const ENDPOINT_SUFFIX = /\/(?:chat\/completions|images\/generations|models|web_search|web_fetch)\/?$/i;
 export const DEFAULT_WEB_SEARCH_ENDPOINT = 'web_search';
 export const DEFAULT_WEB_FETCH_ENDPOINT = 'web_fetch';
+export const IMAGE_SIZES = Object.freeze(['auto', '1024x1024', '1536x1024', '1024x1536']);
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 export const RESEARCH_ENDPOINT_CANDIDATES = Object.freeze({
   search: Object.freeze(['tools/search', 'web_search', 'search', 'web/search', 'tools/web_search']),
   fetch: Object.freeze(['tools/fetch', 'web_fetch', 'fetch', 'web/fetch', 'tools/web_fetch']),
@@ -618,6 +620,7 @@ export function resolveApiUrl(endpointUrl, kind = 'chat') {
   const base = endpointUrl.trim().replace(/\/+$/, '').replace(ENDPOINT_SUFFIX, '');
   if (kind === 'models') return `${base}/models`;
   if (kind === 'chat') return `${base}/chat/completions`;
+  if (kind === 'images') return `${base}/images/generations`;
   throw new Error(`Unknown API endpoint kind: ${kind}`);
 }
 
@@ -650,6 +653,15 @@ function includesImageModality(value) {
   });
 }
 
+const IMAGE_MODEL_NAME = /(?:gpt-image|dall-?e|imagen|midjourney|stable-?diffusion|flux|image-generation|(?:^|[-_/.])image(?:[-_/.]|$))/i;
+
+/** Image-generation models are identified by output modality or well-known naming. */
+function isImageGenerationModel(id, item) {
+  const output = item.output_modalities ?? item.modalities?.output ?? item.capabilities?.output_modalities;
+  if (includesImageModality(output) === true) return true;
+  return IMAGE_MODEL_NAME.test(id) || IMAGE_MODEL_NAME.test(String(item.name || ''));
+}
+
 /** Convert the common `/models` response shapes into UI-friendly metadata. */
 export function normalizeModel(item) {
   if (!item || typeof item !== 'object') return null;
@@ -672,9 +684,11 @@ export function normalizeModel(item) {
     ?? item.generation_parameters?.temperature
     ?? item.generation?.temperature,
   );
+  const kind = isImageGenerationModel(id, item) ? 'image' : 'chat';
 
   return {
     id,
+    kind,
     name: String(item.name || item.display_name || id),
     description: String(item.description || ''),
     contextLength: parseTokenLimit(
@@ -689,8 +703,8 @@ export function normalizeModel(item) {
       ?? item.max_completion_tokens
       ?? item.output_token_limit,
     ),
-    supportsReasoning,
-    supportsVision,
+    supportsReasoning: kind === 'image' ? false : supportsReasoning,
+    supportsVision: kind === 'image' ? false : supportsVision,
     temperature,
     reasoningEfforts,
     reasoningDefaultEffort: String(item.reasoning_default_effort || ''),
@@ -1116,21 +1130,38 @@ export async function requestTextCompletion(options = {}) {
 }
 
 async function textCompletion({
-  endpointUrl, apiKey, model, messages, temperature, maxTokens, signal,
+  endpointUrl, apiKey, model, messages, temperature, maxTokens, reasoningEnabled, signal,
   fetchImpl = globalThis.fetch, diagnostic,
 } = {}) {
   signal?.throwIfAborted();
   const body = { model, messages, stream: false };
   if (temperature !== undefined && temperature !== null && temperature !== '') body.temperature = temperature;
   if (maxTokens !== undefined && maxTokens !== null && maxTokens !== '') body.max_tokens = maxTokens;
-  const response = await fetchImpl(resolveApiUrl(endpointUrl, 'chat'), {
-    method: 'POST', headers: { ...requestHeaders(apiKey), 'Content-Type': 'application/json' },
-    body: JSON.stringify(body), signal,
-  });
+  // Auxiliary classifiers explicitly disable thinking; other non-streaming
+  // purposes keep their previous provider-default behavior unchanged.
+  if (reasoningEnabled === false) body.reasoning_effort = 'none';
+  const url = resolveApiUrl(endpointUrl, 'chat');
+  const headers = { ...requestHeaders(apiKey), 'Content-Type': 'application/json' };
+  let response = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
   signal?.throwIfAborted();
+  let errorDetail;
+  if (!response.ok && body.reasoning_effort && [400, 422].includes(response.status)) {
+    errorDetail = await readErrorBody(response, apiKey);
+    // Some OpenAI-compatible providers reject reasoning_effort although they
+    // expose reasoning models. Retry once without the optional capability.
+    if (/reasoning|thinking|思考|推理/i.test(errorDetail)) {
+      diagnostic.emit('fallback', { reason: 'unsupported-parameter' });
+      const fallbackBody = { ...body };
+      delete fallbackBody.reasoning_effort;
+      signal?.throwIfAborted();
+      response = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(fallbackBody), signal });
+      signal?.throwIfAborted();
+      errorDetail = undefined;
+    }
+  }
   if (!response.ok) {
-    const detail = await readErrorBody(response, apiKey);
-    throw new Error(`模型请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`);
+    const detail = errorDetail ?? await readErrorBody(response, apiKey);
+    throw Object.assign(new Error(`模型请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`), { status: response.status });
   }
   const payload = await diagnostic.json(response);
   signal?.throwIfAborted();
@@ -1141,4 +1172,112 @@ async function textCompletion({
   if (!content) { diagnostic.reason(hasReasoning ? 'reasoning-only' : 'empty'); throw new Error('模型没有返回可用文本。'); }
   diagnostic.first('content');
   return content;
+}
+
+function generatedImageDataUrl(value) {
+  const base64 = value.replace(/\s/g, '');
+  if (base64.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4) throw new Error('生成的图片超过 8 MiB 上限。');
+  if (!/^[a-z0-9+/]+={0,2}$/i.test(base64)) throw new Error('生图服务返回的图片 Base64 数据已损坏。');
+  let binary;
+  try { binary = atob(base64); } catch { throw new Error('生图服务返回的图片 Base64 数据已损坏。'); }
+  if (!binary.length) throw new Error('生图服务返回了空图片。');
+  if (binary.length > MAX_IMAGE_BYTES) throw new Error('生成的图片超过 8 MiB 上限。');
+  const mime = binary.startsWith('\xff\xd8\xff') ? 'image/jpeg'
+    : binary.startsWith('RIFF') && binary.slice(8, 12) === 'WEBP' ? 'image/webp'
+      : binary.startsWith('GIF8') ? 'image/gif' : 'image/png';
+  return `data:${mime};base64,${base64}`;
+}
+
+/** Download a provider-returned image URL into a data URL. The result URL is
+ * pre-signed, so provider credentials are never forwarded to it. */
+async function fetchImageAsDataUrl(url, signal, fetchImpl) {
+  const response = await fetchImpl(url, { signal });
+  signal?.throwIfAborted();
+  if (!response.ok) {
+    throw Object.assign(new Error(`生图结果下载失败（HTTP ${response.status}）。`), { status: response.status });
+  }
+  const type = String(response.headers.get('content-type') || 'image/png').split(';')[0].trim().toLowerCase().replace('image/jpg', 'image/jpeg');
+  const rejectDownload = message => { void response.body?.cancel().catch(() => {}); throw new Error(message); };
+  if (!/^image\/(?:png|jpeg|webp|gif)$/.test(type)) rejectDownload('生图结果的图片格式不受支持，需为 PNG、JPEG、WebP 或 GIF。');
+  const declaredBytes = Number(response.headers.get('content-length'));
+  if (declaredBytes > MAX_IMAGE_BYTES) rejectDownload('生成的图片超过 8 MiB 上限。');
+  if (!response.body) throw new Error('生图服务返回了空图片。');
+  const reader = response.body.getReader(), chunks = [];
+  let total = 0, completed = false;
+  try {
+    while (true) {
+      const part = await awaitWithAbort(reader.read(), signal);
+      signal?.throwIfAborted();
+      if (part.done) { completed = true; break; }
+      total += part.value.byteLength;
+      if (total > MAX_IMAGE_BYTES) throw new Error('生成的图片超过 8 MiB 上限。');
+      chunks.push(part.value);
+    }
+  } finally {
+    if (!completed) void reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(total);
+  let copied = 0;
+  for (const part of chunks) { bytes.set(part, copied); copied += part.byteLength; }
+  signal?.throwIfAborted();
+  if (!bytes.byteLength) throw new Error('生图服务返回了空图片。');
+  if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('生成的图片超过 8 MiB 上限。');
+  let binary = '';
+  const chunk = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(offset, offset + chunk));
+  }
+  return `data:${type};base64,${btoa(binary)}`;
+}
+
+/**
+ * Generate one image through an OpenAI-compatible /images/generations endpoint.
+ * Non-streaming and independent from the main answer; cancellation is owned by
+ * the caller through signal. Each call produces a new image and is not retried.
+ */
+export async function requestImageGeneration(options = {}) {
+  return diagnosticRequest(options, imageGeneration);
+}
+
+async function imageGeneration({
+  endpointUrl, apiKey, model, prompt, size = 'auto', signal,
+  fetchImpl = globalThis.fetch, diagnostic,
+} = {}) {
+  signal?.throwIfAborted();
+  if (!endpointUrl || !String(endpointUrl).trim()) throw new Error('模型 Endpoint 未配置，生图无从发起。');
+  if (!model || !String(model).trim()) throw new Error('未配置生图模型。');
+  const text = String(prompt || '').trim();
+  if (!text) throw new Error('生图描述为空。');
+  if (text.length > 4000) throw new Error('生图描述过长（上限 4000 字）。');
+  const chosen = IMAGE_SIZES.includes(size) ? size : 'auto';
+  const body = { model, prompt: text, n: 1 };
+  // GPT Image always returns base64 and rejects the DALL-E response_format
+  // parameter. Pick the compatible payload before dispatch; never replay a
+  // charged generation to discover unsupported parameters.
+  if (!/(?:^|[/_:-])gpt-image(?:[-_.]|$)/i.test(model)) body.response_format = 'b64_json';
+  if (chosen !== 'auto') body.size = chosen;
+  const response = await fetchImpl(resolveApiUrl(endpointUrl, 'images'), {
+    method: 'POST',
+    headers: { ...requestHeaders(apiKey), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal,
+  });
+  signal?.throwIfAborted();
+  if (!response.ok) {
+    const detail = await readErrorBody(response, apiKey);
+    throw Object.assign(new Error(`生图请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`), { status: response.status });
+  }
+  const payload = await diagnostic.json(response);
+  signal?.throwIfAborted();
+  const item = Array.isArray(payload?.data) ? payload.data[0] : null;
+  let dataUrl = '';
+  if (typeof item?.b64_json === 'string' && item.b64_json) {
+    dataUrl = generatedImageDataUrl(item.b64_json);
+  } else if (typeof item?.url === 'string' && /^https?:/i.test(item.url)) {
+    dataUrl = await fetchImageAsDataUrl(item.url, signal, fetchImpl);
+  }
+  if (!dataUrl) { diagnostic.reason('empty'); throw new Error('生图服务没有返回图片数据。'); }
+  diagnostic.first('content');
+  return { dataUrl, revisedPrompt: typeof item?.revised_prompt === 'string' ? item.revised_prompt.slice(0, 4000) : '' };
 }

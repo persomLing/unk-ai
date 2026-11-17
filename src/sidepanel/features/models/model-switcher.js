@@ -15,9 +15,10 @@ const EFFORT_LABELS = Object.freeze({
 export function activeModel(config, selectedModelId) {
   const normalized = normalizeProviderConfig(config);
   if (!normalized) return null;
-  return find(normalized.models, (model) => model.id === selectedModelId)
-    || find(normalized.models, (model) => model.id === normalized.selectedModelId)
-    || normalized.models[0]
+  const chatModels = normalized.models.filter((model) => model.kind !== 'image');
+  return find(chatModels, (model) => model.id === selectedModelId)
+    || find(chatModels, (model) => model.id === normalized.selectedModelId)
+    || chatModels[0]
     || null;
 }
 
@@ -41,19 +42,20 @@ export function renderModelSwitcher({
   const displayName = $('#model-display-name');
   const effortBadge = $('#effort-display-badge');
   if (!switcher) return null;
-  if (!normalized?.models?.length) {
+  const chatModels = normalized?.models?.filter((model) => model.kind !== 'image') || [];
+  if (!chatModels.length) {
     switcher.hidden = true;
     return null;
   }
   switcher.hidden = false;
   const model = activeModel(config, selectedModelId);
-  const active = model || normalized.models[0];
-  const modelIndex = (item) => String(normalized.models.indexOf(item));
+  const active = model || chatModels[0];
+  const modelIndex = (item) => String(chatModels.indexOf(item));
   if (select) {
-    select.innerHTML = map(normalized.models, (item) =>
+    select.innerHTML = map(chatModels, (item) =>
       `<option value="${escapeHtml(modelIndex(item))}">${escapeHtml(item.name)}</option>`).join('');
     select.value = modelIndex(active);
-    if (select.value !== modelIndex(active)) select.selectedIndex = normalized.models.indexOf(active);
+    if (select.value !== modelIndex(active)) select.selectedIndex = chatModels.indexOf(active);
   }
   const efforts = active?.reasoningEfforts?.length
     ? active.reasoningEfforts
@@ -88,7 +90,7 @@ export function renderModelSwitcher({
     }
   }
   if (dropdown) {
-    const modelItems = map(normalized.models, (item) => {
+    const modelItems = map(chatModels, (item) => {
       const isActive = item.id === active.id;
       return `
         <button type="button" class="dropdown-model-item ${isActive ? 'is-active' : ''}" role="option" aria-selected="${isActive}" data-model-id="${escapeHtml(item.id)}">
@@ -123,5 +125,5 @@ export function toggleModelDropdown(force) {
 
 export function selectModelOption(config, modelId) {
   const normalized = normalizeProviderConfig(config);
-  return normalized?.models?.find((model) => model.id === modelId) || null;
+  return normalized?.models?.find((model) => model.kind !== 'image' && model.id === modelId) || null;
 }

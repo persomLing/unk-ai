@@ -39,6 +39,7 @@ import {
 } from '../utils/agent-permissions.js';
 import { icon, hydrateIcons } from '../sidepanel/icons.js';
 import { createModelSelection, updateModelDraft } from './model-selection.js';
+import { createModelCatalog } from './model-catalog.js';
 import { installSettingsNavigation } from './settings-navigation.js';
 import { validateModelGeneration } from './model-validation.js';
 import { installAgentSettings } from './agent-settings.js';
@@ -61,6 +62,9 @@ const modelMeta = document.querySelector('#model-meta');
 const modelLibrary = document.querySelector('#model-library');
 const reasoningEnabled = document.querySelector('#reasoning-enabled');
 const visionEnabled = document.querySelector('#vision-enabled');
+const modelKind = document.querySelector('#model-kind');
+const imageModelSelect = document.querySelector('#image-model-select');
+const imageModelHint = document.querySelector('#image-model-hint');
 const reasoningEffort = document.querySelector('#reasoning-effort');
 const reasoningEffortField = document.querySelector('#reasoning-effort-field');
 const storageLocation = document.querySelector('#storage-location');
@@ -82,6 +86,7 @@ let discoveredModels = [];
 let hasDiscoveredModels = false;
 let discoveredCredentials = '';
 let profileLibrary = [];
+const modelCatalog = createModelCatalog({ getLibrary: () => profileLibrary });
 const modelSelection = createModelSelection({
   getProfiles: () => profileLibrary,
   setProfiles: profiles => { profileLibrary = profiles; },
@@ -242,6 +247,12 @@ function findDiscoveredModel(id) {
   return discoveredModels.find((model) => model.id === id) || null;
 }
 
+/** The fetched catalog stays intact; the picker shows catalog minus the library,
+ * so removing a model makes it available again without re-fetching. */
+function availableDiscoveredModels() {
+  return modelCatalog.available();
+}
+
 function currentCredentials() {
   return credentialForModel(
     form.elements.endpointUrl.value.trim(),
@@ -255,14 +266,14 @@ function restoreDiscoveredModels() {
     modelsController?.abort(new DOMException('连接信息已变化，请重新获取模型。', 'AbortError'));
     researchController?.abort(new DOMException('连接信息已变化，请重新检测。', 'AbortError'));
     discoveredModels = [];
+    modelCatalog.clear();
     hasDiscoveredModels = false;
     discoveredCredentials = credentials;
     renderModelMeta(null);
     renderDiscoveredModels();
     return;
   }
-  discoveredModels = discoveredModels.filter((model) =>
-    !profileLibrary.some((profile) => profile.id === model.id));
+  discoveredModels = availableDiscoveredModels();
   renderDiscoveredModels();
 }
 
@@ -272,6 +283,7 @@ function activeProfile() {
 
 function currentGenerationSettings() {
   return {
+    kind: modelKind.value === 'image' ? 'image' : 'chat',
     contextLength: numberFromField('contextLength'),
     maxOutputTokens: numberFromField('maxTokens'),
     temperature: numberFromField('temperature'),
@@ -281,8 +293,20 @@ function currentGenerationSettings() {
   };
 }
 
+function applyModelKindVisibility() {
+  const isImage = modelKind.value === 'image';
+  for (const selector of ['#generation-fields', '.temperature-field', '.capability-row']) {
+    const node = document.querySelector(selector);
+    if (node) node.hidden = isImage;
+  }
+  reasoningEffort.disabled = isImage || !reasoningEnabled.checked;
+  reasoningEffortField.hidden = isImage || !reasoningEnabled.checked;
+  imageModelHint.hidden = !isImage;
+}
+
 function applyProfileSettings(profile, { preserve = false } = {}) {
   if (!profile) return;
+  modelKind.value = profile.kind === 'image' ? 'image' : 'chat';
   const previousEffort = reasoningEffort.value;
   if (!preserve) {
     form.elements.contextLength.value = profile.contextLength ?? '';
@@ -303,8 +327,6 @@ function applyProfileSettings(profile, { preserve = false } = {}) {
     reasoningEnabled.checked = profile.supportsReasoning;
     visionEnabled.checked = profile.supportsVision;
   }
-  reasoningEffort.disabled = !reasoningEnabled.checked;
-  reasoningEffortField.hidden = !reasoningEnabled.checked;
   document.querySelector('#reasoning-hint').textContent = profile.supportsReasoning === null
     ? '服务商未声明思考能力；支持时可手动开启'
     : '按服务商实际能力设置；开启后可切换思考强度';
@@ -318,6 +340,7 @@ function applyProfileSettings(profile, { preserve = false } = {}) {
   reasoningEffort.innerHTML = '<option value="default">跟随服务商默认</option>' + efforts
     .map((effort) => `<option value="${escapeHtml(effort)}">${escapeHtml(effort)}</option>`).join('');
   reasoningEffort.value = ['default', ...efforts].includes(selected) ? selected : 'default';
+  applyModelKindVisibility();
   renderParametersModelName(profile);
 }
 function renderLibrary() {
@@ -325,10 +348,20 @@ function renderLibrary() {
   const selectedId = selectedProfile?.id;
   modelLibrary.innerHTML = profileLibrary.map((profile) => `
     <article class="library-item ${profile.id === selectedId ? 'is-selected' : ''}" data-library-model-id="${escapeHtml(profile.id)}" tabindex="0" role="button" aria-label="编辑模型 ${escapeHtml(profile.name)}">
-      <div><strong>${escapeHtml(profile.name)}</strong><small>${escapeHtml(profile.id)} · ${profile.contextLength ? `${Number(profile.contextLength).toLocaleString('zh-CN')} 上下文` : '上下文跟随服务商'}</small></div>
+      <div><strong>${escapeHtml(profile.name)}</strong><span class="library-kind${profile.kind === 'image' ? ' is-image' : ''}">${profile.kind === 'image' ? '生图' : '对话'}</span><small>${escapeHtml(profile.id)} · ${profile.kind === 'image' ? '生图模型，不参与对话' : profile.contextLength ? `${Number(profile.contextLength).toLocaleString('zh-CN')} 上下文` : '上下文跟随服务商'}</small></div>
       <div class="library-actions"><span class="library-current">${profile.id === selectedId ? '编辑中' : '编辑'}</span><button class="library-remove" type="button" data-model-id="${escapeHtml(profile.id)}" aria-label="移除 ${escapeHtml(profile.name)}">${icon('trash')}</button></div>
     </article>`).join('') || '<div class="library-empty">还没有添加模型。填写服务连接，获取列表后即可添加。</div>';
   renderParametersModelName(selectedProfile);
+  renderImageModelSelect();
+}
+
+function renderImageModelSelect() {
+  const imageModels = profileLibrary.filter((profile) => profile.kind === 'image');
+  const previous = imageModelSelect.value;
+  imageModelSelect.innerHTML = '<option value="">未配置</option>'
+    + imageModels.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)}</option>`).join('');
+  imageModelSelect.value = imageModels.some((profile) => profile.id === previous) ? previous : '';
+  imageModelSelect.disabled = !imageModels.length;
 }
 
 function renderParametersModelName(profile) {
@@ -376,7 +409,7 @@ function renderDiscoveredModels() {
     return;
   }
   modelSelect.innerHTML = '<option value="">选择要添加的模型</option>' + discoveredModels.map((model) => {
-      const tags = [model.supportsReasoning ? '思考' : '', model.supportsVision ? '视觉' : ''].filter(Boolean).join(' / ');
+      const tags = [model.kind === 'image' ? '生图' : '', model.supportsReasoning ? '思考' : '', model.supportsVision ? '视觉' : ''].filter(Boolean).join(' / ');
       return `<option value="${escapeHtml(model.id)}">${escapeHtml(`${model.name}${model.name !== model.id ? ` · ${model.id}` : ''}${tags ? ` · ${tags}` : ''}`)}</option>`;
     }).join('');
   modelSelect.disabled = !discoveredModels.length;
@@ -425,7 +458,8 @@ async function loadModels({ quiet = false } = {}) {
     }
     controller.signal.throwIfAborted();
     if (disposed || credentials !== currentCredentials()) throw new DOMException('连接信息已变化，请重新获取模型。', 'AbortError');
-    discoveredModels = allModels.filter((model) => !profileLibrary.some((profile) => profile.id === model.id));
+    modelCatalog.set(allModels);
+    discoveredModels = availableDiscoveredModels();
     hasDiscoveredModels = true;
     discoveredCredentials = credentials;
     renderDiscoveredModels();
@@ -454,6 +488,7 @@ function readForm() {
     selectedModelId: activeProfile()?.id || profileLibrary[0]?.id || '',
     selectedModelName: activeProfile()?.name || profileLibrary[0]?.name || '',
     selectedEffort: reasoningEffort.value || 'default',
+    selectedImageModelId: imageModelSelect.value || '',
     models: profileLibrary.map((profile) => {
       if (profile.id !== activeProfile()?.id) return profile;
       return updateModelDraft(profile, currentGenerationSettings());
@@ -603,9 +638,8 @@ modelSelect.addEventListener('change', () => {
 addModelButton.addEventListener('click', () => {
   const model = findDiscoveredModel(modelSelect.value);
   if (!model) return;
-  discoveredModels = discoveredModels.filter((item) => item.id !== model.id);
   addDiscoveredModel(model);
-  renderDiscoveredModels();
+  restoreDiscoveredModels();
 });
 
 chooseDirectoryButton.addEventListener('click', async () => {
@@ -638,6 +672,7 @@ modelLibrary.addEventListener('click', (event) => {
     } else {
       renderModelMeta(null);
     }
+    restoreDiscoveredModels();
     markDirty();
     setStatus('已从模型库移除；保存后生效。', 'success');
     renderStorage();
@@ -675,6 +710,14 @@ testButton.addEventListener('click', async () => {
   try {
     const config = readForm();
     validate(config);
+    if (activeProfile()?.kind === 'image') {
+      const probeHeaders = { Accept: 'application/json' };
+      if (config.apiKey) probeHeaders.Authorization = `Bearer ${config.apiKey}`;
+      const probe = await fetch(resolveApiUrl(config.endpointUrl, 'models'), { method: 'GET', headers: probeHeaders, signal: testController.signal });
+      if (!probe.ok) throw new Error(`连接失败（HTTP ${probe.status}）。生图模型仅探测端点，不实际生图。`);
+      if (!disposed) setStatus('连接成功，服务已响应。生图能力将在首次使用时验证，测试不实际生图。', 'success');
+      return;
+    }
     const profile = config.models.find((model) => model.id === config.selectedModelId) || config.models[0];
     const headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
     if (config.apiKey) headers.Authorization = `Bearer ${config.apiKey}`;
@@ -722,8 +765,14 @@ document.querySelector('#toggle-key').addEventListener('click', (event) => {
 });
 
 reasoningEnabled.addEventListener('change', () => {
-  reasoningEffort.disabled = !reasoningEnabled.checked;
-  reasoningEffortField.hidden = !reasoningEnabled.checked;
+  applyModelKindVisibility();
+});
+
+modelKind.addEventListener('change', () => {
+  modelSelection.remember();
+  applyModelKindVisibility();
+  renderLibrary();
+  markDirty();
 });
 
 form.addEventListener('input', event => { setStatus(''); if (event.target !== modelSelect) markDirty(); });
@@ -765,6 +814,7 @@ try {
     modelSelection.reset(config.selectedModelId);
     discoveredCredentials = currentCredentials();
     renderLibrary();
+    imageModelSelect.value = config.selectedImageModelId || '';
     const profile = activeProfile() || profileLibrary[0];
     if (profile) {
       applyProfileSettings(profile);

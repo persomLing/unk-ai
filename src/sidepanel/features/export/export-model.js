@@ -1,5 +1,7 @@
 import { assertImageAttachmentsAvailable, safeAttachmentDataUrl } from '../../../utils/attachments.js';
 import { presentVideoNotesMessage, videoAttachmentName } from '../video-notes/video-notes-presentation.js';
+import { copyIllustrationPlacement } from '../illustration/illustration-placement.js';
+import { copyIllustrationLayout, illustrationDimensions } from '../illustration/illustration-layout.js';
 
 const MAX_TURNS = 50;
 const MAX_TEXT = 120_000;
@@ -31,6 +33,22 @@ function attachmentFor(file) {
     } : {}) };
 }
 
+function illustrationFor(file) {
+  const dataUrl = safeAttachmentDataUrl(file.dataUrl);
+  const placement = copyIllustrationPlacement(file.placement);
+  const layout = copyIllustrationLayout(file.illustrationLayout);
+  return { name: text(file.name) || '生成图片', generated: file.generated === true,
+    ...(placement ? { placement } : {}),
+    ...(layout ? { illustrationLayout: layout } : {}), ...illustrationDimensions(file),
+    ...(file.videoGenerated ? { videoGenerated: true } : {}),
+    ...(file.videoFrame ? { frameTime: Number(file.videoFrame.time) || 0 } : {}),
+    ...(typeof file.videoFrame?.verified === 'boolean' ? { frameVerified: file.videoFrame.verified } : {}),
+    ...(dataUrl ? { dataUrl } : {
+      ...(text(file.imagePath) ? { imagePath: file.imagePath } : {}),
+      ...(text(file.loadError) ? { loadError: file.loadError } : {}),
+    }) };
+}
+
 /** Freeze visible content only; never clone provider config or hidden model context. */
 export function createExportSnapshot(conversation) {
   if (!conversation?.id) throw new Error('当前没有可导出的对话。');
@@ -50,7 +68,9 @@ export function createExportSnapshot(conversation) {
       turn.assistant = { id: text(message.id), content: text(message.content),
         status: ['complete', 'streaming', 'stopped', 'error'].includes(message.status) ? message.status : 'complete',
         errorMessage: text(message.errorMessage),
-        sources: (Array.isArray(message.sources) ? message.sources : []).map(sourceFor).filter(Boolean) };
+        sources: (Array.isArray(message.sources) ? message.sources : []).map(sourceFor).filter(Boolean),
+        illustrations: (Array.isArray(message.attachments) ? message.attachments : [])
+          .filter(file => file?.type === 'image' && (file.generated || file.videoFrame)).map(illustrationFor) };
     }
   }
   return freeze({ id: text(conversation.id), title: text(conversation.title) || '未命名对话',
@@ -73,8 +93,11 @@ export function exportSelectionIssue(snapshot, selectedIds, { includeQuestions =
     const chars = turns.reduce((sum, turn) => sum + (includeQuestions ? turn.user.content.length : 0) + (turn.assistant?.content.length || 0), 0);
     if (chars > MAX_TEXT) return '所选内容超过 12 万字符，请分批导出。';
     if (includeQuestions) for (const turn of turns) assertImageAttachmentsAvailable(turn.user.attachments);
-    const bytes = !includeQuestions ? 0 : turns.reduce((sum, turn) => sum + turn.user.attachments.reduce((size, file) =>
-      size + (file.dataUrl ? Math.ceil(file.dataUrl.split(',')[1].length * 3 / 4) : 0), 0), 0);
+    for (const turn of turns) assertImageAttachmentsAvailable((turn.assistant?.illustrations || []).map(file => ({ ...file, type: 'image' })));
+    const dataBytes = file => file.dataUrl ? Math.ceil(file.dataUrl.split(',')[1].length * 3 / 4) : 0;
+    const bytes = turns.reduce((sum, turn) => sum
+      + (includeQuestions ? turn.user.attachments.reduce((size, file) => size + dataBytes(file), 0) : 0)
+      + (turn.assistant?.illustrations || []).reduce((size, file) => size + dataBytes(file), 0), 0);
     if (bytes > MAX_IMAGE_BYTES) return '所选图片超过 8 MB，请分批导出。';
     return '';
   } catch (error) { return error.message; }

@@ -1,0 +1,14 @@
+.message-content .message-illustrations {
+  margin: 12px 0 18px;
+  min-width: 0;
+}
+
+.message-content .generated-image figcaption {
+  flex-wrap: wrap;
+  line-height: 1.5;
+}
+
+.message-content .generated-image-badge {
+  max-width: 100%;
+  white-space: normal;
+}

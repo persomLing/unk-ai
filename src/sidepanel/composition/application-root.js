@@ -13,6 +13,10 @@ import { createSkillContextProvider } from '../features/skills/skill-context.js'
 import { createVideoContextProvider } from '../features/video-notes/transcript-context.js';
 import { createVideoNotesCommand, videoReplyPolicy } from '../features/video-notes/video-notes-command.js';
 import { readVideoTranscript as readTranscriptFromPort } from '../features/video-notes/video-reading-client.js';
+import { createImageIllustration } from '../features/illustration/image-illustration.js';
+import { createVideoIllustration } from '../features/video-notes/video-illustration.js';
+import { captureVideoFrame } from '../features/video-notes/video-navigation-client.js';
+import { settleInterruptedIllustrations } from '../features/illustration/illustration-lifecycle.js';
 
 export function readingDiagnosticEvidence(page) {
   return { hasPageContext: Boolean(page?.text?.trim()), textChars: page?.text?.length || 0,
@@ -63,12 +67,38 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
       return { ...session, execute: diagnostics.wrap(session.execute, { event: 'research', source: 'web-research', stage: 'research',
         summarize: result => ({ resultCount: result?.sources?.length || (result?.source ? 1 : 0) }) }) };
     } : null });
-  const conversations = createConversationService({ state, browser, agentSlot, runner, repository,
+  const conversationService = createConversationService({ state, browser, agentSlot, runner, repository,
     modelGateway, replyService: chatService, ...observedPorts, pageCommands });
-  conversations.subscribe(emit);
-  runner.subscribe(event => { try { diagnostics.observe(event); } catch { /* UI remains independent of diagnostics. */ } emit({ ...event, type: `run:${event.type}` }); });
+  conversationService.subscribe(emit);
+  const getIllustrationConfig = () => ({ ...state.config,
+    selectedModelId: state.selectedModelId || state.config?.selectedModelId,
+    selectedEffort: state.selectedEffort || state.config?.selectedEffort });
+  const illustration = createImageIllustration({ repository, modelGateway, getConfig: getIllustrationConfig,
+    makeId: ports.makeId, isCurrent: ref => state.conversation?.id === ref.conversationId });
+  const videoIllustration = createVideoIllustration({ repository, modelGateway, getConfig: getIllustrationConfig,
+    captureFrame: (input, options) => captureVideoFrame(browser?.connect, input, options),
+    makeId: ports.makeId, isCurrent: ref => state.conversation?.id === ref.conversationId });
+  const cancelIllustrations = assistantId => {
+    const chat = illustration.cancel(assistantId), video = videoIllustration.cancel(assistantId);
+    return chat || video;
+  };
+  const conversations = Object.freeze({ ...conversationService,
+    stopActiveReply() { const cancelled = cancelIllustrations(); return conversationService.stopActiveReply() || cancelled; },
+  });
+  runner.subscribe(event => { try { diagnostics.observe(event); } catch { /* UI remains independent of diagnostics. */ }
+    const typed = { ...event, type: `run:${event.type}` };
+    try { illustration.handle(typed); } catch { /* Optional decoration cannot affect the run. */ }
+    try { videoIllustration.handle(typed); } catch { /* Optional decoration cannot affect the run. */ }
+    emit(typed); });
   return Object.freeze({ conversations, runner, repository, contextService, contextAssembler, modelGateway,
+    cancelIllustrations,
+    reconcileIllustrations(conversation) {
+      const changed = settleInterruptedIllustrations(conversation, assistantId => illustration.active(conversation.id, assistantId)
+        || videoIllustration.active(conversation.id, assistantId));
+      if (changed) conversationSaver.schedule(conversation);
+      return changed;
+    },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    dispose() { conversations.dispose(); runner.dispose(); diagnostics.dispose(); chatService.dispose(); contextService.dispose(); void contextAssembler.dispose(); listeners.clear(); },
+    dispose() { conversations.dispose(); runner.dispose(); illustration.dispose(); videoIllustration.dispose(); diagnostics.dispose(); chatService.dispose(); contextService.dispose(); void contextAssembler.dispose(); listeners.clear(); },
   });
 }

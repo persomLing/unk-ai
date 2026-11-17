@@ -157,7 +157,9 @@ h1 { margin: 0 0 9px; color: var(--ink); font-size: 27px; line-height: 1.2; font
 .library-item.is-selected { border-color: color-mix(in srgb, var(--teal) 42%, var(--line)); background: var(--teal-soft); }
 .library-item[role="button"] { cursor: pointer; }
 .library-item > div { min-width: 0; }
-.library-item strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: 12.5px; font-weight: 600; }
+.library-item strong { display: inline-block; max-width: 72%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; color: var(--ink); font-size: 12.5px; font-weight: 600; }
+.library-kind { display: inline-block; margin-left: 6px; padding: 1px 6px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--muted); font-size: 9.5px; vertical-align: middle; }
+.library-kind.is-image { color: var(--teal); border-color: var(--teal); }
 .library-item small { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10.5px; }
 .library-actions { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
 .library-current { color: var(--teal); font-size: 10px; white-space: nowrap; }

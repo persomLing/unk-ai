@@ -1,5 +1,6 @@
 import { awaitWithTimeout } from '../../../utils/abortable.js';
 import { normalizeDraftSource } from '../welcome/draft-source.js';
+import { captureRewoundCommand } from './rewound-command.js';
 
 /** One edit action captures its conversation before touching the draft or save queue. */
 export function createMessageRewind({ getConversation, getBlockReason = () => '', applyDraft,
@@ -19,6 +20,7 @@ export function createMessageRewind({ getConversation, getBlockReason = () => ''
     // Clone before truncating: pixels, document text and capture origin belong
     // to the removed question and must survive as an independent editable draft.
     const draft = { text: message.displayContent || message.content || '',
+      rewoundCommand: captureRewoundCommand(message, conversation.id),
       requestSource: normalizeDraftSource(message.requestSource),
       attachments: structuredClone(Array.isArray(message.attachments) ? message.attachments : []),
       selection: message.selection ? structuredClone(message.selection) : null };

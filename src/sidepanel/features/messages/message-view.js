@@ -19,6 +19,8 @@ import { parseSuggestionResponse } from './model-suggestions.js';
 import { articleQuotes } from './article-quote-draft.js';
 import { shouldCollapseMessageText } from './text-preview.js';
 import { videoAttachmentName } from '../video-notes/video-notes-presentation.js';
+import { detachMessageIllustrations, generatedImagesMarkup, illustrationNote, restoreMessageIllustrations, videoIllustrationNote } from '../illustration/illustration-view.js';
+import '../illustration/illustration-inline.css';
 
 export { normalizeMessageError, syncMessageErrorToggle } from './message-decorations.js';
 
@@ -87,7 +89,9 @@ function renderedContent(content, streaming, ownerDocument) {
 export function renderMessageContent(container, content, streaming = false) {
   if (!container) return;
   const fragment = renderedContent(content, streaming, container.ownerDocument);
+  detachMessageIllustrations(container);
   syncChildren(container, fragment);
+  restoreMessageIllustrations(container);
   container.querySelectorAll('a').forEach((link) => {
     link.target = '_blank';
     link.rel = 'noopener noreferrer nofollow';
@@ -235,7 +239,7 @@ function assistantMessageMarkup(message, { showSuggestions = false } = {}) {
   const tryNext = tryNextMarkup(message, { showSuggestions });
   return `<article class="message assistant-message" data-message-id="${message.id}">
     <div class="message-label"><span class="assistant-avatar">${icon('asterisk')}</span><span>UNK AI</span>${model}<time>${formatTime(message.createdAt)}</time></div>
-    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${sources}${tryNext}${stopped}${error}
+    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${generatedImagesMarkup(message)}${illustrationNote(message)}${videoIllustrationNote(message)}${sources}${tryNext}${stopped}${error}
     <div class="message-actions">
       <button class="icon-button" data-action="copy" type="button" aria-label="复制回答" title="选择复制格式" aria-haspopup="menu" aria-expanded="false">${icon('copy')}</button>
       ${message.agent ? (['failed', 'cancelled'].includes(message.agent.status) ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>` : '') : `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`}${retry}

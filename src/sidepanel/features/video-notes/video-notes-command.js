@@ -1,10 +1,11 @@
 import { awaitWithAbort } from '../../../utils/abortable.js';
 import { assertPageTarget } from '../../../utils/page-target.js';
 import { captureVideoRequest, validateVideoResult, hasVideoTranscript, selectedVideoTranscript,
-  createVideoAttachment, VIDEO_PROVIDER_ID, VIDEO_CONTEXT_MAX_CHARS, videoError } from './video-request.js';
+  createVideoAttachment, VIDEO_PROVIDER_ID, VIDEO_CONTEXT_MAX_CHARS, VIDEO_LIMITS, videoError } from './video-request.js';
 import { unavailableVideoReply, formatVideoAnswer, videoSource } from './transcript-context.js';
 import { prepareVideoContext } from './video-summary.js';
 
+const LABEL = '整理当前视频的笔记';
 const PROMPT = '请仅依据本轮提供的视频字幕资料（原文或覆盖全部字幕的分段摘要），用简体中文整理当前视频的笔记。'
   + '按“内容概览、主要内容、重点与结论”组织 Markdown，保留字幕支持的关键观点、步骤和例子；没有的信息不要补写。'
   + '标题和来源由应用显示，不要重复输出视频信息。引用原字幕句时使用 [[c1]] 这样的真实句编号，不自行编造时间码。'
@@ -16,9 +17,15 @@ const PROMPT = '请仅依据本轮提供的视频字幕资料（原文或覆盖�
 export function createVideoNotesCommand({ readTranscript }) {
   return Object.freeze({
     capture: captureVideoRequest,
-    label: '整理当前视频的笔记',
+    label: LABEL,
     executionTimeoutMs: 24 * 60 * 60 * 1000,
+    // Allow the background and port client to report their own bounded read failure first.
+    preparationTimeoutMs: VIDEO_LIMITS.timeoutMs + 2000,
     prompt: PROMPT,
+    promptFor(text) {
+      const question = String(text || '').trim();
+      return !question || question === LABEL ? PROMPT : `${PROMPT}\n\n本次笔记的补充要求：\n${question}`;
+    },
     assistantFields: Object.freeze({ videoNotesVersion: 1 }),
     needsRead: user => !hasVideoTranscript(user?.attachments),
     captureRetry(user) {
