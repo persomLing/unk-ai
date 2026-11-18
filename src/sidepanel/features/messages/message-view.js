@@ -195,13 +195,13 @@ function tryNextMarkup(message, { showSuggestions = false } = {}) {
   </div>`;
 }
 
-function assistantMessageMarkup(message, { showSuggestions = false } = {}) {
+function assistantMessageMarkup(message, { showSuggestions = false, frameActions } = {}) {
   const status = message.status || 'complete';
   const stopped = status === 'stopped'
     ? `<div class="message-state">${icon('stop')}已停止，已保留当前回答</div>`
     : '';
   const error = messageErrorMarkup(message);
-  const retry = !message.agent && ['stopped', 'error'].includes(status)
+  const retry = !message.agent && !frameActions?.hideRetry && ['stopped', 'error'].includes(status)
     ? `<button class="action-text" data-action="retry" type="button">${icon('regenerate')}重试</button>`
     : '';
   const thinking = thinkingPresentation(message);
@@ -237,12 +237,14 @@ function assistantMessageMarkup(message, { showSuggestions = false } = {}) {
     : '';
   const sources = sourcesMarkup(message);
   const tryNext = tryNextMarkup(message, { showSuggestions });
+  const frameButtons = frameActions?.buttons?.length ? `<div class="video-frame-actions" role="group" aria-label="视频画面识别">${frameActions.buttons.map(button =>
+    `<button class="action-text" data-action="${escapeHtml(button.action)}" type="button" aria-haspopup="dialog">${icon('article')}${escapeHtml(button.label)}</button>`).join('')}</div>` : '';
   return `<article class="message assistant-message" data-message-id="${message.id}">
     <div class="message-label"><span class="assistant-avatar">${icon('asterisk')}</span><span>UNK AI</span>${model}<time>${formatTime(message.createdAt)}</time></div>
-    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${generatedImagesMarkup(message)}${illustrationNote(message)}${videoIllustrationNote(message)}${sources}${tryNext}${stopped}${error}
+    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${frameButtons}${generatedImagesMarkup(message)}${illustrationNote(message)}${videoIllustrationNote(message)}${sources}${tryNext}${stopped}${error}
     <div class="message-actions">
       <button class="icon-button" data-action="copy" type="button" aria-label="复制回答" title="选择复制格式" aria-haspopup="menu" aria-expanded="false">${icon('copy')}</button>
-      ${message.agent ? (['failed', 'cancelled'].includes(message.agent.status) ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>` : '') : `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`}${retry}
+      ${message.agent ? (['failed', 'cancelled'].includes(message.agent.status) ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>` : '') : frameActions?.hideRetry ? '' : `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`}${retry}
     </div>
   </article>`;
 }
@@ -328,6 +330,7 @@ export function messageMarkup(message, options = {}) {
 
 export function updateStreamingMessage({
   message,
+  frameActions,
   article,
   messagesElement,
   conversationView,
@@ -337,7 +340,7 @@ export function updateStreamingMessage({
   if (!message || !article) return false;
   if ((message.status || 'complete') !== 'streaming') {
     const position = captureViewPosition(conversationView, messagesElement);
-    article.outerHTML = messageMarkup(message, { showSuggestions });
+    article.outerHTML = messageMarkup(message, { showSuggestions, frameActions });
     const rendered = messagesElement.querySelector(`[data-message-id="${message.id}"]`);
     if (!rendered) return false;
     renderMessageContent(rendered.querySelector('[data-message-content]'), message.content, false);

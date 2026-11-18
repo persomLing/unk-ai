@@ -18,7 +18,10 @@ export function videoTranscriptForMessage(message, messages) {
 
 export function videoAttachmentName(attachment) {
   if (attachment?.type === 'video-transcript') {
-    try { return videoCaptionTitle(validateVideoResult(attachment.videoTranscript).video); } catch {}
+    try {
+      const transcript = validateVideoResult(attachment.videoTranscript);
+      return videoCaptionTitle(transcript.video, transcript.track.kind);
+    } catch {}
   }
   return attachment?.name;
 }
@@ -30,5 +33,5 @@ export function presentVideoNotesMessage(message, messages) {
   return { ...message, content: upgradeVideoAnswer(transcript, message.content),
     ...(Array.isArray(message.sources) ? { sources: message.sources.map(source =>
       source.kind === 'video-transcript' && source.url === transcript.target.url
-        ? { ...source, title: videoCaptionTitle(transcript.video) } : source) } : {}) };
+        ? { ...source, title: videoCaptionTitle(transcript.video, transcript.track.kind) } : source) } : {}) };
 }

@@ -41,7 +41,7 @@ export function estimateDraftContext({ conversation = { messages: [] }, beforeAs
     : initialResearchContext({ fetchEnabled: profile.webFetchEnabled !== false, now });
   const usage = contextUsageFor(conversation || { messages: [] }, beforeAssistantId, requestPage,
     contextWindowFor(profile, config), { pendingUser, extraMessages: [...extraMessages, ...research.messages],
-      tools: research.tools, maxTokens: profile.maxTokens });
+      tools: research.tools, maxTokens: profile.maxTokens, imageGenerationAvailable: Boolean(profile.imageProfile?.model) });
   // Do not retain prompt bodies in the meter's state.
   delete usage.messages;
   return { ...usage, scope: 'preview', modelName: profile.name || profile.model || '',

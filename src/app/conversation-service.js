@@ -21,6 +21,7 @@ import { assertImageAttachmentsAvailable } from '../utils/attachments.js';
 import { selectedSkill } from '../sidepanel/features/skills/skill-context.js';
 import { selectedVideoTranscript } from '../sidepanel/features/video-notes/video-request.js';
 import { rewoundCommandForDraft } from '../sidepanel/features/messages/rewound-command.js';
+import { IMAGE_MODEL_REQUIRED, parseDirectImageCommand } from '../utils/image-generation-command.js';
 
 /** Application command service. The state object is a compatibility projection
  * consumed by the existing presenters; browser/storage are injected ports.
@@ -51,6 +52,10 @@ export function createConversationService(deps) {
   const renderConversation = options => emit('conversation', options);
   const renderContextChip = () => emit('context');
   const toast = (message, kind) => emit('notice', { message, kind });
+  const imageCommandUnavailable = (text, modelId, effort) => {
+    const command = parseDirectImageCommand(text);
+    return command && !command.skip && !profileFor(modelId, effort)?.imageProfile?.model;
+  };
   const setPageSelection = value => { state.pageSelection = value; emit('selection'); };
   const setAssistantPhase = (assistant, phase) => {
     if (!assistant) return;
@@ -65,6 +70,13 @@ export function createConversationService(deps) {
     return connections.get(run.runId);
   }
   function disposeModel(run) { connections.get(run.runId)?.dispose(); connections.delete(run.runId); profiles.delete(run.runId); }
+  function commandModel(run, profile, assertCurrent) {
+    return () => {
+      assertCurrent();
+      profiles.set(run.runId, profile);
+      return modelFor(run);
+    };
+  }
   async function generateReply(assistant, run) {
     run.assertCurrent();
     state.controller = { signal: run.signal, abort: reason => run.cancel(reason) };
@@ -115,16 +127,26 @@ export function createConversationService(deps) {
   async function sendMessage(text = draft.value, options = {}) {
     if (disposed) return;
     const submittedText = plainText(text).trim();
-    let command = null, commandRequest = null, commandResult = null;
+    let command = null, commandRequest = null, commandResult = null, commandProfile = null;
     let restoredCommand;
     try { restoredCommand = rewoundCommandForDraft(state, submittedText, options); }
     catch (error) { toast(error.message, 'error'); return; }
     const requestedCommand = options.pageCommand || restoredCommand?.pageCommand;
+    const modelId = options.modelId || state.selectedModelId;
+    const effort = options.effort || state.selectedEffort;
+    if (!requestedCommand && imageCommandUnavailable(submittedText, modelId, effort)) {
+      toast(IMAGE_MODEL_REQUIRED, 'error');
+      if (options.fromQueue) queueMicrotask(processQueue);
+      return;
+    }
     if (requestedCommand) {
       try {
         command = Object.hasOwn(pageCommands, requestedCommand.kind) ? pageCommands[requestedCommand.kind] : null;
         if (!command) throw new Error('这个页面命令尚不可用，请重新打开侧栏。');
         commandRequest = command.capture(requestedCommand);
+        commandProfile = structuredClone(profileFor(modelId, effort));
+        command.validateSubmission?.(commandRequest, { restored: Boolean(restoredCommand), attachments: state.attachments,
+          profile: commandProfile });
       } catch (error) { toast(error.message, 'error'); return; }
       if (state.disablePageContext && (!restoredCommand || command.needsRead({ attachments: state.attachments }))) {
         toast('请先选中原视频页面并开启页面读取，再使用视频笔记。'); return;
@@ -136,10 +158,7 @@ export function createConversationService(deps) {
     // Menu commands preserve concurrent drafts; a restored command belongs to
     // the question being edited and consumes that draft through the same run.
     const preserveDraft = Boolean(command && !restoredCommand);
-    const modelId = options.modelId || state.selectedModelId;
-    const effort = options.effort || state.selectedEffort;
-    const commandProfile = command ? structuredClone(profileFor(modelId, effort)) : null;
-    let content = command?.promptFor?.(submittedText) || command?.prompt || submittedText;
+    let content = command?.promptFor?.(submittedText, commandRequest) || command?.prompt || submittedText;
     const displayContent = command ? submittedText || command.label : content;
     const requestSource = command ? null : normalizeDraftSource(options.fromQueue || Object.hasOwn(options, 'requestSource')
       ? options.requestSource : state.draftSource);
@@ -386,8 +405,10 @@ export function createConversationService(deps) {
         setAssistantPhase(earlyAssistantMessage, 'reading');
         commandResult = await waitForPreparation(command.prepare(commandRequest, {
           attachments,
-          run: submissionOwner, allowPageRead: () => !state.disablePageContext,
-        }), '读取视频字幕超时，请重试。', command.preparationTimeoutMs ?? 21000);
+          run: submissionOwner, allowPageRead: () => !state.disablePageContext, profile: commandProfile,
+          getModelRun: commandModel(submissionOwner, commandProfile, assertSubmission),
+        }), command.preparationMessage?.(commandRequest) || '读取视频字幕超时，请重试。',
+          command.preparationTimeoutFor?.(commandRequest) ?? command.preparationTimeoutMs ?? 21000);
         assertSubmission();
         commandRequest = commandResult.request;
         attachments = structuredClone(commandResult.attachments);
@@ -793,7 +814,7 @@ export function createConversationService(deps) {
     state.pendingPage = null;
   }
 
-  async function regenerate(assistantId) {
+  async function regenerate(assistantId, { preparationAction } = {}) {
     if (disposed) return;
     if (agentSlot?.isBusy()) return;
     const conversation = state.conversation;
@@ -801,32 +822,36 @@ export function createConversationService(deps) {
     if (conversation.messages.find(message => message.id === assistantId)?.agent) return;
     const retryIndex = conversation.messages.findIndex(message => message.id === assistantId);
     const originalQuestion = conversation.messages.slice(0, retryIndex).findLast(message => message.role === 'user');
-    let command = null, commandRequest = null, commandAttachments = [];
+    const modelId = state.selectedModelId, effort = state.selectedEffort;
+    let command = null, commandRequest = null, commandProfile = null, commandAttachments = [];
     if (originalQuestion?.pageCommand) {
       try {
         command = Object.hasOwn(pageCommands, originalQuestion.pageCommand.kind) ? pageCommands[originalQuestion.pageCommand.kind] : null;
         if (!command) throw new Error('本轮页面命令尚不可用，不能改用普通提问重试。');
         // Refuse unknown versions before replacing any existing answer, and
         // capture a private copy before the retry's first asynchronous wait.
-        const snapshot = command.captureRetry(originalQuestion);
+        commandProfile = structuredClone(profileFor(modelId, effort));
+        const snapshot = command.captureRetry(originalQuestion, { conversationId: conversation.id, preparationAction, profile: commandProfile });
         commandRequest = snapshot.request;
         commandAttachments = snapshot.attachments;
+        preparationAction = snapshot.preparationAction;
       } catch (error) { toast(error.message, 'error'); return; }
+    } else if (imageCommandUnavailable(originalQuestion?.displayContent || originalQuestion?.content, modelId, effort)) {
+      toast(IMAGE_MODEL_REQUIRED, 'error');
+      return;
     }
     stopActiveReply();
     state.messageQueue = [];
     const submissionOwner = runner.begin({ commandId: makeId(), mode: 'chat',
       ...(command ? { timeoutMs: command.executionTimeoutMs } : {}) });
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
-    const modelId = state.selectedModelId, effort = state.selectedEffort;
     state.submissionOwner = submissionOwner;
     state.submissionController = submissionController;
     state.isSubmitting = true;
     state.sendInFlight = true;
     renderQueueBar();
     updateComposer();
-    const commandNeedsRead = command?.needsRead({ attachments: commandAttachments });
-    const commandProfile = command ? structuredClone(profileFor(modelId, effort)) : null;
+    const commandNeedsRead = command?.needsRead({ attachments: commandAttachments, preparationAction });
     let commandResult = null;
     // Freeze verified evidence before any configuration, browser or storage wait.
     const retainedPage = commandRequest ? null : retainedPageForRetry(conversation, originalQuestion);
@@ -894,8 +919,11 @@ export function createConversationService(deps) {
       if (command) {
         setAssistantPhase(next, commandNeedsRead ? 'reading' : 'preparing');
         commandResult = await waitWithTimeout(command.prepare(commandRequest, {
-          attachments: commandAttachments, run: submissionOwner, allowPageRead: () => !state.disablePageContext,
-        }), { signal: submissionController.signal, timeoutMs: command.preparationTimeoutMs ?? 21000, message: '读取原视频字幕超时，请重试。' });
+          attachments: commandAttachments, run: submissionOwner, preparationAction, profile: commandProfile,
+          allowPageRead: () => preparationAction === 'continue' ? state.pageContextPreference !== false : !state.disablePageContext,
+          getModelRun: commandModel(submissionOwner, commandProfile, assertCurrent),
+        }), { signal: submissionController.signal, timeoutMs: command.preparationTimeoutFor?.(commandRequest) ?? command.preparationTimeoutMs ?? 21000,
+          message: command.preparationMessage?.(commandRequest) || '读取原视频字幕超时，请重试。' });
         assertCurrent();
         retained.user.pageCommand = structuredClone(commandResult.request);
         retained.user.attachments = structuredClone(commandResult.attachments);

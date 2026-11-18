@@ -16,7 +16,11 @@ const itemText = item => Array.isArray(item) ? item[2] : item.text;
 const fragment = (item, text) => Array.isArray(item) ? [item[0], item[1], text] : { ...item, text };
 
 function summaryMessages(transcript, items, operation, maxTokens) {
-  return [{ role: 'system', content: SUMMARY_PROMPT }, { role: 'user', content: JSON.stringify({
+  const prompt = transcript.track.kind === 'visual' ? SUMMARY_PROMPT
+    .replace('视频字幕或分段摘要', '视频采样画面识别资料或分段摘要')
+    .replace('不补写画面或外部知识', '明确区分字幕和视觉描述，不推断未见画面、对白或外部知识')
+    .replace('原字幕句', '原画面证据') : SUMMARY_PROMPT;
+  return [{ role: 'system', content: prompt }, { role: 'user', content: JSON.stringify({
     version: 1, operation, video: transcript.video, maxOutputTokens: maxTokens,
     ...(operation === 'map' ? { cues: items } : { notes: items }),
   }) }];

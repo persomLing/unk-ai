@@ -11,12 +11,12 @@ import {
 import { requestTokenUsage } from '../utils/token-usage.js';
 
 export const MODEL_PURPOSES = Object.freeze([
-  'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions', 'video-summary', 'image-generation', 'illustration-plan',
+  'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions', 'video-summary', 'video-frame-transcript', 'image-generation', 'illustration-plan',
 ]);
 export const DEFAULT_MODEL_TIMEOUTS = Object.freeze({
   answer: 120000, 'agent-decision': 60000, 'visual-decision': 8000,
   'reading-decision': 8000,
-  'research-decision': 8000, 'web-search': 25000, 'web-fetch': 25000, compression: 30000, suggestions: 15000, 'video-summary': 60000, 'image-generation': null, 'illustration-plan': 15000,
+  'research-decision': 8000, 'web-search': 25000, 'web-fetch': 25000, compression: 30000, suggestions: 15000, 'video-summary': 60000, 'video-frame-transcript': 45000, 'image-generation': null, 'illustration-plan': 15000,
 });
 
 const MODEL_FIELDS = ['model', 'temperature', 'contextLength', 'maxTokens',
@@ -24,7 +24,7 @@ const MODEL_FIELDS = ['model', 'temperature', 'contextLength', 'maxTokens',
   'webSearchEndpoint', 'webFetchEndpoint', 'webSearchEnabled', 'webFetchEnabled'];
 // Structured classifiers output tiny JSON and must not spend the chat model's
 // reasoning budget thinking, which can leave the answer body empty.
-const NON_REASONING_PURPOSES = new Set(['illustration-plan', 'visual-decision']);
+const NON_REASONING_PURPOSES = new Set(['illustration-plan', 'visual-decision', 'video-frame-transcript']);
 const PROFILE_FIELDS = ['endpointUrl', 'apiKey', 'imageProfile', ...MODEL_FIELDS];
 const TRANSPORT_EVENTS = new Set(['started', 'headers', 'first-byte', 'progress', 'first-reasoning', 'first-content',
   'fallback', 'body-started', 'body-completed', 'completed', 'failed', 'cancelled'].map(value => `transport.${value}`));
@@ -88,7 +88,7 @@ function safeFailure(error, key, purpose) {
   const failure = errorWith(code, redact(error?.message || error, key), name);
   // A read-only capability adapter may fall back only after a confirmed HTTP
   // absence. Preserve the bounded status, never raw endpoints or error objects.
-  if (name === 'Error' && ['web-search', 'web-fetch', 'image-generation', 'illustration-plan', 'visual-decision'].includes(purpose)
+  if (name === 'Error' && ['web-search', 'web-fetch', 'image-generation', 'illustration-plan', 'visual-decision', 'video-frame-transcript'].includes(purpose)
     && Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599) failure.status = error.status;
   return failure;
 }
@@ -223,7 +223,7 @@ export function createModelGateway({
             : purpose === 'illustration-plan' ? 1000
               : config.maxTokens ? Math.min(4000, config.maxTokens) : undefined;
       const defaultTemperature = purpose === 'compression' ? undefined
-        : ['agent-decision', 'visual-decision', 'research-decision', 'illustration-plan'].includes(purpose) ? 0 : config.temperature;
+        : (NON_REASONING_PURPOSES.has(purpose) || ['agent-decision', 'research-decision'].includes(purpose)) ? 0 : config.temperature;
       let input;
       let fingerprint;
       try {

@@ -255,6 +255,18 @@
     </div>
 
     <dialog id="skills-dialog" aria-label="Skill 技能库"></dialog>
+    <dialog id="video-frame-dialog" class="app-dialog" aria-labelledby="video-frame-dialog-title">
+      <form method="dialog">
+        <h2 id="video-frame-dialog-title">从画面识别字幕</h2>
+        <p data-frame-consent-scan>独立下载 B 站视频分片，不暂停或跳转播放器。单次扫描最多下载约 192 MiB，通常需几十秒到数分钟。</p>
+        <p data-frame-consent-resume hidden>将尝试使用另一个 B 站标签页，必要时在后台打开 B 站首页；扫描的仍是原视频。</p>
+        <p>最多将 240 张采样画面发送给所选模型服务。每帧可能消耗约 1,000 个输入 token 或更多，实际用量按服务商计。采样可能漏掉短字幕。</p>
+        <div class="dialog-actions">
+          <button type="submit" class="action-text" value="cancel" autofocus>取消</button>
+          <button type="submit" class="action-text video-frame-confirm" value="start">确认识别</button>
+        </div>
+      </form>
+    </dialog>
     <script type="module" src="./sidepanel.js"></script>
   </body>
 </html>

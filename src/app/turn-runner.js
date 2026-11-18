@@ -1,7 +1,7 @@
 import { awaitWithAbort } from '../utils/abortable.js';
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
-const PHASES = new Set(['preparing', 'reading', 'reading-index', 'reading-related', 'checking-evidence', 'reading-deep', 'reading-network', 'researching', 'checking-research', 'web-research', 'saving', 'compressing', 'collecting-context', 'waiting-model', 'reasoning', 'answering']);
+const PHASES = new Set(['preparing', 'reading', 'reading-index', 'reading-related', 'checking-evidence', 'reading-deep', 'reading-network', 'researching', 'checking-research', 'web-research', 'saving', 'compressing', 'collecting-context', 'waiting-model', 'reasoning', 'answering', 'scanning-video', 'recognizing-video']);
 
 /** One document's turn coordinator. It owns execution, cancellation and the
  * terminal commit; storage owns durability and the UI only observes events.
@@ -89,11 +89,13 @@ export function createTurnRunner({ repository, createId = () => crypto.randomUUI
         emit('bound');
         return ref;
       },
-      phase(value) {
+      phase(value, detail) {
         if (!isOpen() || !PHASES.has(value)) return false;
+        const changed = phase !== value;
         phase = value;
         status = ['waiting-model', 'reasoning', 'answering'].includes(value) ? 'running' : 'preparing';
-        if (ref) repository.update(ref, { requestPhase: value, phaseStartedAt: now() });
+        if (ref) repository.update(ref, { requestPhase: value, ...(changed || detail === undefined ? { phaseStartedAt: now() } : {}),
+          requestPhaseDetail: typeof detail === 'string' ? detail.slice(0, 120) : undefined });
         emit('phase');
         return true;
       },

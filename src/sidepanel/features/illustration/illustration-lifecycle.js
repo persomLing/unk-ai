@@ -63,6 +63,7 @@ export function illustrationFailure(error, phase, profile) {
   const status = Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599 ? error.status : undefined;
   const reason = error?.code === 'ILLUSTRATION_PROMPT_INVALID' ? 'prompt-invalid'
     : error?.code === 'ILLUSTRATION_PLAN_INVALID' ? 'plan-invalid'
+    : error?.code === 'ERR_IMAGE_MODEL_MISSING' ? 'no-image-model'
     : error?.name === 'TimeoutError' ? 'timeout'
       : status === 429 ? 'rate-limit' : status === 401 || status === 403 ? 'access-denied'
         : phase === 'plan' ? 'plan-failed' : phase === 'save' ? 'save-failed' : phase === 'verify' ? 'verify-failed' : 'generate-failed';

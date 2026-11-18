@@ -84,6 +84,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
       };
       if (!profile) { run.fail(new Error('请先在设置中添加至少一个模型。')); return null; }
       const fixedProfile = structuredClone(profile);
+      const messageOptions = { imageGenerationAvailable: Boolean(fixedProfile.imageProfile?.model) };
       const researchEnabled = policy.research !== false && typeof researchTools === 'function' && fixedProfile.webSearchEnabled !== false;
       const requestPage = policy.isolated || user.pageContextEnabled === false
         || (user.pageSource && !sourceMatchesPage(user.pageSource, conversation.pageContext))
@@ -123,7 +124,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
             return policy.prepareContext({ input: structuredClone(contextInput),
               // Reserve the real current question and wrappers; history can be
               // compressed after required data has been prepared.
-              messages: requestMessagesFor({ messages: [submittedUser, assistant] }, assistant.id, requestPage),
+              messages: requestMessagesFor({ messages: [submittedUser, assistant] }, assistant.id, requestPage, messageOptions),
               contextWindow, maxTokens: requestReserve, signal: run.signal, assertCurrent,
               requestText: async ({ requestId, messages, maxTokens }) => {
                 assertCurrent();
@@ -156,7 +157,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
             reserveTokens: baseReserve, contextWindow, page: requestPage });
         }
         assertCurrent();
-        let messages = fitMessagesToBudget(requestConversation, requestMessagesFor(requestConversation, assistant.id, requestPage), contextWindow, baseReserve);
+        let messages = fitMessagesToBudget(requestConversation, requestMessagesFor(requestConversation, assistant.id, requestPage, messageOptions), contextWindow, baseReserve);
         messages = appendProviderContext(messages, collected.blocks, contextWindow, requestReserve, { required: requiredContext });
         run.phase('waiting-model');
         timer = every(() => {

@@ -43,7 +43,13 @@ export function videoTarget(value, { documentRequired = false } = {}) {
 export function captureVideoRequest(value) {
   if (!value || value.kind !== 'video-notes' || value.version !== 1) throw invalid();
   const illustration = VIDEO_ILLUSTRATION_MODES.includes(value.illustration) ? value.illustration : 'off';
-  return { kind: 'video-notes', version: 1, target: videoTarget(value.target), illustration };
+  const target = videoTarget(value.target);
+  if (value.frameFallback === true) {
+    const frameOffer = validateVideoResult(value.frameOffer, target);
+    if (frameOffer.kind !== 'unavailable' || !['no-subtitles', 'empty-subtitles'].includes(frameOffer.reason)) throw invalid();
+    return { kind: 'video-notes', version: 1, target: frameOffer.target, illustration, frameFallback: true, frameOffer };
+  }
+  return { kind: 'video-notes', version: 1, target, illustration };
 }
 
 export function normalizeVideoCues(values, duration) {
@@ -86,11 +92,33 @@ export function validateVideoResult(value, expectedTarget) {
   }
   const track = value.track;
   if (!track || !field(track.id, 120) || !/^(?:[a-z]{2,3})(?:-[a-z0-9]{2,8})*$/i.test(track.language || '')
-    || !['manual', 'auto'].includes(track.kind)) throw invalid();
+    || !['manual', 'auto', 'visual'].includes(track.kind)) throw invalid();
+  if (track.kind === 'visual' && (!Array.isArray(value.cues) || value.cues.length > 240
+    || value.cues.some(cue => typeof cue?.text !== 'string' || cue.text.length > 680))) throw invalid();
   const cues = normalizeVideoCues(value.cues, video.duration);
   if (!cues.length) throw invalid();
-  return { ...result, track: { id: field(track.id, 120), language: track.language,
-    label: field(track.label, 64) || track.language, kind: track.kind }, cues };
+  const normalizedTrack = { id: field(track.id, 120), language: track.language,
+    label: field(track.label, 64) || track.language, kind: track.kind };
+  if (track.kind !== 'visual') return { ...result, track: normalizedTrack, cues };
+  const coverage = value.visualCoverage, durationMs = Math.round(video.duration * 1000);
+  const count = (number, max) => Number.isSafeInteger(number) && number >= 0 && number <= max;
+  if (track.id !== 'visual' || track.language !== 'und' || !['subtitles', 'timeline'].includes(coverage?.mode)
+    || coverage.version !== 1 || coverage.stepMs !== 1000 || !count(coverage.scannedMs, durationMs)
+    || !count(coverage.retainedFrames, 240) || !coverage.retainedFrames || !count(coverage.failedFrames, coverage.retainedFrames)
+    || !count(coverage.omittedFrames, 7200) || !/^\d{2,4}×\d{2,4}$/.test(coverage.resolution || '')) throw invalid();
+  let cursor = 0, coveredMs = 0;
+  const gaps = [];
+  for (const cue of cues) {
+    if (cue.startMs < cursor || cue.endMs > coverage.scannedMs || cue.endMs <= cue.startMs) throw invalid();
+    if (cursor < cue.startMs) gaps.push([cursor, cue.startMs]);
+    coveredMs += cue.endMs - cue.startMs;
+    cursor = cue.endMs;
+  }
+  if (cursor < durationMs) gaps.push([cursor, durationMs]);
+  return { ...result, track: { ...normalizedTrack, label: '画面识别' }, cues,
+    visualCoverage: { version: 1, mode: coverage.mode, stepMs: 1000, scannedMs: coverage.scannedMs,
+      retainedFrames: coverage.retainedFrames, failedFrames: coverage.failedFrames, omittedFrames: coverage.omittedFrames,
+      resolution: coverage.resolution, coveredMs, gaps: gaps.slice(0, 8), gapCount: gaps.length } };
 }
 
 export function hasVideoTranscript(attachments) {
@@ -112,7 +140,7 @@ export function createVideoAttachment(value) {
   if (transcript.kind !== 'ready') throw invalid();
   return { type: 'video-transcript',
     id: 'video:' + transcript.video.bvid + ':' + transcript.video.cid + ':' + transcript.track.id + ':' + transcript.capturedAt,
-    name: videoCaptionTitle(transcript.video),
+    name: videoCaptionTitle(transcript.video, transcript.track.kind),
     size: new TextEncoder().encode(JSON.stringify(transcript)).byteLength, videoTranscript: transcript };
 }
 
@@ -120,9 +148,9 @@ export function videoDisplayTitle(video) {
   return field(video.partTitle, 256) || field(video.title, 512);
 }
 
-export function videoCaptionTitle(video) {
+export function videoCaptionTitle(video, kind) {
   return videoDisplayTitle(video) + ' · P' + video.part
-    + (video.partCount ? '/' + video.partCount : '') + ' 字幕';
+    + (video.partCount ? '/' + video.partCount : '') + (kind === 'visual' ? ' 画面识别' : ' 字幕');
 }
 
 /** Shareable fallback; only the original video/P and subtitle time are encoded. */

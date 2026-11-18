@@ -3,10 +3,10 @@ import { messagesForRetry } from '../sidepanel/features/messages/retry-flow.js';
 const TERMINAL_STATUSES = new Set(['complete', 'error', 'stopped']);
 const MUTABLE_FIELDS = new Set([
   'content', 'reasoning', 'reasoningStartedAt', 'reasoningFinishedAt', 'reasoningSeconds',
-  'requestPhase', 'phaseStartedAt', 'model', 'modelId', 'reasoningEffort',
+  'requestPhase', 'requestPhaseDetail', 'phaseStartedAt', 'model', 'modelId', 'reasoningEffort',
   'sources', 'pageSource', 'suggestions', 'selectionUsed', 'includeVisual',
   'errorMessage', 'errorDetail', 'errorCode', 'contextIssues',
-  'videoNotesVersion', 'videoNotesOutcome', 'attachments', 'illustration', 'videoIllustration',
+  'videoNotesVersion', 'videoNotesOutcome', 'videoFrameOffer', 'attachments', 'illustration', 'videoIllustration',
 ]);
 const keyFor = (conversationId, assistantId) => JSON.stringify([conversationId, assistantId]);
 const clone = value => structuredClone(value);

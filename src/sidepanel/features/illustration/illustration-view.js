@@ -121,7 +121,7 @@ export function videoIllustrationNote(message) {
 export function illustrationNote(message) {
   const info = message.illustration;
   if (!info || typeof info !== 'object' || info.status !== 'unavailable') return '';
-  if (info.items?.length && info.reason !== 'save-failed') return '';
+  if (info.items?.length && !['save-failed', 'no-image-model'].includes(info.reason)) return '';
   const reason = REASONS[info.reason] || '配图失败';
   return `<p class="video-illustration-note">${escapeHtml(reason)}。</p>`;
 }

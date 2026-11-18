@@ -17,6 +17,8 @@ import { handleAgentMessage, pauseAgentTask } from './agent-service.js';
 import { createNetworkReadingService, withPageDebugger } from './network-reading-service.js';
 import { createVideoReadingService } from './video-reading-service.js';
 import { createVideoNavigationService } from './video-navigation-service.js';
+import { createVideoScanService } from './video-scan-service.js';
+import videoFrameDecoderBundle from '../content/video-frame-decoder-entry.js?worker&url';
 import { captureSiteResearchDiscovery } from '../utils/site-research.js';
 import { assertPageTarget, pageTargetFields } from '../utils/page-target.js';
 import { awaitWithAbort } from '../utils/abortable.js';
@@ -40,6 +42,9 @@ const agentTakeoverTabs = new Map();
 const networkReadingService = chrome.runtime.onConnect ? createNetworkReadingService({ chrome }) : null;
 const videoReadingService = chrome.runtime.onConnect ? createVideoReadingService({ chrome }) : null;
 const videoNavigationService = chrome.runtime.onConnect ? createVideoNavigationService({ chrome }) : null;
+if (chrome.runtime.onConnect && chrome.tabs.connect) {
+  createVideoScanService({ chrome, decoderFile: videoFrameDecoderBundle.replace(/^\//, '') });
+}
 
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type !== 'AGENT_TAKEOVER' || sender?.id !== chrome.runtime.id || !sender?.tab?.id) return false;

@@ -27,6 +27,7 @@ export function createContextService({ state, modelGateway, profileFor, save,
       const usage = contextUsageFor(conversation, beforeAssistantId,
         requestedPage === undefined ? conversation.pageContext : requestedPage, contextWindow, {
           maxTokens: profile.maxTokens,
+          imageGenerationAvailable: Boolean(profile.imageProfile?.model),
           additionalInputTokens: Math.max(0, Number(reserveTokens || 0) - Number(profile.maxTokens || 0)),
         });
       if (!manual && !usage.shouldCompress) return false;

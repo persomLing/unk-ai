@@ -82,6 +82,7 @@ import { findOpenTabForSource, pageTargetFields } from '../utils/page-target.js'
 import { normalizePageUrl, resolvePageSource } from './features/page-reading/page-source.js';
 import { createComposerAddMenu } from './features/composer/composer-add-menu.js';
 import { createVideoNotesEntry } from './features/video-notes/video-notes-entry.js';
+import { createVideoFrameActions, videoFrameActionsFor } from './features/video-notes/video-frame-actions.js';
 import { presentVideoNotesMessage } from './features/video-notes/video-notes-presentation.js';
 import { createVideoTimestampNavigation } from './features/video-notes/video-timestamp-navigation.js';
 import './features/composer/composer-add-menu.css';
@@ -1054,6 +1055,7 @@ function renderConversation({ scroll = false } = {}) {
   messagesElement.innerHTML = hasMessages
     ? conversation.messages.map((message) => messageMarkup(presentVideoNotesMessage(message, conversation.messages), {
       showSuggestions: showSuggestionsFor(message, latestAssistant?.id, latestMessageRole),
+      frameActions: videoFrameActionsFor(message, conversation, application.videoFrameRecovery),
     })).join('')
     : '';
   for (const message of conversation?.messages || []) {
@@ -1780,12 +1782,23 @@ videoNotesEntry = createVideoNotesEntry({
   modeButton: $('#video-illustration-mode'),
   getState: () => ({ ready: state.ready, pageEnabled: !state.disablePageContext && !normalizeDraftSource(state.draftSource),
     target: state.activePageSignal,
+    imageGenerationAvailable: Boolean(requestProfile(state.config)?.imageProfile?.model),
     busy: Boolean(state.generatingId || state.isSubmitting || state.compressing || state.preparingAttachments
       || historyMutationBusy || agentTaskRestart.isPending() || agentSlot?.isBusy()) }),
   submit: (text, options) => application.conversations.sendMessage(text, options),
   closeMenu: () => composerAddMenu?.close({ restoreFocus: true }),
   leaveAgent: () => { if (agentSlot?.isMode()) agentSlot.setMode(false); },
   onNotice: (message, kind) => toast(message, kind), createId: makeId,
+});
+const videoFrameActions = createVideoFrameActions({
+  dialog: $('#video-frame-dialog'), getConversation: () => state.conversation,
+  getRecovery: application.videoFrameRecovery,
+  getState: () => ({ ready: state.ready, pageEnabled: !state.disablePageContext, pagePreference: state.pageContextPreference,
+    target: state.activePageSignal, supportsVision: activeChatProfile()?.supportsVision === true,
+    busy: Boolean(state.generatingId || state.isSubmitting || state.compressing || state.preparingAttachments
+      || historyMutationBusy || agentTaskRestart.isPending() || agentSlot?.isBusy()) }),
+  submit: application.conversations.sendMessage, regenerate: application.conversations.regenerate,
+  leaveAgent: () => { if (agentSlot?.isMode()) agentSlot.setMode(false); }, notify: toast, createId: makeId,
 });
 videoTimestampNavigation = createVideoTimestampNavigation({ root: messagesElement,
   getConversation: () => state.conversation, getPlaybackTarget: () => state.activePageSignal,
@@ -2010,6 +2023,7 @@ function updateStreamingMessage(id) {
   const latestMessageRole = state.conversation?.messages.at(-1)?.role || '';
   updateMessageView({
     message: presentVideoNotesMessage(message, state.conversation?.messages),
+    frameActions: videoFrameActionsFor(message, state.conversation, application.videoFrameRecovery),
     article,
     messagesElement,
     conversationView,
@@ -2590,6 +2604,8 @@ messagesElement.addEventListener('click', async (event) => {
   if (button.dataset.action === 'copy') {
     messageCopy.open({ button, message: presentVideoNotesMessage(message, state.conversation?.messages), conversationId: state.conversation?.id });
     return;
+  } else if (button.dataset.action.startsWith('video-frame-')) {
+    await videoFrameActions.activate(id, button.dataset.action.slice('video-frame-'.length));
   } else if (button.dataset.action === 'regenerate' || button.dataset.action === 'retry') {
     await regenerate(id);
   }
@@ -2653,6 +2669,7 @@ window.addEventListener('pagehide', () => {
   contextUsageTracker.dispose();
   composerAddMenu?.dispose();
   videoNotesEntry?.dispose();
+  videoFrameActions.dispose();
   videoTimestampNavigation?.dispose();
   skillLibraryView.dispose();
   skillLibrary.dispose();

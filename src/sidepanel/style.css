@@ -1570,6 +1570,9 @@ img[data-image-preview]:focus-visible {
 .generated-image.is-unavailable figcaption { margin-bottom: 4px; }
 .video-illustration-note { margin: 8px 0 0; color: var(--muted); font-size: 12px; }
 .video-illustration-note.is-capturing { color: var(--teal); }
+.video-frame-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 4px; }
+.video-frame-actions .action-text, .action-text.video-frame-confirm { border: 1px solid var(--line); color: var(--teal); }
+#video-frame-dialog p + p { margin-top: 8px; }
 .generated-image-placeholder {
   position: relative; width: 100%; aspect-ratio: var(--illustration-aspect, 4 / 3); margin-bottom: 6px; box-sizing: border-box;
   border: 1px dashed var(--line); border-radius: 10px; background: var(--surface); color: var(--muted); font-size: 12px;

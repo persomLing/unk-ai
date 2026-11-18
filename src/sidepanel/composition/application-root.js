@@ -13,6 +13,7 @@ import { createSkillContextProvider } from '../features/skills/skill-context.js'
 import { createVideoContextProvider } from '../features/video-notes/transcript-context.js';
 import { createVideoNotesCommand, videoReplyPolicy } from '../features/video-notes/video-notes-command.js';
 import { readVideoTranscript as readTranscriptFromPort } from '../features/video-notes/video-reading-client.js';
+import { scanVideoPage } from '../features/video-notes/video-scan-client.js';
 import { createImageIllustration } from '../features/illustration/image-illustration.js';
 import { createVideoIllustration } from '../features/video-notes/video-illustration.js';
 import { captureVideoFrame } from '../features/video-notes/video-navigation-client.js';
@@ -29,6 +30,7 @@ export function readingDiagnosticEvidence(page) {
 export function createSidepanelApplication({ state, conversationSaver, browser, agentSlot,
   modelGateway = createModelGateway(), contextProviders = [],
   readVideoTranscript = (target, options) => readTranscriptFromPort(browser?.connect, target, options),
+  scanVideo = (offer, options) => scanVideoPage(browser?.connect, offer, options),
   researchTools = createResearchToolSession, researchOptions = {}, recordDiagnostic = () => {}, ...ports }) {
   // Config loads after this composition and may change later. ChatService
   // checks the search setting from each turn's frozen model profile.
@@ -54,7 +56,8 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
       summarize: result => name === 'ensureConfigured' ? { ok: result === true }
         : name === 'getDirectoryInfo' ? { permissionGranted: result?.granted === true } : { ok: Boolean(result?.id) } });
   }
-  const pageCommands = Object.freeze({ 'video-notes': createVideoNotesCommand({ readTranscript: readVideoTranscript }) });
+  const videoNotes = createVideoNotesCommand({ readTranscript: readVideoTranscript, scanVideo });
+  const pageCommands = Object.freeze({ 'video-notes': videoNotes });
   const contextAssembler = createContextAssembler({ providers: [createSkillContextProvider(), createVideoContextProvider(), ...contextProviders] });
   const contextService = createContextService({ state, modelGateway, profileFor: ports.profileFor,
     createId: ports.makeId, now: ports.now,
@@ -91,7 +94,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
     try { videoIllustration.handle(typed); } catch { /* Optional decoration cannot affect the run. */ }
     emit(typed); });
   return Object.freeze({ conversations, runner, repository, contextService, contextAssembler, modelGateway,
-    cancelIllustrations,
+    cancelIllustrations, videoFrameRecovery: videoNotes.recovery,
     reconcileIllustrations(conversation) {
       const changed = settleInterruptedIllustrations(conversation, assistantId => illustration.active(conversation.id, assistantId)
         || videoIllustration.active(conversation.id, assistantId));
@@ -99,6 +102,6 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
       return changed;
     },
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-    dispose() { conversations.dispose(); runner.dispose(); illustration.dispose(); videoIllustration.dispose(); diagnostics.dispose(); chatService.dispose(); contextService.dispose(); void contextAssembler.dispose(); listeners.clear(); },
+    dispose() { conversations.dispose(); runner.dispose(); videoNotes.dispose(); illustration.dispose(); videoIllustration.dispose(); diagnostics.dispose(); chatService.dispose(); contextService.dispose(); void contextAssembler.dispose(); listeners.clear(); },
   });
 }

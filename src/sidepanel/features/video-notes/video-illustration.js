@@ -1,4 +1,4 @@
-import { requestProfile } from '../../../utils/profiles.js';
+import { requestProfile, selectedImageModel } from '../../../utils/profiles.js';
 import { awaitWithAbort } from '../../../utils/abortable.js';
 import { selectedVideoTranscript, videoTimestamp } from './video-request.js';
 import { safeAttachmentDataUrl } from '../../../utils/attachments.js';
@@ -151,9 +151,11 @@ export function createVideoIllustration({ repository, modelGateway, getConfig, c
     if (initial.assistant.videoIllustration || initial.assistant.attachments?.some(item => item?.videoFrame || item?.videoGenerated)) return;
     const content = initial.assistant.content;
     const job = scope.open(ref, content);
+    const unavailable = () => commit(job, { videoIllustration: { version: 1, status: 'unavailable', mode, reason: 'no-image-model', items: [] } });
     let effect, profile;
     try {
       profile = requestProfile(getConfig());
+      if (mode === 'generate' && !profile?.imageProfile?.model) { unavailable(); return; }
       if (!profile?.model) throw new Error('未配置用于配图规划的对话模型。');
       const transcript = selectedVideoTranscript(initial.user.attachments);
       if (!transcript) throw new Error('本轮没有可核对的视频字幕，无法配图。');
@@ -166,6 +168,7 @@ export function createVideoIllustration({ repository, modelGateway, getConfig, c
         messages: planMessages({ notes: content, cues: transcript.cues, mode }), maxTokens: PLAN_TOKENS, timeoutMs: PLAN_TIMEOUT_MS }),
       { signal: job.signal, timeoutMs: PLAN_TIMEOUT_MS, message: '视频配图规划超时。' });
       if (!job.read()) return;
+      if (mode === 'generate' && !selectedImageModel(getConfig())) { unavailable(); return; }
       const plan = parseVideoPlan(raw, new Set(cueMap.keys()), mode).map(item => ({ ...item, id: makeId(), preferred: mode,
         placement: createIllustrationPlacement(content, { anchor: item.anchor,
           time: Math.floor(cueMap.get(item.cueId).startMs / 1000), duration: transcript.video.duration }) }));
@@ -221,9 +224,8 @@ export function createVideoIllustration({ repository, modelGateway, getConfig, c
   }
 
   async function resolveItem(item, cue, transcript, job, effect, profile, haltCapture, onGenerate) {
-    const canGenerate = Boolean(profile.imageProfile?.model);
     if (item.preferred === 'generate') {
-      if (!canGenerate) return { skipped: { cueId: item.cueId, reason: 'no-image-model' } };
+      if (!selectedImageModel(getConfig())) return { skipped: { cueId: item.cueId, reason: 'no-image-model' } };
       return generateForItem(item, job, effect, profile, onGenerate);
     }
     if (haltCapture) return { skipped: { cueId: item.cueId, reason: haltCapture } };

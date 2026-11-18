@@ -27,5 +27,6 @@ export function rewoundCommandHint(record, hasTranscript) {
   if (!record) return '';
   const request = record.pageCommand;
   const mode = { off: '', frame: ' · 截帧', generate: ' · 生图' }[request.illustration];
-  return `视频笔记 · P${parseVideoUrl(request.target.url).part}${mode || ''} · ${hasTranscript ? '使用原视频字幕' : '读取原视频字幕'}`;
+  const evidence = request.frameFallback ? (hasTranscript ? '使用已识别画面' : '未保存画面识别资料') : (hasTranscript ? '使用原视频字幕' : '读取原视频字幕');
+  return `视频笔记 · P${parseVideoUrl(request.target.url).part}${mode || ''} · ${evidence}`;
 }
