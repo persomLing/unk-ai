@@ -1,7 +1,7 @@
 import { awaitWithAbort } from '../utils/abortable.js';
 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled']);
-const PHASES = new Set(['preparing', 'reading', 'reading-index', 'reading-related', 'checking-evidence', 'reading-deep', 'reading-network', 'researching', 'checking-research', 'web-research', 'saving', 'compressing', 'collecting-context', 'waiting-model', 'reasoning', 'answering', 'scanning-video', 'recognizing-video']);
+const PHASES = new Set(['preparing', 'reading', 'reading-index', 'reading-related', 'checking-evidence', 'reading-deep', 'reading-network', 'researching', 'checking-research', 'web-research', 'saving', 'compressing', 'collecting-context', 'waiting-model', 'reasoning', 'answering', 'scanning-video', 'recognizing-video', 'generating-image']);
 
 /** One document's turn coordinator. It owns execution, cancellation and the
  * terminal commit; storage owns durability and the UI only observes events.
@@ -31,6 +31,7 @@ export function createTurnRunner({ repository, createId = () => crypto.randomUUI
     const controller = new AbortController();
     const startedAt = now();
     let status = 'preparing', phase = 'preparing', ref = null, sequence = 0;
+    let phaseStartedAt = startedAt, phaseDetail;
     let execution = null, timer = null;
     const isOpen = () => !TERMINAL.has(status) && active === run && !controller.signal.aborted;
     const emit = type => notify({ type, commandId, runId, mode, status, phase, seq: sequence,
@@ -47,6 +48,7 @@ export function createTurnRunner({ repository, createId = () => crypto.randomUUI
       try {
         if (ref) {
           const committed = repository.finish(ref, { ...fields, status: messageStatus,
+            replyTiming: { version: 1, durationMs: Math.max(0, now() - startedAt) },
             reasoningStartedAt: undefined, reasoningFinishedAt: undefined });
           if (!committed) {
             status = 'cancelled';
@@ -86,16 +88,21 @@ export function createTurnRunner({ repository, createId = () => crypto.randomUUI
           return ref;
         }
         ref = repository.begin({ ...args, runId });
+        repository.update(ref, { replyTiming: { version: 1, startedAt },
+          requestPhase: phase, phaseStartedAt, requestPhaseDetail: phaseDetail });
         emit('bound');
         return ref;
       },
       phase(value, detail) {
         if (!isOpen() || !PHASES.has(value)) return false;
         const changed = phase !== value;
+        const nextDetail = typeof detail === 'string' ? detail.slice(0, 120) : undefined;
+        if (!changed && phaseDetail === nextDetail) return true;
         phase = value;
-        status = ['waiting-model', 'reasoning', 'answering'].includes(value) ? 'running' : 'preparing';
-        if (ref) repository.update(ref, { requestPhase: value, ...(changed || detail === undefined ? { phaseStartedAt: now() } : {}),
-          requestPhaseDetail: typeof detail === 'string' ? detail.slice(0, 120) : undefined });
+        if (changed) phaseStartedAt = now();
+        phaseDetail = nextDetail;
+        status = ['waiting-model', 'reasoning', 'answering', 'generating-image'].includes(value) ? 'running' : 'preparing';
+        if (ref) repository.update(ref, { requestPhase: value, ...(changed ? { phaseStartedAt } : {}), requestPhaseDetail: phaseDetail });
         emit('phase');
         return true;
       },

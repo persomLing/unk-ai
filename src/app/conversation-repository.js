@@ -3,7 +3,7 @@ import { messagesForRetry } from '../sidepanel/features/messages/retry-flow.js';
 const TERMINAL_STATUSES = new Set(['complete', 'error', 'stopped']);
 const MUTABLE_FIELDS = new Set([
   'content', 'reasoning', 'reasoningStartedAt', 'reasoningFinishedAt', 'reasoningSeconds',
-  'requestPhase', 'requestPhaseDetail', 'phaseStartedAt', 'model', 'modelId', 'reasoningEffort',
+  'requestPhase', 'requestPhaseDetail', 'phaseStartedAt', 'replyTiming', 'model', 'modelId', 'reasoningEffort',
   'sources', 'pageSource', 'suggestions', 'selectionUsed', 'includeVisual',
   'errorMessage', 'errorDetail', 'errorCode', 'contextIssues',
   'videoNotesVersion', 'videoNotesOutcome', 'videoFrameOffer', 'attachments', 'illustration', 'videoIllustration',

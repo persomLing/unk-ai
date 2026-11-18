@@ -1,16 +1,13 @@
 const ASPECTS = Object.freeze(['auto', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3', '21:9']);
-const WIDTHS = Object.freeze({ compact: 240, medium: 360, wide: 560 });
 const SIZE_ASPECTS = Object.freeze({ '1024x1024': '1:1', '1536x1024': '3:2', '1024x1536': '2:3' });
 
 export const ILLUSTRATION_LAYOUT_INSTRUCTIONS = '根据画面内容和用户要求判断 aspectRatio（auto、1:1、16:9、9:16、4:3、3:4、3:2、2:3、21:9）'
-  + '和 displayWidth（compact 小图、medium 中图、wide 宽图）。横向流程、视频演示通常适合横图，人物全身通常适合竖图；'
-  + '简单图标用小图，密集图表可用宽图，不要把所有图片设成正方形或铺满正文。用户明确要求的比例优先。';
+  + '。横向流程、视频演示通常适合横图，人物全身通常适合竖图。用户明确要求的比例优先；显示宽度由应用统一处理。';
 
 /** Only bounded layout choices cross the model/storage → CSS boundary. */
 export function createIllustrationLayout(value, { size = 'auto', frame = false } = {}) {
   const aspectRatio = ASPECTS.includes(value?.aspectRatio) ? value.aspectRatio : SIZE_ASPECTS[size] || (frame ? '16:9' : 'auto');
-  return { version: 1, aspectRatio,
-    displayWidth: Object.hasOwn(WIDTHS, value?.displayWidth) ? value.displayWidth : /^(?:9:16|3:4|2:3)$/.test(aspectRatio) ? 'compact' : 'medium' };
+  return { version: 1, aspectRatio };
 }
 
 export function copyIllustrationLayout(value) {
@@ -63,7 +60,7 @@ export function illustrationLayoutStyle(value, image) {
   const layout = copyIllustrationLayout(value) || createIllustrationLayout(null, { frame: Boolean(image?.videoFrame) });
   const actual = illustrationDimensions(image);
   const aspect = actual.width ? `${actual.width} / ${actual.height}` : (layout.aspectRatio === 'auto' ? '4:3' : layout.aspectRatio).replace(':', ' / ');
-  return `--illustration-width:${WIDTHS[layout.displayWidth]}px;--illustration-aspect:${aspect}`;
+  return `--illustration-aspect:${aspect}`;
 }
 
 export function illustrationGenerationSize(size, layout) {

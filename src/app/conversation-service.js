@@ -21,7 +21,7 @@ import { assertImageAttachmentsAvailable } from '../utils/attachments.js';
 import { selectedSkill } from '../sidepanel/features/skills/skill-context.js';
 import { selectedVideoTranscript } from '../sidepanel/features/video-notes/video-request.js';
 import { rewoundCommandForDraft } from '../sidepanel/features/messages/rewound-command.js';
-import { IMAGE_MODEL_REQUIRED, parseDirectImageCommand } from '../utils/image-generation-command.js';
+import { assertImageCommand, directImageForMessage, IMAGE_TURN_TIMEOUT_MS } from '../utils/image-generation-command.js';
 
 /** Application command service. The state object is a compatibility projection
  * consumed by the existing presenters; browser/storage are injected ports.
@@ -52,10 +52,6 @@ export function createConversationService(deps) {
   const renderConversation = options => emit('conversation', options);
   const renderContextChip = () => emit('context');
   const toast = (message, kind) => emit('notice', { message, kind });
-  const imageCommandUnavailable = (text, modelId, effort) => {
-    const command = parseDirectImageCommand(text);
-    return command && !command.skip && !profileFor(modelId, effort)?.imageProfile?.model;
-  };
   const setPageSelection = value => { state.pageSelection = value; emit('selection'); };
   const setAssistantPhase = (assistant, phase) => {
     if (!assistant) return;
@@ -134,10 +130,18 @@ export function createConversationService(deps) {
     const requestedCommand = options.pageCommand || restoredCommand?.pageCommand;
     const modelId = options.modelId || state.selectedModelId;
     const effort = options.effort || state.selectedEffort;
-    if (!requestedCommand && imageCommandUnavailable(submittedText, modelId, effort)) {
-      toast(IMAGE_MODEL_REQUIRED, 'error');
-      if (options.fromQueue) queueMicrotask(processQueue);
-      return;
+    const imageCommand = !requestedCommand && directImageForMessage({ content: submittedText });
+    let imageProfile;
+    if (imageCommand) {
+      try {
+        if (options.agentTask ?? agentSlot?.isMode()) throw new Error('请先退出页面操作，再使用聊天生图。');
+        imageProfile = structuredClone(profileFor(modelId, effort));
+        assertImageCommand(imageCommand, options.fromQueue ? options.attachments || [] : state.attachments, imageProfile);
+      } catch (error) {
+        toast(error.message, 'error');
+        if (options.fromQueue) queueMicrotask(processQueue);
+        return;
+      }
     }
     if (requestedCommand) {
       try {
@@ -165,10 +169,10 @@ export function createConversationService(deps) {
     const independent = requestSource?.scope === 'independent';
     let directModelRequest = !command && (independent || (options.directModelRequest ?? (state.directModelRequest === content)));
     let attachments = preserveDraft ? [] : structuredClone(options.fromQueue ? options.attachments || [] : state.attachments);
-    const capturedSelection = command || independent ? null : options.fromQueue ? options.selection : state.pageSelection;
+    const capturedSelection = command || independent || imageCommand ? null : options.fromQueue ? options.selection : state.pageSelection;
     const selection = capturedSelection ? structuredClone(capturedSelection) : null;
     const agentTask = !command && !independent && Boolean(options.agentTask ?? agentSlot?.isMode());
-    const pageContextEnabled = !command && !agentTask && (options.pageContextEnabled ?? !state.disablePageContext) && !directModelRequest;
+    const pageContextEnabled = !command && !imageCommand && !agentTask && (options.pageContextEnabled ?? !state.disablePageContext) && !directModelRequest;
     let readingPolicy = (!independent && options.readingPolicy) || readingPolicyForTurn({ question: submittedText, pageContextEnabled,
       directModelRequest, selection, attachments, mode: agentTask ? 'agent' : 'chat', pageTitle: state.activePageSignal?.title });
     const readingOptions = readingOptionsAtSubmission(state, options, pageContextEnabled && readingPolicy.scope !== 'none');
@@ -187,7 +191,7 @@ export function createConversationService(deps) {
     }
     catch (error) { toast(error.message, 'error'); return; }
     // Capture the target at the click/queue event, before configuration or storage awaits.
-    const pageTargetPromise = command || independent ? Promise.resolve(null) : options.pageTargetPromise || capturePageTarget({
+    const pageTargetPromise = command || independent || imageCommand ? Promise.resolve(null) : options.pageTargetPromise || capturePageTarget({
       queryActiveTab: () => browser.queryActiveTab(),
       sendMessage: message => browser.sendMessage(message),
       bindDocument: agentTask || (pageContextEnabled && readingPolicy.scope !== 'none'),
@@ -271,12 +275,11 @@ export function createConversationService(deps) {
       renderPageSelection();
       updateComposer();
       renderQueueBar();
-      toast('已加入排队，将在当前回答完成后自动发送');
       return;
     }
 
     const submissionOwner = runner.begin({ commandId: options.commandId || options.id || makeId(), mode: agentTask ? 'agent' : 'chat',
-      ...(command ? { timeoutMs: command.executionTimeoutMs } : {}) });
+      ...(command ? { timeoutMs: command.executionTimeoutMs } : imageCommand ? { timeoutMs: IMAGE_TURN_TIMEOUT_MS } : {}) });
     if (['completed', 'failed', 'cancelled'].includes(submissionOwner.status)) return;
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
     state.submissionController = submissionController;
@@ -423,7 +426,7 @@ export function createConversationService(deps) {
           return;
         }
         assertSubmission();
-        profiles.set(submissionOwner.runId, command ? commandProfile : structuredClone(profileFor(modelId, effort)));
+        profiles.set(submissionOwner.runId, command ? commandProfile : imageProfile || structuredClone(profileFor(modelId, effort)));
       }
       assertSubmission();
       const savedSelectedImages = !agentTask ? retainedSelectionVisuals(selection, attachments) : [];
@@ -823,6 +826,8 @@ export function createConversationService(deps) {
     const retryIndex = conversation.messages.findIndex(message => message.id === assistantId);
     const originalQuestion = conversation.messages.slice(0, retryIndex).findLast(message => message.role === 'user');
     const modelId = state.selectedModelId, effort = state.selectedEffort;
+    const imageCommand = directImageForMessage(originalQuestion);
+    let imageProfile;
     let command = null, commandRequest = null, commandProfile = null, commandAttachments = [];
     if (originalQuestion?.pageCommand) {
       try {
@@ -836,14 +841,16 @@ export function createConversationService(deps) {
         commandAttachments = snapshot.attachments;
         preparationAction = snapshot.preparationAction;
       } catch (error) { toast(error.message, 'error'); return; }
-    } else if (imageCommandUnavailable(originalQuestion?.displayContent || originalQuestion?.content, modelId, effort)) {
-      toast(IMAGE_MODEL_REQUIRED, 'error');
-      return;
+    } else if (imageCommand) {
+      try {
+        imageProfile = structuredClone(profileFor(modelId, effort));
+        assertImageCommand(imageCommand, originalQuestion.attachments || [], imageProfile);
+      } catch (error) { toast(error.message, 'error'); return; }
     }
     stopActiveReply();
     state.messageQueue = [];
     const submissionOwner = runner.begin({ commandId: makeId(), mode: 'chat',
-      ...(command ? { timeoutMs: command.executionTimeoutMs } : {}) });
+      ...(command ? { timeoutMs: command.executionTimeoutMs } : imageCommand ? { timeoutMs: IMAGE_TURN_TIMEOUT_MS } : {}) });
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
     state.submissionOwner = submissionOwner;
     state.submissionController = submissionController;
@@ -854,13 +861,13 @@ export function createConversationService(deps) {
     const commandNeedsRead = command?.needsRead({ attachments: commandAttachments, preparationAction });
     let commandResult = null;
     // Freeze verified evidence before any configuration, browser or storage wait.
-    const retainedPage = commandRequest ? null : retainedPageForRetry(conversation, originalQuestion);
+    const retainedPage = commandRequest || imageCommand ? null : retainedPageForRetry(conversation, originalQuestion);
     if (commandNeedsRead) pagePreparations.add(submissionOwner);
-    if (!commandRequest && originalQuestion && readingPolicyForRetry(originalQuestion).scope !== 'none'
+    if (!commandRequest && !imageCommand && originalQuestion && readingPolicyForRetry(originalQuestion).scope !== 'none'
       && (originalQuestion.pageContextEnabled === true || originalQuestion.pageSource?.url)
       && !(retainedPage && state.disablePageContext)) pagePreparations.add(submissionOwner);
     const readingHistory = captureReadingHistory(conversation.messages.slice(0, Math.max(0, conversation.messages.indexOf(originalQuestion))));
-    const retryTargetPromise = commandRequest ? Promise.resolve({ target: null, page: null }) : originalQuestion
+    const retryTargetPromise = commandRequest || imageCommand ? Promise.resolve({ target: null, page: null }) : originalQuestion
       ? prepareRetryContext({ ...originalQuestion }, retainedPage, submissionController.signal).then(context => {
         if (context.page) pagePreparations.delete(submissionOwner);
         return context;
@@ -895,7 +902,7 @@ export function createConversationService(deps) {
         const configured = await waitWithTimeout(ensureConfigured(submissionController.signal), { signal: submissionController.signal, message: '读取模型配置超时，请重试。' });
         assertCurrent();
         if (!configured) return;
-        profiles.set(submissionOwner.runId, structuredClone(profileFor(modelId, effort)));
+        profiles.set(submissionOwner.runId, imageProfile || structuredClone(profileFor(modelId, effort)));
       }
       const messages = conversation.messages;
       const assistant = find(messages, (message) => message.id === assistantId);
@@ -908,7 +915,7 @@ export function createConversationService(deps) {
       if (!question) throw new Error('找不到这条回答对应的提问，无法重新生成。');
       const { target, page: retainedReading } = await waitForCurrent(retryTargetPromise);
       assertCurrent();
-      if (question.selection?.visuals?.length) assertPageTarget(question.selection, retainedReading || target || {});
+      if (!imageCommand && question.selection?.visuals?.length) assertPageTarget(question.selection, retainedReading || target || {});
       const ref = repository.retry({ conversation, assistantId, runId: submissionOwner.runId, assistant: replacement });
       const retained = repository.get(ref);
       next = retained.assistant;
@@ -941,11 +948,11 @@ export function createConversationService(deps) {
         conversation.pageContext = retainedReading;
         state.pendingPage = null;
         toast('本次重试使用本轮已读的原页面资料，未重新读取当前页面。');
-      } else {
+      } else if (!imageCommand) {
         await waitForCurrent(refreshPageForRetry(conversation, retained.user, next, submissionController.signal, target, submissionOwner, readingHistory));
       }
       assertCurrent();
-      if (retained.user.selection?.visuals?.length) {
+      if (!imageCommand && retained.user.selection?.visuals?.length) {
         const fixedProfile = profiles.get(submissionOwner.runId);
         if (!fixedProfile?.supportsVision) throw new Error('选区包含图片，请选择支持视觉的模型后重试。');
         const existing = retained.user.attachments || [];

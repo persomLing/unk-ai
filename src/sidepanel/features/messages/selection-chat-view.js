@@ -1,11 +1,12 @@
 import { escapeHtml } from '../../core/dom.js';
 import { icon, hydrateIcons } from '../../icons.js';
-import { messageMarkup, renderMessageContent } from './message-view.js';
+import { createReplyClock, messageMarkup, renderMessageContent } from './message-view.js';
 import { createFloatingWindow } from './floating-window.js';
 import { createFloatingChatDock } from './floating-chat-dock.js';
 import { createSourcePopover } from './source-popover.js';
 import { createFloatingChatActivity } from './floating-chat-activity.js';
 import { createPastedTextDraft } from './pasted-text-draft.js';
+import { copyCodeBlock } from './code-blocks.js';
 
 /** A separate presenter for the existing conversation runtime. */
 export function createSelectionChatView({ document = globalThis.document, runtime, selection, anchorRect,
@@ -60,14 +61,17 @@ export function createSelectionChatView({ document = globalThis.document, runtim
   let detachedLabel = '';
   const isVisible = () => ['expanded', 'expanding'].includes(element.dataset.dockState)
     && document.visibilityState !== 'hidden';
+  const replyClock = createReplyClock({ root: messages, getConversation: () => runtime.state.conversation,
+    getRun: runtime.application.runner.active, isVisible });
   const activity = createFloatingChatActivity({ conversationId: runtime.state.conversation.id,
     getMessage: id => runtime.state.conversation?.messages.find(message => message.id === id),
     isVisible });
   dock = createFloatingChatDock({ element, document, geometry, iconMarkup: icon('message'),
     getBusy: () => runtime.isBusy(), getDetachedLabel: () => detachedLabel,
     getActivity: () => activity.snapshot().activity, getUnread: () => activity.snapshot().unread,
-    onCollapse: () => sources.close(), onExpand: () => {
+    onCollapse: () => { sources.close(); replyClock.stop(); }, onExpand: () => {
       if (isVisible()) activity.acknowledge();
+      replyClock.sync();
       dock.sync();
       bringToFront();
     } });
@@ -145,6 +149,7 @@ export function createSelectionChatView({ document = globalThis.document, runtim
       const article = [...messages.querySelectorAll('[data-message-id]')].find(node => node.dataset.messageId === message.id);
       if (message.role === 'assistant') renderMessageContent(article?.querySelector('[data-message-content]'), message.content, message.status === 'streaming');
     }
+    replyClock.sync();
     hydrateIcons(messages);
     textPreview?.refresh(messages);
     messages.querySelectorAll('[data-action="regenerate"], [data-action="retry"]').forEach(button => { button.disabled = runtime.isBusy() || Boolean(replacing); });
@@ -177,6 +182,7 @@ export function createSelectionChatView({ document = globalThis.document, runtim
     closed = true;
     replacing?.abort();
     if (frame !== null) view.cancelAnimationFrame(frame);
+    replyClock.stop();
     unsubscribe();
     activity.dispose();
     sources.dispose();
@@ -194,6 +200,7 @@ export function createSelectionChatView({ document = globalThis.document, runtim
   listen(input, 'paste', event => pastedText.handlePaste(event));
   listen(document, 'visibilitychange', () => {
     if (isVisible()) activity.acknowledge();
+    replyClock.sync();
     dock.sync();
   });
   listen(element, 'pointerdown', bringToFront);
@@ -253,6 +260,8 @@ export function createSelectionChatView({ document = globalThis.document, runtim
     const action = button.dataset.action;
     if (['retry', 'regenerate'].includes(action) && !runtime.isBusy()) {
       void runtime.retry(message.id).catch(error => notice(error.message));
+    } else if (action === 'copy-code') {
+      void copyCodeBlock(button, { writeText: text => view.navigator.clipboard.writeText(text), notify: notice });
     } else if (action === 'toggle-thinking') {
       const content = button.closest('.thinking-block')?.querySelector('.thinking-content');
       if (content) {

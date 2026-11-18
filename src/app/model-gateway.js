@@ -9,6 +9,7 @@ import {
   streamChatToolCompletion,
 } from '../utils/llm-client.js';
 import { requestTokenUsage } from '../utils/token-usage.js';
+import { IMAGE_PROMPT_LIMIT, imageReferenceData } from '../utils/image-generation-command.js';
 
 export const MODEL_PURPOSES = Object.freeze([
   'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions', 'video-summary', 'video-frame-transcript', 'image-generation', 'illustration-plan',
@@ -192,11 +193,14 @@ export function createModelGateway({
       }
       if (purpose === 'image-generation') {
         if (!config.imageProfile?.model) return Promise.reject(errorWith('ERR_IMAGE_MODEL_MISSING', '未配置生图模型。'));
-        if (typeof options.prompt !== 'string' || !options.prompt.trim() || options.prompt.length > 4000) {
-          return Promise.reject(new TypeError('生图需要 1 到 4000 字的描述。'));
+        if (typeof options.prompt !== 'string' || !options.prompt.trim() || options.prompt.length > IMAGE_PROMPT_LIMIT) {
+          return Promise.reject(new TypeError(`生图需要 1 到 ${IMAGE_PROMPT_LIMIT} 字的描述。`));
         }
         if (options.size !== undefined && !IMAGE_SIZES.includes(options.size)) {
           return Promise.reject(new TypeError('生图尺寸无效。'));
+        }
+        if (options.referenceImage !== undefined) {
+          try { imageReferenceData(options.referenceImage); } catch (error) { return Promise.reject(error); }
         }
       }
       if (!['web-search', 'web-fetch', 'image-generation'].includes(purpose) && !Array.isArray(options.messages)) {
@@ -233,7 +237,8 @@ export function createModelGateway({
             toolChoice: options.toolChoice ?? 'auto' } : {}),
           ...(purpose === 'web-search' ? { query: options.query, maxResults: options.maxResults } : {}),
           ...(purpose === 'web-fetch' ? { url: options.url } : {}),
-          ...(purpose === 'image-generation' ? { prompt: options.prompt, size: options.size ?? 'auto' } : {}),
+          ...(purpose === 'image-generation' ? { prompt: options.prompt, size: options.size ?? 'auto',
+            ...(options.referenceImage !== undefined ? { referenceImage: options.referenceImage } : {}) } : {}),
           ...(['web-search', 'web-fetch', 'image-generation'].includes(purpose) ? {} : {
             maxTokens: Object.hasOwn(options, 'maxTokens') ? options.maxTokens : defaultTokens,
             temperature: Object.hasOwn(options, 'temperature') ? options.temperature : defaultTemperature,

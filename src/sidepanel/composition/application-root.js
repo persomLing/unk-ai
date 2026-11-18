@@ -18,6 +18,8 @@ import { createImageIllustration } from '../features/illustration/image-illustra
 import { createVideoIllustration } from '../features/video-notes/video-illustration.js';
 import { captureVideoFrame } from '../features/video-notes/video-navigation-client.js';
 import { settleInterruptedIllustrations } from '../features/illustration/illustration-lifecycle.js';
+import { createImageReply } from '../features/illustration/image-reply.js';
+import { directImageForMessage } from '../../utils/image-generation-command.js';
 
 export function readingDiagnosticEvidence(page) {
   return { hasPageContext: Boolean(page?.text?.trim()), textChars: page?.text?.length || 0,
@@ -31,7 +33,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
   modelGateway = createModelGateway(), contextProviders = [],
   readVideoTranscript = (target, options) => readTranscriptFromPort(browser?.connect, target, options),
   scanVideo = (offer, options) => scanVideoPage(browser?.connect, offer, options),
-  researchTools = createResearchToolSession, researchOptions = {}, recordDiagnostic = () => {}, ...ports }) {
+  researchTools = createResearchToolSession, researchOptions = {}, recordDiagnostic = () => {}, nowMs = Date.now, ...ports }) {
   // Config loads after this composition and may change later. ChatService
   // checks the search setting from each turn's frozen model profile.
   const publicResearch = createPublicResearchTransport(researchOptions);
@@ -42,7 +44,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
     onChange: event => {
       if (event.kind === 'decorate' && state.conversation?.id === event.ref.conversationId) emit({ type: 'conversation' });
     } });
-  const runner = createTurnRunner({ repository, createId: ports.makeId });
+  const runner = createTurnRunner({ repository, createId: ports.makeId, now: nowMs });
   const diagnostics = createApplicationDiagnostics({ record: recordDiagnostic, runner, repository });
   const observedPorts = { ...ports,
     readCurrentPageForRequest: diagnostics.wrap(ports.readCurrentPageForRequest, {
@@ -63,15 +65,18 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
     createId: ports.makeId, now: ports.now,
     save: conversation => conversationSaver.schedule(conversation),
     onEvent: event => emit(event.type === 'settled' ? { ...event, type: 'compression-settled' } : event) });
-  const chatService = createChatService({ repository, runner, modelGateway, contextAssembler,
+  const chatService = createChatService({ repository, runner, modelGateway, contextAssembler, now: nowMs,
     replyPolicyFor: videoReplyPolicy,
     compress: contextService.compress, researchTools: researchTools ? options => {
       const session = researchTools({ ...options, fallbackSearch: publicResearch.search, fallbackFetch: publicResearch.fetch });
       return { ...session, execute: diagnostics.wrap(session.execute, { event: 'research', source: 'web-research', stage: 'research',
         summarize: result => ({ resultCount: result?.sources?.length || (result?.source ? 1 : 0) }) }) };
     } : null });
+  const generateImage = createImageReply({ repository, getProfile: ports.profileFor, makeId: ports.makeId });
+  const replyService = { generate: options => directImageForMessage(repository.get(options.run.ref)?.user)
+    ? generateImage(options) : chatService.generate(options) };
   const conversationService = createConversationService({ state, browser, agentSlot, runner, repository,
-    modelGateway, replyService: chatService, ...observedPorts, pageCommands });
+    modelGateway, replyService, ...observedPorts, pageCommands });
   conversationService.subscribe(emit);
   const getIllustrationConfig = () => ({ ...state.config,
     selectedModelId: state.selectedModelId || state.config?.selectedModelId,

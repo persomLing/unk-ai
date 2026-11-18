@@ -141,7 +141,7 @@ export function placeIllustrationNodes(container, entries, { className = 'messag
     if (!node) container.append(group);
     else if (node.matches('li')) {
       node.insertBefore(group, [...node.children].find(child => child.matches('ul, ol')) || null);
-    } else (node.matches('table') ? node.closest('.md-table-scroll') || node : node).after(group);
+    } else (node.closest('.md-table-scroll, .message-code-block') || node).after(group);
   }
   return [...groups.values()];
 }

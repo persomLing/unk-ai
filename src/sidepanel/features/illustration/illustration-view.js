@@ -2,6 +2,7 @@ import { escapeHtml } from '../../core/dom.js';
 import { imageAttachmentLoadError, safeAttachmentDataUrl } from '../../../utils/attachments.js';
 import { copyIllustrationPlacement, placeIllustrationNodes } from './illustration-placement.js';
 import { illustrationLayoutStyle } from './illustration-layout.js';
+import { icon } from '../../icons.js';
 
 const ownedIllustrations = new WeakMap();
 
@@ -32,7 +33,7 @@ function locationAttributes(item, index, total) {
   return `data-illustration-id="${escapeHtml(item.id || '')}" data-illustration-name="${escapeHtml(String(item.name || '').slice(0, 500))}" data-illustration-placement="${escapeHtml(JSON.stringify(location))}" data-illustration-index="${index}" data-illustration-total="${total}"`;
 }
 
-function readyFigure(item, index, total) {
+function readyFigure(item, index, total, allowImageReference) {
   const src = safeAttachmentDataUrl(item.dataUrl), caption = escapeHtml(item.name || '生成图片');
   const attributes = `${locationAttributes(item, index, total)} style="${illustrationLayoutStyle(item.illustrationLayout, item)}"`;
   if (!src) {
@@ -41,7 +42,7 @@ function readyFigure(item, index, total) {
   }
   return `<figure class="generated-image${item.videoFrame ? ' is-frame' : ''}" ${attributes}>
     <img class="message-image" data-image-preview tabindex="0" role="button" aria-haspopup="dialog" aria-label="查看图片 ${caption}" title="点击放大" src="${src}" alt="${caption}" />
-    <figcaption><span class="generated-image-badge">${escapeHtml(badge(item))}</span><span class="generated-image-caption">${caption}</span></figcaption>
+    <figcaption><span class="generated-image-badge">${escapeHtml(badge(item))}</span><span class="generated-image-caption">${caption}</span>${allowImageReference ? `<button class="generated-image-reference" type="button" data-action="reference-image" data-image-id="${escapeHtml(item.id || '')}" title="把这张图片加入输入框作为参考图">${icon('sparkles')}引用生图</button>` : ''}</figcaption>
   </figure>`;
 }
 
@@ -58,7 +59,7 @@ function pendingFigure(item, index, total) {
 
 /** Planned slots keep their IDs and order as each image arrives. Pending slots
  * are metadata, never empty image attachments passed to disk image storage. */
-export function generatedImagesMarkup(message) {
+export function generatedImagesMarkup(message, { allowImageReference = false } = {}) {
   const files = (Array.isArray(message.attachments) ? message.attachments : [])
     .filter(item => item?.type === 'image' && (item.generated || item.videoFrame));
   const info = message.videoIllustration || message.illustration || {};
@@ -71,9 +72,9 @@ export function generatedImagesMarkup(message) {
     seen.add(item.id);
     const file = byId.get(item.id);
     if (file) return readyFigure({ ...file, placement: file.placement || item.placement,
-      illustrationLayout: file.illustrationLayout || item.layout }, index, total);
+      illustrationLayout: file.illustrationLayout || item.layout }, index, total, allowImageReference);
     return info.status === 'generating' && item.status === 'loading' ? pendingFigure(item, index, total) : '';
-  }).concat(extra.filter(file => !seen.has(file.id)).map((file, index) => readyFigure(file, items.length + index, total))).join('');
+  }).concat(extra.filter(file => !seen.has(file.id)).map((file, index) => readyFigure(file, items.length + index, total, allowImageReference))).join('');
   return figures ? `<div class="message-illustrations">${figures}</div>` : '';
 }
 

@@ -64,6 +64,7 @@ import { renderContextUsageView } from './features/context/context-usage-view.js
 import { normalizeProviderConfig, requestProfile } from '../utils/profiles.js';
 import { exportConversationMarkdown } from '../utils/exporter.js';
 import { createMessageCopy } from './features/messages/message-copy.js';
+import { copyCodeBlock } from './features/messages/code-blocks.js';
 import { createExportController } from './features/export/export-controller.js';
 import { createConversationExportMenu } from './features/export/export-menu.js';
 import { createExportDownloader } from './features/export/download-export.js';
@@ -81,6 +82,8 @@ import { readPdfFromUrl } from '../utils/pdf-reader.js';
 import { findOpenTabForSource, pageTargetFields } from '../utils/page-target.js';
 import { normalizePageUrl, resolvePageSource } from './features/page-reading/page-source.js';
 import { createComposerAddMenu } from './features/composer/composer-add-menu.js';
+import { createImageDraft } from './features/composer/image-draft.js';
+import { directImageForMessage, IMAGE_MODEL_REQUIRED, imageReferenceForGeneration } from '../utils/image-generation-command.js';
 import { createVideoNotesEntry } from './features/video-notes/video-notes-entry.js';
 import { createVideoFrameActions, videoFrameActionsFor } from './features/video-notes/video-frame-actions.js';
 import { presentVideoNotesMessage } from './features/video-notes/video-notes-presentation.js';
@@ -127,6 +130,7 @@ import { showSuggestionsFor } from './features/messages/suggestion-visibility.js
 import {
   messageMarkup,
   renderMessageContent,
+  createReplyClock,
   updateStreamingMessage as updateMessageView,
 } from './features/messages/message-view.js';
 import { createTurnNavigator } from './features/messages/turn-navigator.js';
@@ -239,7 +243,6 @@ const state = {
   readingPage: false,
   submissionController: null,
   compressionController: null,
-  progressTimer: null,
 };
 
 let composerAddMenu = null;
@@ -300,28 +303,33 @@ function renderQueueBar() {
   const queuePreview = $('#queue-preview');
   if (!queueBar || !queuePreview) return;
   const count = state.messageQueue?.length || 0;
-  if (count === 0) {
-    queueBar.hidden = true;
-    queuePreview.textContent = '';
-  } else {
-    queueBar.hidden = false;
-    const item = state.messageQueue[0];
-    const preview = item.content || (item.attachments?.length ? `[${item.attachments.length}个附件]` : '新消息');
-    const badge = count > 1 ? ` (+${count - 1})` : '';
-    const waitingForConversation = Object.hasOwn(item, 'conversationId') && item.conversationId !== state.conversation?.id;
-    const waitingForPage = item.pageContextEnabled && state.disablePageContext;
-    const waiting = waitingForConversation
-      ? (item.conversationId ? '等待返回原会话 · ' : '等待会话准备，可撤回编辑 · ')
-      : waitingForPage ? '等待开启页面读取 · ' : '';
-    const sourceHint = normalizeDraftSource(item.requestSource) ? '独立话题 · ' : '';
-    queuePreview.textContent = `${waiting}${sourceHint}${truncateText(preview, 26)}${badge}`;
-  }
+  queueBar.hidden = !count;
+  if (!count) return;
+  const item = state.messageQueue[0];
+  const image = directImageForMessage({ content: item.content, agentTask: item.agentTask });
+  const content = image ? `生成图片 · ${image.prompt}` : item.content;
+  const preview = content || (item.attachments?.length ? `${item.attachments.length} 个附件` : '新消息');
+  const sourceHint = normalizeDraftSource(item.requestSource) ? '独立话题 · ' : '';
+  const waitingForConversation = Object.hasOwn(item, 'conversationId') && item.conversationId !== state.conversation?.id;
+  const waitingForPage = item.pageContextEnabled && item.readingPolicy?.scope !== 'none' && state.disablePageContext;
+  const waiting = waitingForConversation ? (item.conversationId ? '等待返回原会话' : '等待会话准备')
+    : waitingForPage ? '等待开启页面读取' : '';
+  $('#queue-tag').textContent = count > 1 ? `${count} 条排队` : '排队中';
+  queuePreview.textContent = sourceHint + truncateText(preview.replace(/\s+/g, ' '), 240);
+  queuePreview.title = queuePreview.textContent;
+  const status = $('#queue-state');
+  status.textContent = waiting;
+  status.hidden = !waiting;
 }
 
 function recallQueueItem() {
   if (!state.messageQueue || state.messageQueue.length === 0) return;
-  const item = state.messageQueue.pop();
-  if (!item) return;
+  if (input.readOnly || state.preparingAttachments) return;
+  if (pastedText.getPrompt().trim() || state.attachments.length || state.pageSelection?.text) {
+    toast('请先处理当前草稿，再撤回排队消息。');
+    return;
+  }
+  const item = state.messageQueue.shift();
   pastedText.setValue(item.content || '');
   state.draft = pastedText.getValue();
   state.draftSource = normalizeDraftSource(item.requestSource);
@@ -333,7 +341,6 @@ function recallQueueItem() {
   updateComposer();
   renderQueueBar();
   input.focus();
-  toast('已撤回排队消息到输入框');
 }
 
 async function processQueue() { return application.conversations.processQueue(); }
@@ -409,19 +416,19 @@ const imagePreview = createImagePreview({ document, onError: toast, fallbackFocu
 const textPreview = createTextPreview({ document, onError: toast, fallbackFocus: () => input });
 // Like the existing textarea, this is the current sidebar draft until explicitly
 // submitted or replaced. Its hidden spans are always included in state.draft.
-const pastedText = createPastedTextDraft({ input, container: $('#pasted-text-list'),
+const pastedText = createImageDraft(createPastedTextDraft({ input, container: $('#pasted-text-list'),
   canEdit: () => !input.readOnly && !input.disabled,
   notify: message => toast(message, 'error'),
   onPreview: value => textPreview.open(value),
   onChange: value => {
     if (!String(state.draft || '').trim() && value.trim()) state.draftPageTarget = state.activePageSignal ? { ...state.activePageSignal } : null;
-    state.draft = value;
+    state.draft = pastedText.getValue();
     state.contextUsageScope = 'preview';
     if (!value.trim()) { state.draftSource = null; state.rewoundCommand = null; }
     resizeInput();
     updateComposer();
   },
-});
+}));
 const sourceIcons = createSourceIconFallback({ root: document });
 let diagnosticExportBusy = false;
 let diagnosticFeedbackOwner = null;
@@ -546,7 +553,7 @@ function renderPageSelection() {
   if (selection?.source === 'conversation' && !state.articleQuoteDraftOwnerId) state.articleQuoteDraftOwnerId = state.conversation?.id || '';
   if (selection?.source !== 'conversation') state.articleQuoteDraftOwnerId = null;
   if (typeof articleQuoteView !== 'undefined') articleQuoteView.sync();
-  chip.hidden = !selection?.text || selection.source === 'conversation';
+  chip.hidden = pastedText.enabled || !selection?.text || selection.source === 'conversation';
   if (!selection?.text) return;
   const preview = trim(selection.text.replace(/\s+/g, ' '));
   const visualLabel = selection.visuals?.length ? ` · 含 ${selection.visualCount || selection.visuals.length} 张图片` : '';
@@ -639,7 +646,9 @@ function toggleAttachMenu(open = $('#attach-menu').hidden) {
 async function addAttachments(files, kind) {
   const selected = Array.from(files || []);
   if (!selected.length || state.generatingId || state.isSubmitting || agentSlot?.isBusy()) return;
-  const error = attachmentInputError(kind, { agentMode: agentSlot?.isMode(), supportsVision: hasVision() });
+  const errorForDraft = () => pastedText.enabled && kind !== 'image' ? '生成图片只支持添加参考图。'
+    : attachmentInputError(kind, { agentMode: agentSlot?.isMode(), supportsVision: pastedText.enabled || hasVision() });
+  const error = errorForDraft();
   if (error) { toast(error, 'error'); return; }
   const operation = visualPreparation.start();
   toggleAttachMenu(false);
@@ -648,9 +657,10 @@ async function addAttachments(files, kind) {
     for (const file of selected) {
       try {
         const prepared = await operation.wait(prepareAttachment(file, kind));
-        const currentError = attachmentInputError(kind, { agentMode: agentSlot?.isMode(), supportsVision: hasVision() });
+        const currentError = errorForDraft();
         if (currentError) throw new Error(currentError);
-        const limit = agentSlot?.isMode() ? 3 : ATTACHMENT_LIMIT;
+        if (pastedText.enabled) imageReferenceForGeneration([...state.attachments, prepared]);
+        const limit = pastedText.enabled ? 1 : agentSlot?.isMode() ? 3 : ATTACHMENT_LIMIT;
         if (state.attachments.length >= limit) { toast(`每条消息最多添加 ${limit} 个附件。`); break; }
         const next = mergeAttachments(state.attachments, [prepared]);
         if (next.length === state.attachments.length) { toast(`“${prepared.name}”已经添加。`); continue; }
@@ -916,9 +926,9 @@ function currentContextUsage({ beforeAssistantId } = {}) {
   const recent = contextUsageTracker.get(state.conversation);
   if (state.contextUsageScope === 'request' && recent) return recent;
   return estimateDraftContext({ conversation: state.conversation, beforeAssistantId,
-    draft: state.draft, attachments: state.attachments, selection: state.pageSelection,
+    draft: state.draft, attachments: state.attachments, selection: pastedText.enabled ? null : state.pageSelection,
     page: state.pendingPage || state.conversation?.pageContext, target: state.activePageSignal,
-    pageEnabled: !state.disablePageContext,
+    pageEnabled: !pastedText.enabled && !state.disablePageContext,
     independent: Boolean(normalizeDraftSource(state.draftSource)) || Boolean(state.directModelRequest && state.directModelRequest === state.draft),
     profile: activeChatProfile() || {}, config: state.config });
 }
@@ -1056,6 +1066,7 @@ function renderConversation({ scroll = false } = {}) {
     ? conversation.messages.map((message) => messageMarkup(presentVideoNotesMessage(message, conversation.messages), {
       showSuggestions: showSuggestionsFor(message, latestAssistant?.id, latestMessageRole),
       frameActions: videoFrameActionsFor(message, conversation, application.videoFrameRecovery),
+      allowImageReference: true,
     })).join('')
     : '';
   for (const message of conversation?.messages || []) {
@@ -1067,6 +1078,7 @@ function renderConversation({ scroll = false } = {}) {
       );
     }
   }
+  replyClock.sync();
   renderContextChip();
   textPreview.refresh(messagesElement);
   renderModelSwitcher();
@@ -1110,7 +1122,8 @@ function updatePageToolbar() {
   const active = state.activePageSignal;
   const draftSource = normalizeDraftSource(state.draftSource);
   const restoredCommand = rewoundCommandForDraft(state, pastedText.getValue());
-  const pageEnabled = !state.disablePageContext && !draftSource;
+  const imageMode = pastedText.enabled;
+  const pageEnabled = !state.disablePageContext && !draftSource && !imageMode;
   pageQuestionChoice.refresh();
   if (!pastedText.getValue().trim()) state.draftPageTarget = null;
   const draftPageChanged = Boolean(state.draftPageTarget && active
@@ -1131,7 +1144,7 @@ function updatePageToolbar() {
   if (pageToggle) pageToggle.checked = pageEnabled;
   if (pageToggle) pageToggle.disabled = false;
   const pageControl = $('#composer-page-control');
-  if (pageControl) pageControl.hidden = !control.available;
+  if (pageControl) pageControl.hidden = imageMode || !control.available;
   const modes = $('#composer-modes');
   if (modes) modes.hidden = !control.available || !pageEnabled;
   const agentToggle = $('#agent-toggle');
@@ -1190,7 +1203,8 @@ function updatePageToolbar() {
   }
   composerAddMenu?.sync();
   videoNotesEntry?.sync();
-  if (input && state.ready) input.placeholder = draftSource ? '编辑独立话题…（本轮不携带当前网页）'
+  if (input && state.ready) input.placeholder = imageMode ? (state.attachments.some(item => item.type === 'image') ? '描述想怎样修改参考图…' : '描述要生成的图片…')
+    : draftSource ? '编辑独立话题…（本轮不携带当前网页）'
     : restoredCommand ? '编辑原视频的笔记要求…'
     : agentSlot?.isMode() ? '描述要在当前页面完成的任务…' : !active || state.disablePageContext ? '输入问题…' : '问问这个页面，例如：这些配置怎么选？';
 
@@ -1310,15 +1324,15 @@ function updateComposer() {
     button.disabled = control.disabled;
     button.title = control.title;
   }
-  const draftText = pastedText.getValue().trim();
-  const hasDraft = Boolean(draftText || state.attachments.length || state.pageSelection?.text);
+  const draftText = pastedText.getPrompt().trim();
+  const imageMode = pastedText.enabled;
+  const hasDraft = Boolean(draftText || (!imageMode && (state.attachments.length || state.pageSelection?.text)));
   const canQueue = busy && !agentBusy && !agentMode && !restartPending;
   sendButton.hidden = busy && (!canQueue || !hasDraft);
-  sendButton.title = canQueue ? '加入队列' : '发送消息';
+  sendButton.title = canQueue ? '加入队列' : imageMode ? '生成图片' : '发送消息';
+  sendButton.setAttribute('aria-label', sendButton.title);
   stopButton.hidden = !busy;
-  sendButton.disabled = (agentMode
-    ? !draftText
-    : (!draftText && !state.attachments.length && !state.pageSelection?.text))
+  sendButton.disabled = (agentMode ? !draftText : !hasDraft)
     || !state.ready || state.preparingAttachments || historyMutationBusy || (busy && !canQueue);
   const composerPageToggle = $('#composer-page-toggle');
   const composerPagePill = $('#composer-page-pill');
@@ -1337,8 +1351,13 @@ function updateComposer() {
   $('#export-selected').disabled = !state.conversation?.id;
   conversationExportMenu.sync(state.conversation?.id);
   $('#attach-button').disabled = !state.ready || state.preparingAttachments || historyMutationBusy || restartPending;
+  $('#composer-image-mode').hidden = !imageMode;
+  $('#generate-image-button').querySelector('.add-menu-description').textContent = requestProfile(state.config)?.imageProfile?.model
+    ? '添加生图指令' : '需在设置中选择生图模型';
+  if (imageMode) input.setAttribute('aria-describedby', 'composer-image-scope');
+  else input.removeAttribute('aria-describedby');
   for (const item of $('#attach-menu').querySelectorAll('[data-attach-kind]')) {
-    item.disabled = busy || state.preparingAttachments || historyMutationBusy || (item.dataset.attachKind === 'document' && agentMode);
+    item.disabled = busy || state.preparingAttachments || historyMutationBusy || (item.dataset.attachKind === 'document' && (agentMode || imageMode));
   }
   const skillsButton = $('#skills-button');
   if (skillsButton) skillsButton.disabled = !state.ready || state.preparingAttachments;
@@ -1360,23 +1379,6 @@ function updateLatestVisibility() {
   const overflow = conversationView.scrollHeight - conversationView.clientHeight;
   const distance = overflow - conversationView.scrollTop;
   $('#scroll-latest').hidden = overflow <= 1 || distance < 65 || !state.conversation?.messages.length;
-}
-
-function setAssistantPhase(assistant, phase) {
-  if (!assistant) return;
-  // Execution phases are owned by the application; this function only paints.
-  updateStreamingMessage(assistant.id);
-  if (state.progressTimer) return;
-  state.progressTimer = setInterval(() => {
-    const pending = (state.conversation?.messages || []).filter(message =>
-      message.status === 'streaming' && message.requestPhase && !message.content && !message.reasoning && !message.agent);
-    if (!pending.length) {
-      clearInterval(state.progressTimer);
-      state.progressTimer = null;
-      return;
-    }
-    for (const message of pending) updateStreamingMessage(message.id);
-  }, 1000);
 }
 
 // Render the generic welcome immediately. The chrome API fills in the active
@@ -1776,6 +1778,8 @@ const application = createSidepanelApplication({
   activeChatProfile, profileFor: (modelId = state.selectedModelId, effort = state.selectedEffort) => requestProfile(state.config, { modelId, effort }),
   conversationTitle, hasVision, makeId, now, truncateText,
 });
+const replyClock = createReplyClock({ root: messagesElement, getConversation: () => state.conversation,
+  getRun: application.runner.active });
 const skillLibrary = createSkillLibrary({ storage: chrome.storage.local, locks: navigator.locks });
 videoNotesEntry = createVideoNotesEntry({
   button: $('#video-notes-button'),
@@ -1808,6 +1812,7 @@ videoTimestampNavigation = createVideoTimestampNavigation({ root: messagesElemen
 function skillApplyBlockReason() {
   if (!state.ready || state.preparingAttachments || historyMutationBusy || state.compressing || agentTaskRestart.isPending()) return '请等待当前准备完成后选择技能。';
   if (agentSlot?.isMode() || agentSlot?.isBusy()) return '技能用于普通提问，请先关闭页面操作。';
+  if (pastedText.enabled) return '生成图片不能添加技能，请先退出生图模式。';
   if (state.attachments.filter(item => item.type !== 'skill').length >= 6) return '每次最多 6 个附件，请先移除一个。';
   return '';
 }
@@ -1979,8 +1984,10 @@ application.subscribe(event => {
   else if (event.type === 'notice') toast(event.message, event.kind);
   else if (event.type === 'conversation') renderConversation({ scroll: event.scroll });
   else if (event.type === 'progress' || event.type === 'run:phase') {
-    const assistant = state.conversation?.messages.find(message => message.id === event.assistantId);
-    if (assistant) setAssistantPhase(assistant);
+    if (event.type === 'run:phase' && state.conversation?.id !== event.conversationId) return;
+    const assistant = state.conversation?.messages.find(message => message.id === event.assistantId
+      && (event.type === 'progress' || message.runId === event.runId));
+    if (assistant) updateStreamingMessage(assistant.id);
   } else if (event.type === 'run:message') {
     if (state.conversation?.id !== event.conversationId) return;
     latestReplyPaint = event;
@@ -2024,6 +2031,7 @@ function updateStreamingMessage(id) {
   updateMessageView({
     message: presentVideoNotesMessage(message, state.conversation?.messages),
     frameActions: videoFrameActionsFor(message, state.conversation, application.videoFrameRecovery),
+    allowImageReference: true,
     article,
     messagesElement,
     conversationView,
@@ -2053,7 +2061,7 @@ async function sendMessage(text = pastedText.getValue(), options = {}) {
   state.draft = pastedText.getValue();
   const restoredCommand = rewoundCommandForDraft(state, text, options);
   if (state.ready && !options.fromQueue && !options.requirePage && !Object.hasOwn(options, 'pageContextEnabled')
-    && !restoredCommand
+    && !restoredCommand && !directImageForMessage({ content: text })
     && needsPageQuestionChoice({ question: text, enabled: !state.disablePageContext,
       active: state.activePageSignal, messages: state.conversation?.messages,
       attachments: state.attachments, selection: state.pageSelection,
@@ -2175,6 +2183,41 @@ stopButton.addEventListener('click', (event) => {
   stopActiveReply();
   updateComposer();
   renderConversation();
+});
+function activateImageDraft(reference) {
+  if (!state.ready || input.readOnly || state.preparingAttachments) return;
+  try {
+    if (!requestProfile(state.config)?.imageProfile?.model) throw new Error(IMAGE_MODEL_REQUIRED);
+    if (agentSlot?.isMode() || agentSlot?.isBusy()) throw new Error('请先退出页面操作，再使用聊天生图。');
+    if (reference && !state.attachments.some(item => item.type === 'image' && item.dataUrl === reference.dataUrl)) {
+      imageReferenceForGeneration([...state.attachments, reference]);
+      state.attachments = [...state.attachments, reference];
+    }
+    pastedText.setImageMode(true);
+    state.draft = pastedText.getValue();
+    state.draftSource = null;
+    state.rewoundCommand = null;
+    state.directModelRequest = '';
+    state.directReplaceReply = false;
+    state.contextUsageScope = 'preview';
+    pageQuestionChoice.clear();
+    renderPageSelection();
+    renderAttachments();
+    resizeInput();
+    updateComposer();
+    input.focus();
+  } catch (error) { toast(error.message, 'error'); }
+}
+$('#generate-image-button').addEventListener('click', () => {
+  toggleAttachMenu(false);
+  activateImageDraft();
+});
+$('#clear-image-mode').addEventListener('click', () => {
+  pastedText.setImageMode(false);
+  state.draft = pastedText.getValue();
+  renderPageSelection();
+  updateComposer();
+  input.focus();
 });
 $('#attach-menu').addEventListener('click', (event) => {
   const item = event.target.closest('[data-attach-kind]');
@@ -2528,6 +2571,17 @@ messagesElement.addEventListener('click', async (event) => {
   const id = messageElement.dataset.messageId;
   const message = find(state.conversation?.messages, (item) => item.id === id);
   if (!message) return;
+  if (button.dataset.action === 'copy-code') {
+    await copyCodeBlock(button, { writeText: text => navigator.clipboard.writeText(text), notify: toast });
+    return;
+  }
+  if (button.dataset.action === 'reference-image') {
+    const image = message.role === 'assistant' && message.attachments?.find(item => item.id === button.dataset.imageId
+      && item.type === 'image' && (item.generated || item.videoFrame));
+    if (image) activateImageDraft({ id: makeId(), type: 'image', name: `参考图 · ${image.name || '对话图片'}`, dataUrl: image.dataUrl,
+      width: image.width, height: image.height, source: 'conversation-image' });
+    return;
+  }
   if (button.dataset.action === 'cancel-illustration') {
     application.cancelIllustrations(id);
     return;
@@ -2704,7 +2758,7 @@ window.addEventListener('pagehide', () => {
   state.submissionController?.abort();
   state.compressionController?.abort();
   clearInterval(state.selectionPoll);
-  clearInterval(state.progressTimer);
+  replyClock.stop();
   conversationSaver.flush();
   if (typeof turnNavigator !== 'undefined') turnNavigator.dispose();
   if (state.conversation && state.activeAssistantId) {

@@ -1,7 +1,8 @@
 import { awaitWithAbort } from './abortable.js';
+import { IMAGE_PROMPT_LIMIT, imageReferenceData } from './image-generation-command.js';
 
 const MAX_ERROR_LENGTH = 1000;
-const ENDPOINT_SUFFIX = /\/(?:chat\/completions|images\/generations|models|web_search|web_fetch)\/?$/i;
+const ENDPOINT_SUFFIX = /\/(?:chat\/completions|images\/(?:generations|edits)|models|web_search|web_fetch)\/?$/i;
 export const DEFAULT_WEB_SEARCH_ENDPOINT = 'web_search';
 export const DEFAULT_WEB_FETCH_ENDPOINT = 'web_fetch';
 export const IMAGE_SIZES = Object.freeze(['auto', '1024x1024', '1536x1024', '1024x1536']);
@@ -621,6 +622,7 @@ export function resolveApiUrl(endpointUrl, kind = 'chat') {
   if (kind === 'models') return `${base}/models`;
   if (kind === 'chat') return `${base}/chat/completions`;
   if (kind === 'images') return `${base}/images/generations`;
+  if (kind === 'image-edits') return `${base}/images/edits`;
   throw new Error(`Unknown API endpoint kind: ${kind}`);
 }
 
@@ -1241,7 +1243,7 @@ export async function requestImageGeneration(options = {}) {
 }
 
 async function imageGeneration({
-  endpointUrl, apiKey, model, prompt, size = 'auto', signal,
+  endpointUrl, apiKey, model, prompt, size = 'auto', referenceImage, signal,
   fetchImpl = globalThis.fetch, diagnostic,
 } = {}) {
   signal?.throwIfAborted();
@@ -1249,7 +1251,7 @@ async function imageGeneration({
   if (!model || !String(model).trim()) throw new Error('未配置生图模型。');
   const text = String(prompt || '').trim();
   if (!text) throw new Error('生图描述为空。');
-  if (text.length > 4000) throw new Error('生图描述过长（上限 4000 字）。');
+  if (text.length > IMAGE_PROMPT_LIMIT) throw new Error(`生图描述过长（上限 ${IMAGE_PROMPT_LIMIT} 字）。`);
   const chosen = IMAGE_SIZES.includes(size) ? size : 'auto';
   const body = { model, prompt: text, n: 1 };
   // GPT Image always returns base64 and rejects the DALL-E response_format
@@ -1257,16 +1259,30 @@ async function imageGeneration({
   // charged generation to discover unsupported parameters.
   if (!/(?:^|[/_:-])gpt-image(?:[-_.]|$)/i.test(model)) body.response_format = 'b64_json';
   if (chosen !== 'auto') body.size = chosen;
-  const response = await fetchImpl(resolveApiUrl(endpointUrl, 'images'), {
+  const headers = requestHeaders(apiKey);
+  let payloadBody;
+  if (referenceImage !== undefined) {
+    const { mime, encoded } = imageReferenceData(referenceImage);
+    const bytes = Uint8Array.from(atob(encoded), character => character.charCodeAt(0));
+    payloadBody = new FormData();
+    for (const [key, value] of Object.entries(body)) payloadBody.set(key, String(value));
+    payloadBody.set('image', new Blob([bytes], { type: mime }), `reference.${mime.split('/')[1]}`);
+  } else {
+    headers['Content-Type'] = 'application/json';
+    payloadBody = JSON.stringify(body);
+  }
+  const response = await fetchImpl(resolveApiUrl(endpointUrl, referenceImage === undefined ? 'images' : 'image-edits'), {
     method: 'POST',
-    headers: { ...requestHeaders(apiKey), 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers,
+    body: payloadBody,
     signal,
   });
   signal?.throwIfAborted();
   if (!response.ok) {
     const detail = await readErrorBody(response, apiKey);
-    throw Object.assign(new Error(`生图请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`), { status: response.status });
+    const label = referenceImage !== undefined && [404, 405, 501].includes(response.status)
+      ? '当前服务不支持参考图生图（需要 /images/edits）' : '生图请求失败';
+    throw Object.assign(new Error(`${label}（HTTP ${response.status}）${detail ? `：${detail}` : ''}`), { status: response.status });
   }
   const payload = await diagnostic.json(response);
   signal?.throwIfAborted();

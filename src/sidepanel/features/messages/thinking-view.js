@@ -4,12 +4,13 @@
 export function thinkingPresentation(message, now = Date.now()) {
   const isStreaming = message?.status === 'streaming';
   const hasReasoning = Boolean(message?.reasoning);
-  const active = isStreaming && !message?.content && hasReasoning;
+  const active = isStreaming && hasReasoning && (message.requestPhase
+    ? message.requestPhase === 'reasoning' : !message.content && !message.reasoningFinishedAt);
   const expanded = message?.userToggledThinking !== undefined
     ? Boolean(message.thinkingExpanded)
     : false;
-  const elapsedSeconds = message?.reasoningSeconds
-    || (message?.reasoningStartedAt ? Math.max(1, Math.round((now - message.reasoningStartedAt) / 1000)) : 0);
+  const elapsedSeconds = message?.reasoningSeconds || (message?.reasoningStartedAt && (active || message.reasoningFinishedAt)
+    ? Math.max(1, Math.round(((active ? now : message.reasoningFinishedAt) - message.reasoningStartedAt) / 1000)) : 0);
   const label = isStreaming
     ? (active
         ? `正在深度思考${elapsedSeconds ? ` ${elapsedSeconds} 秒` : ''}…`

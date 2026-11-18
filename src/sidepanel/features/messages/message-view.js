@@ -11,7 +11,7 @@ import { formatTime } from '../../core/format.js';
 import { hydrateIcons, icon } from '../../icons.js';
 import { agentPanelMarkup } from './agent-message-view.js';
 import { captureViewPosition, restoreViewPosition } from './scroll-position.js';
-import { replyProgressLabel } from './reply-progress.js';
+import { replyElapsedLabel, replyProgress } from './reply-progress.js';
 import { messageErrorMarkup, messageModeBadgeMarkup, syncMessageDecorations } from './message-decorations.js';
 import { syncChildren } from './dom-reconcile.js';
 import { thinkingPresentation } from './thinking-view.js';
@@ -19,6 +19,8 @@ import { parseSuggestionResponse } from './model-suggestions.js';
 import { articleQuotes } from './article-quote-draft.js';
 import { shouldCollapseMessageText } from './text-preview.js';
 import { videoAttachmentName } from '../video-notes/video-notes-presentation.js';
+import { directImageForMessage } from '../../../utils/image-generation-command.js';
+import { decorateCodeBlocks } from './code-blocks.js';
 import { detachMessageIllustrations, generatedImagesMarkup, illustrationNote, restoreMessageIllustrations, videoIllustrationNote } from '../illustration/illustration-view.js';
 import '../illustration/illustration-inline.css';
 
@@ -89,6 +91,7 @@ function renderedContent(content, streaming, ownerDocument) {
 export function renderMessageContent(container, content, streaming = false) {
   if (!container) return;
   const fragment = renderedContent(content, streaming, container.ownerDocument);
+  if (!streaming && container.hasAttribute('data-message-content')) decorateCodeBlocks(fragment);
   detachMessageIllustrations(container);
   syncChildren(container, fragment);
   restoreMessageIllustrations(container);
@@ -100,6 +103,19 @@ export function renderMessageContent(container, content, streaming = false) {
     container.querySelectorAll('pre code').forEach((block) => hljs.highlightElement(block));
   }
   syncMessageDecorations(container.closest('.assistant-message'));
+}
+
+function messageOperation(message) {
+  if (message.pageCommand?.kind === 'video-notes' && message.pageCommand.version === 1) {
+    const scan = message.pageCommand.frameFallback === true;
+    const title = scan ? '从画面识别字幕' : '整理当前视频的笔记';
+    const text = String(message.displayContent || '');
+    return { title, type: scan ? '画面识别' : '视频笔记', iconName: scan ? 'scan' : 'video', text: text === title ? '' : text };
+  }
+  const image = directImageForMessage(message);
+  if (!image) return null;
+  return { title: '生成图片', type: message.attachments?.some(item => item.type === 'image') ? '参考图生图' : '图片生成',
+    iconName: 'sparkles', text: image.prompt };
 }
 
 function userMessageMarkup(message) {
@@ -115,7 +131,9 @@ function userMessageMarkup(message) {
     `<details class="message-skill"><summary>Skill · ${escapeHtml(item.name || '本轮指南')}</summary><pre>${escapeHtml(item.skill?.raw || '本轮 Skill 记录不可用，请回退重新选择。')}</pre></details>`).join('');
   const imageErrors = files.map(imageAttachmentLoadError).filter(Boolean)
     .map(error => `<small class="message-file-error">${escapeHtml(error)}</small>`).join('');
-  const bodyText = message.displayContent ?? message.content;
+  const operation = messageOperation(message);
+  const operationHeader = operation ? `<header class="user-operation-header"><span class="user-operation-icon">${icon(operation.iconName)}</span><span><small>快捷操作 · ${operation.type}</small><strong>${operation.title}</strong></span></header>` : '';
+  const bodyText = operation ? operation.text : message.displayContent ?? message.content;
   const body = !bodyText ? '' : shouldCollapseMessageText(bodyText)
     ? `<div class="user-text-preview" data-text-preview-candidate><div class="message-content user-text-preview-content" data-text-preview-content>${escape(bodyText).replace(/\r/g, '&#13;')}</div><span class="user-text-preview-more" aria-hidden="true" hidden>查看全文 ${icon('external')}</span></div>`
     : `<div class="message-content">${escapeHtml(bodyText)}</div>`;
@@ -134,7 +152,7 @@ function userMessageMarkup(message) {
       ${icon('copy')}
     </button>
   </div>`;
-  return `<article class="message user-message" data-message-id="${message.id}">${messageModeBadgeMarkup(message)}${selection}${images}${body}${names ? `<div class="message-files">${names}</div>` : ''}${skills}${imageErrors}${actions}</article>`;
+  return `<article class="message user-message${operation ? ' user-operation' : ''}" data-message-id="${message.id}">${operationHeader || messageModeBadgeMarkup(message)}${selection}${images}${body}${names ? `<div class="message-files">${names}</div>` : ''}${skills}${imageErrors}${actions}</article>`;
 }
 
 function sourcesMarkup(message) {
@@ -195,7 +213,11 @@ function tryNextMarkup(message, { showSuggestions = false } = {}) {
   </div>`;
 }
 
-function assistantMessageMarkup(message, { showSuggestions = false, frameActions } = {}) {
+function requestProgressMarkup(progress, phase) {
+  return `<div class="message-state request-progress" data-message-progress data-request-phase="${escapeHtml(phase || '')}">${icon(phase === 'reading' ? 'article' : 'history')}<span data-progress-text><span role="status" data-progress-label>${escapeHtml(progress.label)}</span><span data-progress-detail>${escapeHtml(progress.details)}</span></span></div>`;
+}
+
+function assistantMessageMarkup(message, { showSuggestions = false, frameActions, allowImageReference = false } = {}) {
   const status = message.status || 'complete';
   const stopped = status === 'stopped'
     ? `<div class="message-state">${icon('stop')}已停止，已保留当前回答</div>`
@@ -222,10 +244,11 @@ function assistantMessageMarkup(message, { showSuggestions = false, frameActions
       </div>`
     : '';
 
-  const progress = replyProgressLabel(message);
-  const progressState = progress
-    ? `<div class="message-state request-progress" role="status" data-message-progress data-request-phase="${escapeHtml(message.requestPhase || '')}">${icon(message.requestPhase === 'reading' ? 'article' : 'history')}<span data-progress-text>${escapeHtml(progress)}</span></div>`
-    : '';
+  const progress = replyProgress(message);
+  const progressState = progress ? requestProgressMarkup(progress, message.requestPhase) : '';
+  const elapsed = replyElapsedLabel(message);
+  const elapsedTitle = message.agent ? '从任务开始到结束，含暂停和人工处理时间'
+    : '从本轮开始执行到回复结束，不含排队与回复后配图';
   const model = message.model
     ? `<span class="message-model">${escapeHtml(message.model)}${message.reasoningEffort && message.reasoningEffort !== 'default' ? ` · ${escapeHtml(message.reasoningEffort)}` : ''}</span>`
     : '';
@@ -240,8 +263,8 @@ function assistantMessageMarkup(message, { showSuggestions = false, frameActions
   const frameButtons = frameActions?.buttons?.length ? `<div class="video-frame-actions" role="group" aria-label="视频画面识别">${frameActions.buttons.map(button =>
     `<button class="action-text" data-action="${escapeHtml(button.action)}" type="button" aria-haspopup="dialog">${icon('article')}${escapeHtml(button.label)}</button>`).join('')}</div>` : '';
   return `<article class="message assistant-message" data-message-id="${message.id}">
-    <div class="message-label"><span class="assistant-avatar">${icon('asterisk')}</span><span>UNK AI</span>${model}<time>${formatTime(message.createdAt)}</time></div>
-    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${frameButtons}${generatedImagesMarkup(message)}${illustrationNote(message)}${videoIllustrationNote(message)}${sources}${tryNext}${stopped}${error}
+    <div class="message-label"><span class="assistant-avatar">${icon('asterisk')}</span><span class="assistant-name">UNK AI</span>${model}<span class="message-meta">${elapsed ? `<span class="message-elapsed" data-message-elapsed title="${elapsedTitle}">${escapeHtml(elapsed)}</span>` : ''}<time>${formatTime(message.createdAt)}</time></span></div>
+    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${frameButtons}${generatedImagesMarkup(message, { allowImageReference })}${illustrationNote(message)}${videoIllustrationNote(message)}${sources}${tryNext}${stopped}${error}
     <div class="message-actions">
       <button class="icon-button" data-action="copy" type="button" aria-label="复制回答" title="选择复制格式" aria-haspopup="menu" aria-expanded="false">${icon('copy')}</button>
       ${message.agent ? (['failed', 'cancelled'].includes(message.agent.status) ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>` : '') : frameActions?.hideRetry ? '' : `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`}${retry}
@@ -299,27 +322,46 @@ function updateThinkingView(article, message) {
   }
 }
 
-function updateProgressView(article, message) {
-  const progress = replyProgressLabel(message);
-  let node = article.querySelector('[data-message-progress]');
+function setText(node, value) {
+  if (node && node.textContent !== value) node.textContent = value;
+}
+
+function updateProgressView(article, message, now = Date.now()) {
+  setText(article.querySelector('[data-message-elapsed]'), replyElapsedLabel(message, now));
+  const progress = replyProgress(message, now);
+  const node = article.querySelector('[data-message-progress]');
   if (!progress) {
     node?.remove();
     return;
   }
-  if (!node) {
-    node = nodeFromMarkup(article.ownerDocument,
-      `<div class="message-state request-progress" role="status" data-message-progress></div>`);
-    article.querySelector('[data-message-content]')?.before(node);
-  }
   const phase = String(message.requestPhase || '');
-  const text = node.querySelector('[data-progress-text]');
-  if (text) text.textContent = progress;
-  else node.textContent = progress;
-  if (node.dataset.requestPhase !== phase) {
-    node.dataset.requestPhase = phase;
-    const iconName = message.requestPhase === 'reading' ? 'article' : 'history';
-    node.innerHTML = `${icon(iconName)}<span data-progress-text>${escapeHtml(progress)}</span>`;
+  if (!node || node.dataset.requestPhase !== phase) {
+    const next = nodeFromMarkup(article.ownerDocument, requestProgressMarkup(progress, phase));
+    if (node) node.replaceWith(next);
+    else article.querySelector('[data-message-content]')?.before(next);
+    return;
   }
+  setText(node.querySelector('[data-progress-label]'), progress.label);
+  setText(node.querySelector('[data-progress-detail]'), progress.details);
+}
+
+export function createReplyClock({ root, getConversation, getRun, isVisible = () => true }) {
+  let timer = null;
+  function stop() {
+    if (timer !== null) clearInterval(timer);
+    timer = null;
+  }
+  function sync() {
+    const ref = getRun()?.ref;
+    const conversation = getConversation();
+    const message = ref && conversation?.id === ref.conversationId && isVisible()
+      ? conversation.messages.find(item => item.id === ref.assistantId && item.runId === ref.runId) : null;
+    const article = message?.status === 'streaming' && root.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
+    if (!article) { stop(); return; }
+    updateProgressView(article, message);
+    timer ??= setInterval(sync, 1000);
+  }
+  return Object.freeze({ sync, stop });
 }
 
 export function messageMarkup(message, options = {}) {
@@ -331,6 +373,7 @@ export function messageMarkup(message, options = {}) {
 export function updateStreamingMessage({
   message,
   frameActions,
+  allowImageReference,
   article,
   messagesElement,
   conversationView,
@@ -340,7 +383,7 @@ export function updateStreamingMessage({
   if (!message || !article) return false;
   if ((message.status || 'complete') !== 'streaming') {
     const position = captureViewPosition(conversationView, messagesElement);
-    article.outerHTML = messageMarkup(message, { showSuggestions, frameActions });
+    article.outerHTML = messageMarkup(message, { showSuggestions, frameActions, allowImageReference });
     const rendered = messagesElement.querySelector(`[data-message-id="${message.id}"]`);
     if (!rendered) return false;
     renderMessageContent(rendered.querySelector('[data-message-content]'), message.content, false);

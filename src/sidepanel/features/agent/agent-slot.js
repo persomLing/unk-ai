@@ -1,5 +1,6 @@
 import { $, escapeHtml, toast } from '../../core/dom.js';
 import { icon } from '../../icons.js';
+import { agentElapsedLabel, formatElapsedSeconds } from '../messages/reply-progress.js';
 import {
   AGENT_ACTIONS,
   actionSignature,
@@ -602,14 +603,17 @@ export function createAgentSlot({
       failed: '已失败',
       cancelled: '已停止',
     };
-    const elapsed = Math.max(0, Math.floor((Date.now() - (task.phaseStartedAt || Date.now())) / 1000));
-    const label = statusLabels[task.status] || `${PHASE_LABELS[task.phase] || '准备中'}${task.phase !== 'wait' && elapsed ? ` · ${elapsed} 秒` : ''}…`;
+    const now = Date.now();
+    const elapsed = Math.max(0, Math.floor((now - (task.phaseStartedAt || now)) / 1000));
+    const label = statusLabels[task.status] || `${PHASE_LABELS[task.phase] || '准备中'}${task.phase !== 'wait' && elapsed ? ` · 本阶段 ${formatElapsedSeconds(elapsed)}` : ''}…`;
+    const total = agentElapsedLabel(task, now);
     const dot = task.status === 'paused' ? 'paused' : task.status === 'finished' ? 'done' : task.status === 'failed' ? 'failed' : task.phase || 'idle';
     const plan = task.progress ? taskProgressContext(task.progress).plan : [];
     const currentStep = plan.find(item => item.status === 'in_progress');
     statusElement.innerHTML = `
       <span class="agent-status-dot ${escapeHtml(dot)}"></span>
       <span>${escapeHtml(label)}</span>
+      ${total ? `<span class="message-elapsed" title="从任务开始计时，含暂停和人工处理时间">${escapeHtml(total)}</span>` : ''}
       <span class="agent-step-count">${task.maxSteps === 0 ? `第 ${task.step} 步 · 步数不限` : `第 ${task.step}/${task.maxSteps} 步`}</span>
       ${plan.length ? `<span class="agent-plan-status" title="${escapeHtml(currentStep?.title || '核对任务结果')}">目标 ${plan.filter(item => item.status === 'completed' && item.verified).length}/${plan.length}</span>` : ''}
       ${task.settings?.strictMode ? '<span class="agent-strict">严格模式</span>' : task.autoApprove && task.settings?.autoApprove ? '<span class="agent-strict">自动批准</span>' : ''}
@@ -953,7 +957,7 @@ export function createAgentSlot({
 
   async function concludeTurn(task, status, summary, turn) {
     if (!turn) return;
-    finishAgentTurn(turn, { status, summary: summary || fallbackAgentSummary(turn) });
+    finishAgentTurn(turn, { status, summary: summary || fallbackAgentSummary(turn), finishedAt: task.finishedAt });
     const snapshot = agentTurnForMessage(turn);
     const controller = new AbortController();
     try {
@@ -968,6 +972,7 @@ export function createAgentSlot({
     diagnose(task, state.owner, 'agent.task.stopped', { status, errorCount: task.errorCount || 0, phase: task.phase, reason: stopReason },
       status === 'finished' ? null : { code: status === 'cancelled' ? 'ERR_TASK_CANCELLED' : 'ERR_AGENT_FAILED', reason: stopReason });
     const turn = state.turn;
+    task.finishedAt = nowIso();
     task.status = status;
     task.phase = 'idle';
     clearInterval(state.watchdog);
@@ -2009,6 +2014,7 @@ export function createAgentSlot({
     onStateChange();
     addStep('warning', '检测到上次任务中断', '未自动重放任何页面动作；请核对页面后继续。');
     pauseTask('检测到扩展重启或侧栏关闭，任务已暂停。请核对当前页面后继续。');
+    armWatchdog();
   }
 
   function closePanel() {

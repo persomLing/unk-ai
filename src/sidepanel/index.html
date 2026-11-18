@@ -102,13 +102,13 @@
           <div id="agent-steps" class="agent-steps" aria-live="polite"></div>
           <div id="agent-interaction" class="agent-interaction" hidden></div>
         </section>
-        <div id="queue-bar" class="queue-bar" hidden aria-live="polite">
-          <div class="queue-leading">
-            <span class="queue-icon"><i data-icon="history"></i></span>
-            <span class="queue-tag">排队中</span>
-            <span class="queue-preview" id="queue-preview"></span>
+        <div id="queue-bar" class="queue-bar" hidden>
+          <span class="queue-icon" aria-hidden="true"><i data-icon="layers"></i></span>
+          <div class="queue-leading" role="status">
+            <div class="queue-line"><strong class="queue-tag" id="queue-tag">排队中</strong><span class="queue-preview" id="queue-preview"></span></div>
+            <small id="queue-state" hidden></small>
           </div>
-          <button id="queue-recall" class="queue-recall-btn" type="button" aria-label="撤回到对话框重新编辑" title="撤回排队消息到输入框">
+          <button id="queue-recall" class="queue-recall-btn" type="button" aria-label="撤回当前显示的排队消息" title="撤回这条到输入框编辑">
             <i data-icon="rewind"></i>
             <span>撤回</span>
           </button>
@@ -137,6 +137,10 @@
             <span id="composer-page-status" class="composer-page-status" role="status" hidden></span>
           </div>
           <div id="pasted-text-list" class="pasted-text-list" hidden></div>
+          <div id="composer-image-mode" class="composer-image-mode" hidden>
+            <span class="composer-image-chip"><i data-icon="sparkles"></i><strong>生成图片</strong><button id="clear-image-mode" type="button" aria-label="退出生图模式" title="退出生图模式，保留提示词"><i data-icon="close"></i></button></span>
+            <small id="composer-image-scope">只使用提示词和参考图</small>
+          </div>
           <textarea id="message-input" rows="1" maxlength="200000" placeholder="输入消息…" aria-label="输入消息"></textarea>
           <div id="composer-page-choice" class="composer-page-choice" role="group" aria-labelledby="composer-page-choice-text" hidden>
             <span id="composer-page-choice-text"></span>
@@ -154,6 +158,7 @@
                   <div class="add-menu-heading" role="presentation">添加</div>
                   <button type="button" role="menuitem" data-attach-kind="image"><i data-icon="image"></i><span class="add-menu-name">上传图片</span><span class="add-menu-description">也可直接粘贴</span></button>
                   <button type="button" role="menuitem" data-attach-kind="document"><i data-icon="file"></i><span class="add-menu-name">上传文档</span><span class="add-menu-description">PDF、Word、文本等</span></button>
+                  <button id="generate-image-button" type="button" role="menuitem"><i data-icon="sparkles"></i><span class="add-menu-name">生成图片</span><span class="add-menu-description">添加生图指令</span></button>
                   <div id="composer-modes" class="composer-add-section" role="group" aria-label="页面能力" hidden>
                     <button id="agent-toggle" type="button" role="menuitem" aria-label="页面操作" aria-pressed="false" title="在授权后点击、输入和导航"><i data-icon="globe"></i><span class="add-menu-name">页面操作</span><span class="add-menu-description">协助点击与填写</span><i class="add-menu-check" data-icon="check"></i></button>
                     <div class="add-menu-video-row">
