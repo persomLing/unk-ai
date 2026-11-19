@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="180" viewBox="0 0 300 180" fill="none">
+  <defs>
+    <pattern id="grid" width="18" height="18" patternUnits="userSpaceOnUse"><path d="M2 0H0v2" stroke="#adccae" stroke-opacity=".42" stroke-width=".8"/></pattern>
+    <clipPath id="globe"><circle cx="195" cy="89" r="76"/></clipPath>
+  </defs>
+  <path fill="url(#grid)" d="M0 0h300v180H0z"/>
+  <g transform="rotate(-24 195 89)" stroke="#b6d8b2" stroke-width=".8">
+    <circle cx="195" cy="89" r="76" fill="#bfdcb0" fill-opacity=".055"/>
+    <g clip-path="url(#globe)" opacity=".76">
+      <ellipse cx="195" cy="89" rx="56" ry="76"/><ellipse cx="195" cy="89" rx="30" ry="76"/>
+      <path d="M195 13v152M119 89h152m-149-25q73 23 146 0m-135-25q62 32 124 0m-144 75q82 22 166-1m-154 23q69 24 138 0m-119 18q50 12 100 0"/>
+    </g>
+    <path d="M195 4v7m0 156v7m-88-85h9m158 0h9" stroke="#ecce80"/>
+  </g>
+  <ellipse cx="193" cy="87" rx="112" ry="41" transform="rotate(-32 193 87)" stroke="#e6ca83" stroke-dasharray="2 4"/>
+  <path d="m248 29 1.8 6.1L256 37l-6.2 1.9L248 45l-1.9-6.1L240 37l6.1-1.9Z" fill="#f2d88e"/>
+  <circle cx="119" cy="145" r="3" fill="#e3bf77"/><circle cx="119" cy="145" r="6" stroke="#e3bf77" stroke-opacity=".6"/>
+  <path d="M30 143h47m-47 0v-5m9 5v-3m9 3v-3m9 3v-3m10 3v-5" stroke="#d6d3a0" stroke-opacity=".8"/>
+</svg>

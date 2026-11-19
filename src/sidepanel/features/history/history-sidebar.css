@@ -104,14 +104,15 @@
 #history-drawer .ho-toolbar .history-new-chat {
   min-height: 30px;
   margin-left: 0;
-  padding: 3px 6px;
+  padding: 3px 9px;
   gap: 4px;
-  color: var(--teal);
+  color: var(--on-teal);
+  background: var(--teal);
   font-weight: 650;
 }
 
 #history-drawer .ho-toolbar .history-new-chat:hover:not(:disabled) {
-  background: var(--teal-soft);
+  background: var(--teal-dark);
 }
 
 #history-drawer .ho-toolbar .history-new-chat .icon {
@@ -266,6 +267,9 @@
 
 #history-drawer .ho-row.is-active .ho-chat-title {
   font-weight: 650;
+}
+#history-drawer .ho-row.is-active::before {
+  content: ""; position: absolute; inset: 10px auto 10px 0; width: 3px; border-radius: 3px; background: var(--teal); pointer-events: none;
 }
 
 #history-drawer .ho-date {
@@ -757,7 +761,7 @@
 
 [data-theme="dark"] #history-drawer .ho-row.is-active,
 [data-theme="dark"] #history-drawer .ho-row.is-selected {
-  background: rgba(52, 211, 153, .105);
+  background: var(--teal-soft);
 }
 
 [data-theme="dark"] #history-drawer .ho-menu,

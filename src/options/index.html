@@ -7,6 +7,7 @@
     <title>设置 · UNK AI</title>
     <link rel="icon" href="/icons/icon-32.png" />
     <link rel="stylesheet" href="./style.css" />
+    <script src="/src/sidepanel/theme-boot.js"></script>
   </head>
   <body>
     <main class="settings-shell">
@@ -17,7 +18,7 @@
         </a>
         <div class="header-actions">
           <span class="local-badge"><i data-icon="shield"></i><span>配置保存在此浏览器</span></span>
-          <button id="settings-theme" class="theme-button" type="button" aria-label="切换明暗主题" title="切换明暗主题"><i data-icon="moon"></i></button>
+          <button id="settings-theme" class="icon-button theme-button" type="button" aria-label="切换明暗主题" title="切换明暗主题"><i data-icon="moon"></i></button>
         </div>
       </header>
 
@@ -36,9 +37,11 @@
         </aside>
 
         <div class="settings-content">
-          <div class="intro">
+          <div class="intro atlas-cover">
+            <span class="atlas-kicker" aria-hidden="true">UNK AI / PREFERENCES</span>
             <h1>设置</h1>
             <p>连接常用模型，调整回答方式，管理你的本地数据。</p>
+            <span class="atlas-figure" aria-hidden="true">FIG. 02</span>
           </div>
           <div id="setup-banner" class="setup-banner" hidden>
             <i data-icon="info"></i>
@@ -131,11 +134,11 @@
               <div class="capability-row">
                 <label class="toggle-card" for="reasoning-enabled">
                   <span><strong>思考模式</strong><small id="reasoning-hint">按模型能力识别，可手动调整</small></span>
-                  <span class="switch"><input id="reasoning-enabled" name="reasoningEnabled" type="checkbox" role="switch" /><i></i></span>
+                  <span class="ui-switch"><input id="reasoning-enabled" name="reasoningEnabled" type="checkbox" role="switch" /><i aria-hidden="true"></i></span>
                 </label>
                 <label class="toggle-card" for="vision-enabled">
                   <span><strong>视觉输入</strong><small id="vision-hint">支持时可向模型发送图片</small></span>
-                  <span class="switch"><input id="vision-enabled" name="visionEnabled" type="checkbox" role="switch" /><i></i></span>
+                  <span class="ui-switch"><input id="vision-enabled" name="visionEnabled" type="checkbox" role="switch" /><i aria-hidden="true"></i></span>
                 </label>
               </div>
               <div class="field" id="reasoning-effort-field">
@@ -151,7 +154,7 @@
               </div>
               <label class="toggle-card research-toggle" for="web-research-enabled">
                 <span><strong>启用搜索与抓取</strong><small>普通稳定知识不自动联网</small></span>
-                <span class="switch"><input id="web-research-enabled" name="webResearchEnabled" type="checkbox" role="switch" /><i></i></span>
+                <span class="ui-switch"><input id="web-research-enabled" name="webResearchEnabled" type="checkbox" role="switch" /><i aria-hidden="true"></i></span>
               </label>
               <div class="field-row">
                 <div class="field">
@@ -208,7 +211,7 @@
             <div class="agent-settings-panel">
               <label class="toggle-card" for="agent-enabled">
                 <span><strong>允许浏览器控制</strong><small>关闭后停止 Agent 页面操作，不影响普通问答与页面阅读</small></span>
-                <span class="switch"><input id="agent-enabled" type="checkbox" role="switch" /><i></i></span>
+                <span class="ui-switch"><input id="agent-enabled" type="checkbox" role="switch" /><i aria-hidden="true"></i></span>
               </label>
               <div class="field agent-approval-field">
                 <label for="agent-approval-mode">操作确认方式</label>

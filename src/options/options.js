@@ -5,14 +5,7 @@ async function initTheme() {
 }
 
 function applySettingsTheme(theme) {
-  const dark = theme === 'dark';
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const button = document.querySelector('#settings-theme');
-  if (button) {
-    button.innerHTML = icon(dark ? 'sun' : 'moon');
-    button.setAttribute('aria-label', dark ? '切换为浅色模式' : '切换为深色模式');
-    button.title = dark ? '切换为浅色模式' : '切换为深色模式';
-  }
+  paintTheme(document, document.querySelector('#settings-theme'), theme);
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -38,6 +31,8 @@ import {
   saveAgentSettings,
 } from '../utils/agent-permissions.js';
 import { icon, hydrateIcons } from '../sidepanel/icons.js';
+import { paintTheme } from '../ui/theme-control.js';
+import { emptyState } from '../ui/empty-state.js';
 import { createModelSelection, updateModelDraft } from './model-selection.js';
 import { createModelCatalog } from './model-catalog.js';
 import { installSettingsNavigation } from './settings-navigation.js';
@@ -350,7 +345,7 @@ function renderLibrary() {
     <article class="library-item ${profile.id === selectedId ? 'is-selected' : ''}" data-library-model-id="${escapeHtml(profile.id)}" tabindex="0" role="button" aria-label="编辑模型 ${escapeHtml(profile.name)}">
       <div><strong>${escapeHtml(profile.name)}</strong><span class="library-kind${profile.kind === 'image' ? ' is-image' : ''}">${profile.kind === 'image' ? '生图' : '对话'}</span><small>${escapeHtml(profile.id)} · ${profile.kind === 'image' ? '生图模型，不参与对话' : profile.contextLength ? `${Number(profile.contextLength).toLocaleString('zh-CN')} 上下文` : '上下文跟随服务商'}</small></div>
       <div class="library-actions"><span class="library-current">${profile.id === selectedId ? '编辑中' : '编辑'}</span><button class="library-remove" type="button" data-model-id="${escapeHtml(profile.id)}" aria-label="移除 ${escapeHtml(profile.name)}">${icon('trash')}</button></div>
-    </article>`).join('') || '<div class="library-empty">还没有添加模型。填写服务连接，获取列表后即可添加。</div>';
+    </article>`).join('') || emptyState({ symbol: 'layers', title: '还没有添加模型', hint: '填写服务连接，获取列表后即可添加。' });
   renderParametersModelName(selectedProfile);
   renderImageModelSelect();
 }
@@ -544,7 +539,7 @@ form.addEventListener('submit', async (event) => {
     const storage = await getDirectoryInfo();
     if (!storage.granted) {
       setStorageFeedback('请先选择并授权本地对话存储文件夹，再保存设置。', 'error');
-      storageLocation.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      storageLocation.scrollIntoView({ block: 'center' });
       setupBanner.hidden = false;
       return;
     }
@@ -687,7 +682,7 @@ modelLibrary.addEventListener('click', (event) => {
   renderLibrary();
   markDirty();
   setStatus(`正在编辑：${profile.name}。参数修改后保存即可生效。`, 'success');
-  document.querySelector('#parameters-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelector('#parameters-section').scrollIntoView({ block: 'start' });
 });
 
 modelLibrary.addEventListener('keydown', (event) => {

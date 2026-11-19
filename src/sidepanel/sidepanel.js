@@ -30,9 +30,12 @@
  */
 
 import { awaitWithAbort, awaitWithTimeout } from '../utils/abortable.js';
+import { paintTheme } from '../ui/theme-control.js';
+import { $, toast } from './core/dom.js';
 import { find, includes, map, trim } from 'lodash-es';
 import { pageControlState, pageFaviconUrl, isReadablePageUrl, pageContextEnabledForNavigation } from './features/page-reading/page-control-state.js';
 import { captureViewPosition, restoreViewPosition } from './features/messages/scroll-position.js';
+import { createMessageArrival } from './features/messages/message-arrival.js';
 import {
   getProviderConfig,
 } from '../utils/storage.js';
@@ -99,6 +102,7 @@ import {
 import {
   welcomePromptsFor,
 } from './features/welcome/welcome-prompts.js';
+import { createWelcomeView } from './features/welcome/welcome-view.js';
 import { normalizeDraftSource } from './features/welcome/draft-source.js';
 import { createAgentTurnCallbacks } from './features/agent/agent-turn-callbacks.js';
 import { createConversationSaver } from './features/storage/conversation-save.js';
@@ -179,7 +183,6 @@ import { createPageReadState } from './features/page-reading/page-read-state.js'
 import { createPageQuestionChoice, needsPageQuestionChoice } from './features/page-reading/page-question-choice.js';
 import { attachmentInputError, createVisualPreparation } from './features/visual-context/manual-visual-capture.js';
 
-const $ = (selector) => document.querySelector(selector);
 const input = $('#message-input');
 const messagesElement = $('#messages');
 const conversationView = $('#conversation-view');
@@ -487,15 +490,6 @@ function hasVision() {
   return Boolean(activeChatProfile()?.supportsVision);
 }
 
-function toast(message, kind = '') {
-  const element = document.createElement('div');
-  element.className = `toast ${kind}`;
-  element.textContent = message;
-  $('#toast-region').append(element);
-  setTimeout(() => element.remove(), kind === 'error' ? 5500 : 3200);
-}
-
-
 async function initTheme(signal) {
   if (!globalThis.chrome?.storage?.local) return;
   try {
@@ -508,15 +502,7 @@ async function initTheme(signal) {
 }
 
 function applyTheme(theme) {
-  document.documentElement.dataset.theme = theme;
-  const toggleBtn = $('#theme-toggle');
-  if (toggleBtn) {
-    const isDark = theme === 'dark';
-    toggleBtn.setAttribute('aria-label', isDark ? '切换为亮色模式' : '切换为暗色模式');
-    toggleBtn.setAttribute('title', isDark ? '切换为亮色模式' : '切换为暗色模式');
-    toggleBtn.innerHTML = `<i data-icon="${isDark ? 'sun' : 'moon'}"></i>`;
-    hydrateIcons(toggleBtn);
-  }
+  paintTheme(document, $('#theme-toggle'), theme);
 }
 
 async function toggleTheme() {
@@ -564,43 +550,9 @@ function renderPageSelection() {
   chip.title = preview;
 }
 
-let welcomeViewKey = '';
+const paintWelcome = createWelcomeView($('#welcome'));
 function renderWelcomePrompts() {
-  const container = $('#welcome-chips');
-  if (!container) return;
-  const welcome = welcomePromptsFor(state.activePageSignal || {});
-  const { primary, secondary, topics } = welcome;
-  // Metadata polling must not replace focused cards. Date-sensitive prompts are
-  // rebuilt when clicked so a panel left open overnight still uses today's date.
-  const viewKey = JSON.stringify({ ...welcome, topics: topics.map(({ prompt, ...topic }) => topic) });
-  if (viewKey === welcomeViewKey) return;
-  welcomeViewKey = viewKey;
-  $('#welcome-title').textContent = welcome.title;
-  const subtitle = $('#welcome-title')?.nextElementSibling;
-  if (subtitle?.tagName === 'P') subtitle.textContent = welcome.subtitle;
-  container.innerHTML = `
-    <div class="welcome-start">
-      <button id="${primary.action === 'summarize-page' ? 'summarize-page' : 'welcome-primary'}"
-        class="welcome-chip welcome-primary" type="button"
-        data-action="${escapeHtml(primary.action)}">
-        <span class="welcome-action-icon">${icon(primary.icon)}</span>
-        <span class="welcome-action-copy"><strong>${escapeHtml(primary.label)}</strong><small>${escapeHtml(primary.description)}</small></span>
-        <span class="welcome-action-arrow">${icon('arrow-right')}</span>
-      </button>
-      ${secondary ? `<button class="welcome-chip welcome-secondary" type="button"
-        data-action="fill-prompt" data-prompt="${escapeHtml(secondary.prompt)}"
-        title="${escapeHtml(secondary.description)}"><span>${escapeHtml(secondary.label)}</span>${icon('arrow-right')}</button>` : ''}
-    </div>
-    <div class="welcome-topics" aria-labelledby="welcome-topics-title">
-      <div class="welcome-section-heading"><h2 id="welcome-topics-title">从这些话题开始</h2><span>点选后可编辑</span></div>
-      <div class="welcome-topic-grid">
-        ${topics.map(topic => `<button class="welcome-chip welcome-topic" type="button"
-          data-topic="${escapeHtml(topic.id)}" data-topic-id="${escapeHtml(topic.id)}" data-action="fill-prompt">
-          <span class="welcome-topic-icon">${icon(topic.icon)}</span>
-          <strong>${escapeHtml(topic.label)}</strong><small>${escapeHtml(topic.description)}</small>
-        </button>`).join('')}
-      </div>
-    </div>`;
+  paintWelcome(welcomePromptsFor(state.activePageSignal || {}));
 }
 
 function setPageSelection(value) {
@@ -1030,6 +982,7 @@ function renderLocalPrompt() {
     : escapeHtml(storageState.title)}</span><button type="button">${actionLabel}</button>`;
 }
 
+const markMessageArrival = createMessageArrival();
 function renderConversation({ scroll = false } = {}) {
   if (state.rewoundCommand?.conversationId !== state.conversation?.id) state.rewoundCommand = null;
   videoTimestampNavigation?.sync();
@@ -1050,8 +1003,11 @@ function renderConversation({ scroll = false } = {}) {
   textPreview.sync(conversation?.id);
   const viewPosition = captureViewPosition(conversationView, messagesElement);
   const hasMessages = Boolean(conversation?.messages.length);
+  const enteringWelcome = !hasMessages && !messagesElement.hidden;
   $('#welcome').hidden = hasMessages;
   messagesElement.hidden = !hasMessages;
+  const carousel = $('#welcome-carousel');
+  if (carousel) carousel.dataset.active = String(!hasMessages);
   const heading = $('#conversation-title');
   const title = hasMessages ? conversation.title || '新对话' : '';
   heading.hidden = !hasMessages;
@@ -1079,6 +1035,7 @@ function renderConversation({ scroll = false } = {}) {
     }
   }
   replyClock.sync();
+  markMessageArrival(messagesElement, conversation);
   renderContextChip();
   textPreview.refresh(messagesElement);
   renderModelSwitcher();
@@ -1086,7 +1043,8 @@ function renderConversation({ scroll = false } = {}) {
   renderPageSelection();
   renderStorageBadge();
   renderLocalPrompt();
-  restoreViewPosition(conversationView, messagesElement, viewPosition, state.followToPage);
+  if (hasMessages) restoreViewPosition(conversationView, messagesElement, viewPosition, state.followToPage);
+  else if (scroll || enteringWelcome) conversationView.scrollTop = 0;
   turnNavigator.sync(conversation);
   getDirectoryInfo().then((info) => {
     state.storageInfo = info;
@@ -1096,7 +1054,7 @@ function renderConversation({ scroll = false } = {}) {
   renderContextUsage();
   updatePageToolbar();
   updateComposer();
-  if (scroll) scrollToLatest(false);
+  if (scroll && hasMessages) scrollToLatest(false);
   updateLatestVisibility();
 }
 

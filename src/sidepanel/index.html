@@ -51,22 +51,66 @@
         </div>
 
         <section id="welcome" class="welcome" aria-labelledby="welcome-title">
-          <div class="welcome-header">
-            <div class="welcome-mark" aria-hidden="true"><i data-icon="asterisk"></i></div>
-            <span class="eyebrow">阅读 · 提问 · 探索</span>
-            <h1 id="welcome-title">今天想了解什么？</h1>
-            <p>直接提问，或挑一个感兴趣的话题。</p>
+          <header class="atlas-cover welcome-cover">
+            <div class="welcome-cover-copy">
+              <span class="atlas-kicker" aria-hidden="true">UNK AI / READING ATLAS</span>
+              <h1 id="welcome-title">今天想了解什么？</h1>
+              <p data-welcome-subtitle>直接提问，或挑一个感兴趣的话题。</p>
+            </div>
+            <span class="atlas-figure" aria-hidden="true">FIG. 01</span>
+            <svg class="atlas-planet" viewBox="0 0 300 180" fill="none" aria-hidden="true" focusable="false">
+              <defs><clipPath id="welcome-globe-clip"><circle cx="195" cy="89" r="76"/></clipPath></defs>
+              <g class="planet-orbit"><ellipse cx="193" cy="87" rx="112" ry="41" transform="rotate(-32 193 87)"/></g>
+              <circle class="planet-outline" cx="195" cy="89" r="76"/>
+              <g class="planet-sphere" clip-path="url(#welcome-globe-clip)">
+                <g class="planet-meridians">
+                  <ellipse cx="195" cy="89" rx="56" ry="76"/><ellipse cx="195" cy="89" rx="30" ry="76"/>
+                  <ellipse cx="195" cy="89" rx="8" ry="76"/>
+                </g>
+                <g class="planet-latitudes">
+                  <path d="M119 89h152M127 58q68 20 136 0M139 34q56 14 112 0M146 126q49 12 98 0M158 147q37 8 74 0"/>
+                </g>
+                <ellipse class="planet-shine" cx="165" cy="56" rx="18" ry="30" transform="rotate(-34 165 56)"/>
+              </g>
+              <g class="planet-axis"><path d="M195 4v7m0 156v7m-88-85h9m158 0h9"/><circle cx="195" cy="89" r="1.6"/></g>
+              <g class="planet-satellite"><circle cx="284" cy="76" r="2.8"/></g>
+              <path class="planet-star" d="m248 29 1.8 6.1L256 37l-6.2 1.9L248 45l-1.9-6.1L240 37l6.1-1.9Z"/>
+            </svg>
+          </header>
+          <div class="welcome-sky" aria-hidden="true">
+            <i class="welcome-star" data-float="0"></i><i class="welcome-star" data-float="1"></i><i class="welcome-star" data-float="2"></i>
+            <i class="welcome-star" data-float="3"></i><i class="welcome-star" data-float="4"></i><i class="welcome-star" data-float="5"></i>
+            <i class="welcome-star" data-float="6"></i><i class="welcome-star" data-float="7"></i><i class="welcome-star" data-float="8"></i>
+            <i class="welcome-star" data-float="9"></i><i class="welcome-star" data-float="10"></i><i class="welcome-star" data-float="11"></i>
+            <i class="welcome-star" data-float="12"></i><i class="welcome-star" data-float="13"></i><i class="welcome-star" data-float="14"></i>
+            <i class="welcome-star" data-float="15"></i><i class="welcome-star" data-float="16"></i><i class="welcome-star" data-float="17"></i>
+            <i class="welcome-star welcome-star-accent" data-float="18"></i><i class="welcome-star welcome-star-accent" data-float="19"></i>
+            <i class="welcome-star welcome-star-accent" data-float="20"></i>
           </div>
-          <div id="welcome-chips" class="welcome-chips-container" aria-label="快捷启发灵感">
-            <div class="welcome-start">
-              <button id="welcome-primary" class="welcome-chip welcome-primary" type="button" data-action="focus-input">
-                <span class="welcome-action-icon"><i data-icon="message"></i></span>
-                <span class="welcome-action-copy"><strong>直接提问</strong><small>在下方写下你的问题</small></span>
-                <span class="welcome-action-arrow"><i data-icon="arrow-right"></i></span>
-              </button>
+          <div class="welcome-core">
+            <div id="welcome-chips" class="welcome-chips-container" aria-label="快捷启发灵感">
+              <div class="welcome-start">
+                <button class="welcome-chip welcome-secondary" type="button" data-action="fill-prompt" hidden><span></span><i data-icon="arrow-right"></i></button>
+              </div>
+              <div class="welcome-orbit-tools">
+                <span id="welcome-topics-title" class="welcome-orbit-caption">话题巡游</span>
+                <button class="welcome-orbit-pause" type="button" aria-label="暂停话题巡游" aria-pressed="false" title="暂停话题巡游">
+                  <i data-icon="pause"></i>
+                </button>
+              </div>
+            </div>
+            <div id="welcome-carousel" class="welcome-carousel" role="region" aria-labelledby="welcome-topics-title" aria-live="off">
+              <div class="welcome-carousel-track"></div>
             </div>
           </div>
-          <span class="welcome-footnote"><i data-icon="lock"></i>对话本地保存 · 使用你配置的模型</span>
+          <span class="welcome-footnote"><i data-icon="lock"></i>本地保存 · 你的模型 · 你的资料</span>
+          <template id="welcome-card">
+            <button type="button" class="welcome-chip welcome-card">
+              <span class="welcome-card-icon" aria-hidden="true"></span>
+              <span class="welcome-card-copy"><strong></strong><small></small></span>
+              <span class="welcome-card-end" aria-hidden="true"></span>
+            </button>
+          </template>
         </section>
 
         <div id="messages" class="messages" aria-live="polite" aria-label="对话消息" hidden></div>
@@ -131,7 +175,7 @@
               <span id="composer-page-icon" class="page-pill-icon" aria-hidden="true"><i data-icon="globe"></i></span>
               <span id="composer-page-mode" class="page-pill-mode">基于当前页</span>
               <span id="composer-page-name" class="page-pill-name">当前网页</span>
-              <span class="page-pill-toggle"><input id="composer-page-toggle" type="checkbox" role="switch" aria-label="基于当前页回答" aria-describedby="composer-page-status" checked /><span class="pill-slider"></span></span>
+              <span class="ui-switch page-pill-toggle"><input id="composer-page-toggle" type="checkbox" role="switch" aria-label="基于当前页回答" aria-describedby="composer-page-status" checked /><span aria-hidden="true"></span></span>
             </label>
             </div>
             <span id="composer-page-status" class="composer-page-status" role="status" hidden></span>
@@ -153,7 +197,7 @@
           <div class="composer-toolbar">
             <div class="composer-leading">
               <div class="attach-control">
-                <button id="attach-button" class="composer-icon-button" type="button" aria-label="添加文件、技能或工具" title="添加文件、技能或工具" aria-haspopup="menu" aria-controls="attach-menu" aria-expanded="false"><i data-icon="plus"></i></button>
+                <button id="attach-button" class="icon-button composer-icon-button" type="button" aria-label="添加文件、技能或工具" title="添加文件、技能或工具" aria-haspopup="menu" aria-controls="attach-menu" aria-expanded="false"><i data-icon="plus"></i></button>
                 <div id="attach-menu" class="composer-add-menu" role="menu" aria-label="添加到本次提问" hidden>
                   <div class="add-menu-heading" role="presentation">添加</div>
                   <button type="button" role="menuitem" data-attach-kind="image"><i data-icon="image"></i><span class="add-menu-name">上传图片</span><span class="add-menu-description">也可直接粘贴</span></button>
@@ -230,7 +274,7 @@
             <img class="drawer-brand-icon" src="/icons/icon-32.png" alt="" />
             <div>
               <strong>UNK AI</strong>
-              <span>阅读与思考空间</span>
+              <span>阅读档案 / ARCHIVE</span>
             </div>
           </div>
           <button id="close-history" class="icon-button" type="button" aria-label="关闭侧边栏" title="关闭"><i data-icon="close"></i></button>

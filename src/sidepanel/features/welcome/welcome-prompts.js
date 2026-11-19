@@ -129,14 +129,20 @@ export function pageKindFor(tab = {}) {
 }
 
 /** Include the Beijing date and time even if the browser uses another zone. */
-export function currentDatePrompt(date = new Date()) {
-  const parts = Object.fromEntries(new Intl.DateTimeFormat('zh-CN', {
-    timeZone: 'Asia/Shanghai',
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(date).map(({ type, value }) => [type, value]));
+const beijingClock = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+
+function dateParts(date) {
+  return Object.fromEntries(beijingClock.formatToParts(date).map(({ type, value }) => [type, value]));
+}
+
+function promptForDate(parts) {
   return `现在是北京时间 ${parts.year}年${parts.month}月${parts.day}日 ${parts.hour}:${parts.minute}。请基于可核实的信息作答；无法联网请明说，不编造时事，可信信息不足时宁缺毋滥。`;
 }
+
+export function currentDatePrompt(date = new Date()) { return promptForDate(dateParts(date)); }
 
 /**
  * primary: summarize-page or focus-input
@@ -148,9 +154,12 @@ export function welcomePromptsFor(tab = {}, { now = new Date() } = {}) {
   const readable = kind !== 'no-page';
   const secondary = PAGE_SECONDARY_ACTIONS[kind];
   const sourceRequirements = '每项附来源链接、发布时间和事件发生时间（未知请注明），区分事实与可能影响，合并重复报道。';
-  const datePrompt = currentDatePrompt(now);
+  const parts = dateParts(now);
+  const datePrompt = promptForDate(parts);
   return Object.freeze({
     kind,
+    weekday: parts.weekday,
+    dateLabel: `${parts.month} / ${parts.day}`,
     title: readable ? '这页想看懂什么？' : '今天想了解什么？',
     subtitle: readable ? '聊聊当前页面，也可以看看最近的大事。' : '直接提问，或挑一个感兴趣的话题。',
     primary: Object.freeze({

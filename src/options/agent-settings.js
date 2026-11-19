@@ -1,4 +1,5 @@
 import { awaitWithTimeout } from '../utils/abortable.js';
+import { emptyState } from '../ui/empty-state.js';
 
 const descriptions = {
   standard: '常规浏览操作直接执行；提交、删除、上传等操作会先请你确认。',
@@ -60,7 +61,7 @@ export function installAgentSettings({ root, getSettings, saveSettings, listGran
       sites.innerHTML = grants.length ? grants.map(grant => `
         <div class="agent-site-row"><div><strong>${escape(grant.origin)}</strong><small>${grant.scope === 'always' ? '始终允许' : '仅当前任务'}</small></div>
           <button class="inline-action" type="button" data-agent-revoke="${escape(grant.origin)}">撤销</button></div>`).join('')
-        : '<p class="agent-site-empty">还没有授权任何站点。</p>';
+        : emptyState({ symbol: 'shield', title: '还没有授权任何站点', hint: '使用页面操作并授权后，可在这里查看或撤销。' });
       sites.querySelectorAll('[data-agent-revoke]').forEach(button => {
         button.addEventListener('click', async () => {
           if (disposed) return;

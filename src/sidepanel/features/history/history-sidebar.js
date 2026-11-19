@@ -1,4 +1,5 @@
 import { icon } from '../../icons.js';
+import { emptyState } from '../../../ui/empty-state.js';
 import { projectHistory, historySelection, toggleHistorySelection } from './history-model.js';
 import { installPressDrag } from './history-press-drag.js';
 import { createHistoryFeedback } from './history-feedback.js';
@@ -118,7 +119,7 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     return `<section class="ho-group" data-group-id="${escape(group.id)}" data-drop-group="${escape(group.id)}"><header class="ho-group-head" data-context-kind="group" data-context-id="${escape(group.id)}">
       ${state.multi ? `<input type="checkbox" data-select-group="${escape(group.id)}" aria-label="选择${escape(group.name)}中的 ${entries.length} 条对话" ${entries.length && entries.every(entry => state.selected.has(entry.id)) ? 'checked' : ''} ${!entries.length || state.working ? 'disabled' : ''}>` : ''}
       ${renaming ? editMarkup() : `${btn(`data-collapse="${escape(group.id)}" aria-expanded="${open}"`, `<span class="ho-group-name">${escape(group.name)}</span><span class="ho-count">${all.length}</span>`, open ? 'chevron-down' : 'chevron-right', 'ho-group-toggle')}${!state.multi ? `${btn(`data-new-in-group="${escape(group.id)}" aria-label="在${escape(group.name)}新建对话" title="在${escape(group.name)}新建对话"`, '', 'plus', 'ho-icon')}${btn(`data-menu-kind="group" data-menu-id="${escape(group.id)}" aria-label="分组操作：${escape(group.name)}" aria-haspopup="menu"`, '', 'ellipsis', 'ho-icon')}` : ''}`}
-      </header><div class="ho-group-body" ${open ? '' : 'hidden'}>${entries.map(row).join('') || '<div class="ho-empty">暂无对话</div>'}</div></section>`;
+      </header><div class="ho-group-body" ${open ? '' : 'hidden'}>${entries.map(row).join('') || (projected.all.length ? '<div class="ho-empty">暂无对话</div>' : '')}</div></section>`;
   }
   function render() {
     if (disposed) return;
@@ -136,10 +137,14 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     const caret = oldInput ? [oldInput.selectionStart, oldInput.selectionEnd] : null;
     const top = list.scrollTop;
     const loadErrorMarkup = state.loadError ? `<div class="ho-load-error" role="alert"><span>${escape(state.loadError)}</span><button type="button" data-retry-history ${state.working ? 'disabled' : ''}>重试</button></div>` : '';
+    const empty = state.organization && !state.loadError && !state.form && !projected.filtered.length
+      ? emptyState(projected.searching
+        ? { symbol: 'search', title: '没有匹配的对话', hint: '试试更短的关键词，或清空搜索查看全部。' }
+        : { symbol: 'inbox', title: '还没有历史对话', hint: '保存的对话将在这里归档，可按分组查找。' }) : '';
     list.innerHTML = loadErrorMarkup + (state.organization ? state.view === 'all'
-      ? projected.filtered.map(row).join('') || '<div class="ho-empty">没有匹配的对话</div>'
+      ? projected.filtered.map(row).join('')
       : `${state.form?.kind === 'group' && !state.form.id ? `<div class="ho-group-head">${icon('folder-plus')}${editMarkup()}</div>` : ''}${projected.groups.map(group => groupSection(group, projected)).join('')}`
-      : state.loadError ? '' : '<div class="ho-empty">正在读取历史分组…</div>');
+      : state.loadError ? '' : '<div class="ho-empty">正在读取历史分组…</div>') + empty;
     list.scrollTop = top;
     const viewLabel = selectView.querySelector('[data-view-label]');
     if (viewLabel) viewLabel.textContent = state.view === 'all' ? '全部对话' : '按分组';
