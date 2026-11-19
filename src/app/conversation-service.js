@@ -1,14 +1,13 @@
-import { awaitWithAbort, awaitWithTimeout } from '../utils/abortable.js';
+import { awaitWithTimeout } from '../utils/abortable.js';
 import { finalizePendingTurn, pageSourceFor } from '../utils/turn-source.js';
 import { messageWithSelection, pageSelectionMatches } from '../utils/selection.js';
 import { captureSelectionVisuals, retainedSelectionVisuals } from '../sidepanel/features/visual-context/selection-visual-context.js';
-import { readingPolicyForTurn, readingPolicyForRetry } from '../utils/reading-plan.js';
+import { readingPolicyForTurn } from '../utils/reading-plan.js';
 import { parseRepositoryUrl } from '../utils/repository-reader.js';
 import { normalizePageUrl } from '../sidepanel/features/page-reading/page-source.js';
 import { isReadablePageUrl } from '../sidepanel/features/page-reading/page-control-state.js';
 import { preparePageReading } from '../sidepanel/features/page-reading/site-research-slot.js';
 import { capturePageTarget } from '../sidepanel/features/page-reading/page-target-capture.js';
-import { retainedPageForRetry } from '../sidepanel/features/page-reading/retry-page-context.js';
 import { sendFingerprint, isDuplicateSend } from '../sidepanel/features/messages/send-guard.js';
 import { messagesForRetry, stoppedReplyForPrompt } from '../sidepanel/features/messages/retry-flow.js';
 import { settleInterruptedReply } from '../sidepanel/features/messages/reply-state.js';
@@ -16,12 +15,14 @@ import { contextWindowFor } from '../utils/context.js';
 import { normalizeDraftSource } from '../sidepanel/features/welcome/draft-source.js';
 import { normalizeAgentReferenceImages, assertAgentReferenceTarget, assertAgentVision } from '../utils/agent-reference-images.js';
 import { assertPageTarget } from '../utils/page-target.js';
-import { captureReadingHistory, normalizeReadingOptions, readingOptionsAtSubmission } from '../utils/reading-options.js';
+import { captureReadingHistory, readingOptionsAtSubmission } from '../utils/reading-options.js';
 import { assertImageAttachmentsAvailable } from '../utils/attachments.js';
 import { selectedSkill } from '../sidepanel/features/skills/skill-context.js';
 import { selectedVideoTranscript } from '../sidepanel/features/video-notes/video-request.js';
 import { rewoundCommandForDraft } from '../sidepanel/features/messages/rewound-command.js';
 import { assertImageCommand, directImageForMessage, IMAGE_TURN_TIMEOUT_MS } from '../utils/image-generation-command.js';
+import { createRetryPagePreparation } from './retry-page-preparation.js';
+import { createConversationQueue } from './conversation-queue.js';
 
 /** Application command service. The state object is a compatibility projection
  * consumed by the existing presenters; browser/storage are injected ports.
@@ -73,6 +74,27 @@ export function createConversationService(deps) {
       return modelFor(run);
     };
   }
+  const retryPagePreparation = createRetryPagePreparation({
+    state,
+    browser,
+    readCurrentPageForRequest,
+    enhancePageReading: deps.enhancePageReading,
+    modelFor,
+    setAssistantPhase,
+    getConversation: () => state.conversation,
+    retryTarget: deps.retryTarget,
+    refreshRetry: deps.refreshRetry,
+    waitWithTimeout,
+  });
+  const conversationQueue = createConversationQueue({
+    state,
+    isDisposed: () => disposed,
+    isBusy: () => Boolean(state.generatingId || state.isSubmitting || state.compressing || agentSlot?.isBusy()),
+    isPageDisabled: item => item.pageContextEnabled && item.readingPolicy?.scope !== 'none' && state.disablePageContext,
+    getConversationId: () => state.conversation?.id,
+    send: (content, options) => sendMessage(content, options),
+    onChange: renderQueueBar,
+  });
   async function generateReply(assistant, run) {
     run.assertCurrent();
     state.controller = { signal: run.signal, abort: reason => run.cancel(reason) };
@@ -100,25 +122,7 @@ export function createConversationService(deps) {
     }
   }
   async function processQueue() {
-    if (disposed) return;
-    if (!state.messageQueue || state.messageQueue.length === 0) return;
-    if (state.generatingId || state.isSubmitting || state.compressing || agentSlot?.isBusy()) return;
-    const head = state.messageQueue[0];
-    // A queued prompt belongs to the conversation captured at submission, even
-    // if a disabled page switch leaves it waiting while another chat is opened.
-    if (Object.hasOwn(head, 'conversationId') && head.conversationId !== state.conversation?.id) {
-      renderQueueBar();
-      return;
-    }
-    if (state.messageQueue[0].pageContextEnabled && state.messageQueue[0].readingPolicy?.scope !== 'none' && state.disablePageContext) {
-      renderQueueBar();
-      return;
-    }
-    const next = state.messageQueue.shift();
-    renderQueueBar();
-    if (next) {
-      void sendMessage(next.content, { ...next, fromQueue: true });
-    }
+    conversationQueue.process();
   }
   async function sendMessage(text = draft.value, options = {}) {
     if (disposed) return;
@@ -231,7 +235,7 @@ export function createConversationService(deps) {
     // and invalidate the previous sender before starting this replacement.
     if (replaceActiveReply) {
       stopActiveReply();
-      state.messageQueue = [];
+      conversationQueue.clear();
       state.submissionOwner = null;
       state.isSubmitting = false;
       state.sendInFlight = false;
@@ -259,7 +263,7 @@ export function createConversationService(deps) {
         deep: options.deep === true,
         createdAt: now(),
       };
-      state.messageQueue.push(queueItem);
+      conversationQueue.enqueue(queueItem);
       state.lastSentFingerprint = fingerprint;
       state.lastSentAt = Date.now();
       if (directModelRequest) state.directModelRequest = '';
@@ -355,12 +359,7 @@ export function createConversationService(deps) {
       // Queueing is also possible while the first conversation is being created.
       // Bind only prompts captured by this submission; never adopt another queue.
       if (earlyConversation) {
-        for (const item of state.messageQueue) {
-          if (item.conversationId === null && item.submissionOwner === submissionOwner) {
-            item.conversationId = earlyConversation.id;
-            delete item.submissionOwner;
-          }
-        }
+        conversationQueue.bindConversation(submissionOwner, earlyConversation.id);
       }
       if (earlyConversation && content && !agentTask) {
         earlyUserMessage = {
@@ -722,101 +721,6 @@ export function createConversationService(deps) {
     return true;
   }
 
-  const retryPageError = (message, code) => Object.assign(new Error(message), { code });
-  const pageSwitchOffError = () => retryPageError('页面读取已关闭，且本轮没有可核对的已读资料。请回到原页面并开启页面读取后重试，或回退提问改用普通问答。', 'RETRY_PAGE_SWITCH_OFF');
-
-  async function validateRetryPageTarget(question, signal) {
-    if (deps.retryTarget) return deps.retryTarget(question, signal);
-    signal?.throwIfAborted();
-    // Retrying an ordinary question must retain its original scope.
-    if (readingPolicyForRetry(question).scope === 'none' || question.pageContextEnabled === false || (!question.pageSource?.url && question.pageContextEnabled !== true)) {
-      question.pageContextEnabled = false;
-      return null;
-    }
-    if (state.disablePageContext) throw pageSwitchOffError();
-    const originalUrl = normalizePageUrl(question.pageSource?.url);
-    if (!originalUrl) throw new Error('这条提问没有记录页面来源，请针对当前页面重新提问。');
-    const target = await waitWithTimeout(capturePageTarget({
-      queryActiveTab: () => browser.queryActiveTab(),
-      sendMessage: message => browser.sendMessage(message), signal,
-    }), {
-      signal, message: '获取重试页面超时，请重试。',
-    });
-    signal?.throwIfAborted();
-    if (!target?.id || !isReadablePageUrl(target.url) || normalizePageUrl(target.url) !== originalUrl) {
-      throw retryPageError('当前页面与这条提问的来源不同，请回到原页面并开启页面读取后重试，或回退提问改用普通问答。', 'RETRY_PAGE_TARGET_CHANGED');
-    }
-    try {
-      assertPageTarget(question.pageSource, target);
-    } catch (error) {
-      if (error.code !== 'PAGE_CHANGED') throw error;
-      throw retryPageError('当前页面与这条提问的来源不同，页面可能已切换或刷新。请回到原页面并开启页面读取后重试，或回退提问重新发送。', 'RETRY_PAGE_TARGET_CHANGED');
-    }
-    if (state.disablePageContext) throw pageSwitchOffError();
-    return target;
-  }
-
-  async function prepareRetryContext(question, retainedPage, signal) {
-    signal.throwIfAborted();
-    if (retainedPage && state.disablePageContext) return { target: null, page: retainedPage };
-    try {
-      const target = await validateRetryPageTarget(question, signal);
-      signal.throwIfAborted();
-      return { target, page: null };
-    } catch (error) {
-      signal.throwIfAborted();
-      if (retainedPage && ['RETRY_PAGE_SWITCH_OFF', 'RETRY_PAGE_TARGET_CHANGED'].includes(error.code)) {
-        return { target: null, page: retainedPage };
-      }
-      throw error;
-    }
-  }
-
-  async function refreshPageForRetry(conversation, question, assistant, signal, preparedTarget, owner, history) {
-    if (deps.refreshRetry) return deps.refreshRetry(conversation, question, assistant, signal, preparedTarget);
-    const target = preparedTarget === undefined ? await validateRetryPageTarget(question, signal) : preparedTarget;
-    signal?.throwIfAborted();
-    if (!target) return;
-    if (state.disablePageContext) throw pageSwitchOffError();
-    const originalUrl = normalizePageUrl(question.pageSource?.url);
-    setAssistantPhase(assistant, 'reading');
-    const content = question.displayContent || question.content || '';
-    const repository = Boolean(parseRepositoryUrl(target.url) && /源码|代码仓库|仓库结构|source code|repository/i.test(content));
-    const readingPolicy = readingPolicyForRetry(question);
-    let page = await preparePageReading(content, {
-      target, readingPolicy: repository ? { ...readingPolicy, scope: 'page' } : readingPolicy, signal,
-      readPage: ({ target: readTarget, signal: readSignal, timeoutMs }) => readCurrentPageForRequest(content, {
-        target: readTarget, repository, signal: readSignal, timeoutMs,
-      }),
-      sendMessage: message => browser.sendMessage(message),
-      onPhase: phase => { if (!signal?.aborted) setAssistantPhase(assistant, phase); },
-    });
-    signal?.throwIfAborted();
-    if (!page || normalizePageUrl(page.url) !== originalUrl) throw new Error('未能重新读取原页面正文，本轮未使用旧内容，请稍后重试。');
-    if (deps.enhancePageReading && !repository && owner) {
-      const supplementalTarget = { ...target, documentId: page.documentId || target.documentId };
-      page = await waitWithTimeout(deps.enhancePageReading(content, {
-        page, target: supplementalTarget,
-        cacheScope: { conversationId: conversation.id },
-        ...normalizeReadingOptions(question.readingOptions), history: history || [], modelRun: modelFor(owner), signal,
-        onPhase: phase => {
-          owner.assertCurrent();
-          if (state.conversation !== conversation) throw new DOMException('本次重试已取消', 'AbortError');
-          setAssistantPhase(assistant, phase);
-        },
-      }), { signal, timeoutMs: 25000, message: '补充原页面资料超时，请重试。' });
-      signal?.throwIfAborted();
-      owner.assertCurrent();
-      if (state.conversation !== conversation) throw new DOMException('本次重试已取消', 'AbortError');
-      assertPageTarget(supplementalTarget, page);
-    }
-    conversation.pageContext = page;
-    question.pageSource = pageSourceFor(page);
-    question.pageContextEnabled = true;
-    question.readingPolicy = page.readingPolicy || readingPolicy;
-    state.pendingPage = null;
-  }
-
   async function regenerate(assistantId, { preparationAction } = {}) {
     if (disposed) return;
     if (agentSlot?.isBusy()) return;
@@ -848,7 +752,7 @@ export function createConversationService(deps) {
       } catch (error) { toast(error.message, 'error'); return; }
     }
     stopActiveReply();
-    state.messageQueue = [];
+    conversationQueue.clear();
     const submissionOwner = runner.begin({ commandId: makeId(), mode: 'chat',
       ...(command ? { timeoutMs: command.executionTimeoutMs } : imageCommand ? { timeoutMs: IMAGE_TURN_TIMEOUT_MS } : {}) });
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
@@ -861,14 +765,13 @@ export function createConversationService(deps) {
     const commandNeedsRead = command?.needsRead({ attachments: commandAttachments, preparationAction });
     let commandResult = null;
     // Freeze verified evidence before any configuration, browser or storage wait.
-    const retainedPage = commandRequest || imageCommand ? null : retainedPageForRetry(conversation, originalQuestion);
+    const retainedPage = commandRequest || imageCommand ? null : retryPagePreparation.retainedPageForRetry(conversation, originalQuestion);
     if (commandNeedsRead) pagePreparations.add(submissionOwner);
-    if (!commandRequest && !imageCommand && originalQuestion && readingPolicyForRetry(originalQuestion).scope !== 'none'
-      && (originalQuestion.pageContextEnabled === true || originalQuestion.pageSource?.url)
-      && !(retainedPage && state.disablePageContext)) pagePreparations.add(submissionOwner);
+    if (!commandRequest && !imageCommand && originalQuestion
+      && retryPagePreparation.needsPagePreparation(originalQuestion, retainedPage)) pagePreparations.add(submissionOwner);
     const readingHistory = captureReadingHistory(conversation.messages.slice(0, Math.max(0, conversation.messages.indexOf(originalQuestion))));
     const retryTargetPromise = commandRequest || imageCommand ? Promise.resolve({ target: null, page: null }) : originalQuestion
-      ? prepareRetryContext({ ...originalQuestion }, retainedPage, submissionController.signal).then(context => {
+      ? retryPagePreparation.prepareRetryContext({ ...originalQuestion }, retainedPage, submissionController.signal).then(context => {
         if (context.page) pagePreparations.delete(submissionOwner);
         return context;
       })
@@ -949,7 +852,8 @@ export function createConversationService(deps) {
         state.pendingPage = null;
         toast('本次重试使用本轮已读的原页面资料，未重新读取当前页面。');
       } else if (!imageCommand) {
-        await waitForCurrent(refreshPageForRetry(conversation, retained.user, next, submissionController.signal, target, submissionOwner, readingHistory));
+        await waitForCurrent(retryPagePreparation.refreshPageForRetry(conversation, retained.user, next,
+          submissionController.signal, target, submissionOwner, readingHistory));
       }
       assertCurrent();
       if (!imageCommand && retained.user.selection?.visuals?.length) {
@@ -1000,7 +904,9 @@ export function createConversationService(deps) {
   }
 
 
-  return Object.freeze({ sendMessage, regenerate, stopActiveReply, cancelPagePreparation, processQueue, validateRetryPageTarget, refreshPageForRetry,
+  return Object.freeze({ sendMessage, regenerate, stopActiveReply, cancelPagePreparation, processQueue,
+    validateRetryPageTarget: retryPagePreparation.validateRetryPageTarget,
+    refreshPageForRetry: retryPagePreparation.refreshPageForRetry,
     subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
     dispose() { disposed = true; runner.cancel(); for (const connection of connections.values()) connection.dispose(); connections.clear(); profiles.clear(); listeners.clear(); } });
 }

@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="light"><title>UNK AI 操作手册 · 0.18.6</title>
+<meta name="color-scheme" content="light"><title>UNK AI 操作手册 · 0.18.7</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2320685d'/%3E%3Ctext x='16' y='24' text-anchor='middle' font-size='26' fill='white'%3E✳%3C/text%3E%3C/svg%3E">
 <style>:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;color:#283b35;background:#f4f6f3;font-synthesis:none;--green:#20685d;--line:#e0e7e0}
 *{box-sizing:border-box}body{margin:0}a{color:var(--green);text-underline-offset:4px}a:hover{color:#134f46}a:focus-visible{outline:2px solid #20685d;outline-offset:3px}html{scroll-padding-top:30px}
@@ -66,7 +66,7 @@ pre code { padding: 0; }
 }
 </style></head><body>
 <a class="skip-link" href="#guide-content">跳到正文</a>
-<header class="masthead"><div class="brand"><span class="brand-mark">✳</span> UNK AI</div><span class="edition">操作手册 · v0.18.6</span></header>
+<header class="masthead"><div class="brand"><span class="brand-mark">✳</span> UNK AI</div><span class="edition">操作手册 · v0.18.7</span></header>
 <div class="layout"><aside class="toc" aria-label="操作手册目录"><p class="toc-title">阅读目录</p><nav><a href="#section-1">1. 安装与更新</a>
 <a href="#section-2">2. 首次配置：连接模型并保存设置</a>
 <a href="#section-3">3. 认识当前界面</a>
@@ -96,11 +96,11 @@ pre code { padding: 0; }
 <a href="#figure-14">图 14 · 多段引用与注释确认流程</a>
 <a href="#figure-15">图 15 · 独立追问窗口的复用、收起与分离状态</a>
 <a href="#figure-16">图 16 · 搜索摘要与已读正文的来源核对流程</a></details>
-<small>依据当前插件实现核对<br>更新于 2026 年 11 月 18 日<br>全部图片已嵌入，可离线打开<br>宽图与表格可横向滚动查看</small></aside>
+<small>依据当前插件实现核对<br>更新于 2026 年 11 月 19 日<br>全部图片已嵌入，可离线打开<br>宽图与表格可横向滚动查看</small></aside>
 <article id="guide-content"><h1>UNK AI 操作手册</h1>
-<p><strong>适用版本：0.18.6｜更新日期：2026 年 11 月 18 日</strong></p>
+<p><strong>适用版本：0.18.7｜更新日期：2026 年 11 月 19 日</strong></p>
 <p>UNK AI 是一个 Chrome 侧栏插件。你可以直接聊天、结合当前网页提问、上传图片和文档、整理 B 站视频字幕，也可以选用 Skill 指南或在授权后让它操作网页。回答使用你在设置中配置的模型服务。</p>
-<p>本手册以 0.18.6 为基线，补充尚未发布的开发版操作变化，涵盖安装配置、聊天与生图、引用、独立追问、网页阅读、视频笔记与配图、Skill、容量提示、联网核实、网页操作、保存和导出。截图和流程图使用演示数据，按文字说明核对当前入口。</p>
+<p>本手册涵盖安装配置、聊天与生图、引用、独立追问、网页阅读、视频笔记与配图、Skill、容量提示、联网核实、网页操作、保存和导出。截图和流程图使用演示数据，按文字说明核对当前入口。</p>
 <h3>五分钟开始第一次对话</h3>
 <ol>
 <li>按第 1 节安装扩展，点击工具栏图标或按 <strong>Alt + U</strong> 打开侧栏。</li>
@@ -165,7 +165,7 @@ pre code { padding: 0; }
 </table></div>
 <h3>本版可以直接感受到的变化</h3>
 <ul>
-<li>“＋”菜单集中提供图片、文档、页面操作、视频笔记和技能；页面能力随“基于当前页”开关显示。</li>
+<li>“＋”菜单集中提供图片、文档、生成图片、页面操作、视频笔记和技能；页面能力随“基于当前页”开关显示。</li>
 <li>B 站视频笔记按当前分 P 的完整字幕整理，显示分集讲名和关键时间码，可返回原视频回看。</li>
 <li>容量面板可切换“下一次提问”和“最近请求”，查看系统提示、工具、消息与资料、其他的占比，以及输出预留。</li>
 <li>页面阅读默认自动，接口资料按本轮需要判断；新提问无需再选择“自动 / 基础 / 深入”。</li>
@@ -175,7 +175,7 @@ pre code { padding: 0; }
 <h2 id="section-1">1. 安装与更新</h2>
 <h3>首次安装</h3>
 <ol>
-<li>将 <code>unk-ai-v0.18.6.zip</code> 解压到一个固定文件夹。</li>
+<li>将 <code>unk-ai-v0.18.7.zip</code> 解压到一个固定文件夹。</li>
 <li>在 Chrome 地址栏输入 <code>chrome://extensions</code>。</li>
 <li>打开右上角的“开发者模式”。</li>
 <li>点击“加载已解压的扩展程序”，选择<strong>直接包含 <code>manifest.json</code> 的文件夹</strong>。</li>
@@ -189,7 +189,7 @@ pre code { padding: 0; }
 <li>先停止正在生成的回答或网页操作，确认需要保留的会话已经保存。</li>
 <li>将新包解压到原来的扩展目录，替换旧程序文件。</li>
 <li>回到 <code>chrome://extensions</code>，点击 UNK AI 卡片上的重新加载按钮。</li>
-<li>在扩展卡片或详情中核对版本为 <strong>0.18.6</strong>，再重新打开侧栏；已经打开的目标网页必要时也刷新一次。</li>
+<li>在扩展卡片或详情中核对版本为 <strong>0.18.7</strong>，再重新打开侧栏；已经打开的目标网页必要时也刷新一次。</li>
 </ol>
 <p>使用项目源码时，先完成构建，再重新加载 Chrome 正在使用的 <code>dist</code> 目录。界面仍没变化时，到扩展详情核对实际加载路径；只更新另一个同名文件夹不会更新正在运行的插件。</p>
 <p>保留原扩展安装和对话数据文件夹。为了更新而卸载插件可能清除浏览器内的配置、临时记录、分组和待同步内容。</p>
