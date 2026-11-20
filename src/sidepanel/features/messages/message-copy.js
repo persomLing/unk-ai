@@ -78,7 +78,7 @@ export function createMessageCopy({ document = globalThis.document, writeText,
 
     const menu = document.createElement('div');
     menu.id = `message-copy-menu-${++nextMenuId}`;
-    menu.className = 'message-copy-menu';
+    menu.className = 'message-copy-menu ui-popover';
     menu.setAttribute('role', 'menu');
     menu.setAttribute('aria-label', content.reasoningOnly ? '复制思考过程' : '复制回答');
     const entry = { menu, button, content, conversationId, messageId: message?.id,

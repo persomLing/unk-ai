@@ -16,13 +16,15 @@
         <div class="header-toolbar">
         <div class="header-leading">
           <button id="open-history" class="icon-button" type="button" aria-label="打开历史侧边栏" title="历史对话" aria-haspopup="dialog" aria-controls="history-drawer" aria-expanded="false"><i data-icon="sidebar"></i></button>
+          <span class="workspace-wordmark">UNK AI</span>
           <div id="model-switcher" class="model-switcher">
             <button id="model-trigger" class="model-trigger" type="button" aria-label="选择模型" aria-haspopup="listbox" aria-expanded="false">
+              <i class="model-mark" data-icon="sparkles"></i>
               <span id="model-display-name" class="model-display-name">选择模型</span>
               <span id="effort-display-badge" class="effort-display-badge" hidden>默认</span>
               <i class="model-chevron" data-icon="chevron-down"></i>
             </button>
-            <div id="model-dropdown" class="model-dropdown" role="listbox" hidden></div>
+            <div id="model-dropdown" class="model-dropdown ui-popover" role="listbox" hidden></div>
             <select id="chat-model" class="sr-only" tabindex="-1" aria-hidden="true"></select>
             <select id="chat-effort" class="sr-only" tabindex="-1" aria-hidden="true"></select>
           </div>
@@ -31,7 +33,7 @@
           <button id="theme-toggle" class="icon-button" type="button" aria-label="切换明暗主题" title="切换明暗主题"><i data-icon="moon"></i></button>
           <div class="conversation-export-control">
             <button id="export-selected" class="icon-button" type="button" aria-label="导出当前对话" title="导出 Markdown、图片 / PDF 或诊断日志" aria-haspopup="menu" aria-controls="conversation-export-menu" aria-expanded="false" disabled><i data-icon="download"></i></button>
-            <div id="conversation-export-menu" class="conversation-export-menu" role="menu" aria-label="导出当前对话" hidden>
+            <div id="conversation-export-menu" class="conversation-export-menu ui-popover" role="menu" aria-label="导出当前对话" hidden>
               <button type="button" role="menuitem" data-conversation-export="document" tabindex="-1"><i data-icon="image"></i><span><strong>图片 / PDF</strong><small>选择问答回合后导出</small></span></button>
               <button type="button" role="menuitem" data-conversation-export="markdown" tabindex="-1"><i data-icon="download"></i><span><strong>Markdown</strong><small>导出整段对话为 .md 文件</small></span></button>
               <button type="button" role="menuitem" data-conversation-export="diagnostics" tabindex="-1"><i data-icon="file"></i><span><strong>诊断日志</strong><small>本对话 · 今天（北京时间）</small></span></button>
@@ -44,66 +46,56 @@
 
       <div id="conversation-stage" class="conversation-stage">
       <main id="conversation-view" class="conversation-view">
-        <div id="setup-required" class="setup-required" hidden></div>
-        <div class="conversation-status">
-          <span id="storage-badge" class="storage-badge"><i data-icon="history"></i><span>临时对话 · 浏览器</span></span>
-          <button id="save-conversation" class="save-conversation" type="button" hidden><i data-icon="folder"></i><span>保存到本地</span></button>
+        <div id="welcome-sky" class="welcome-sky" aria-hidden="true"></div>
+        <div id="setup-required" class="setup-required" hidden>
+          <i data-setup-symbol aria-hidden="true"></i><span data-setup-label></span><button type="button">去设置</button>
         </div>
-
         <section id="welcome" class="welcome" aria-labelledby="welcome-title">
           <header class="atlas-cover welcome-cover">
             <div class="welcome-cover-copy">
-              <span class="atlas-kicker" aria-hidden="true">UNK AI / READING ATLAS</span>
               <h1 id="welcome-title">今天想了解什么？</h1>
               <p data-welcome-subtitle>直接提问，或挑一个感兴趣的话题。</p>
             </div>
-            <span class="atlas-figure" aria-hidden="true">FIG. 01</span>
-            <svg class="atlas-planet" viewBox="0 0 300 180" fill="none" aria-hidden="true" focusable="false">
-              <defs><clipPath id="welcome-globe-clip"><circle cx="195" cy="89" r="76"/></clipPath></defs>
-              <g class="planet-orbit"><ellipse cx="193" cy="87" rx="112" ry="41" transform="rotate(-32 193 87)"/></g>
-              <circle class="planet-outline" cx="195" cy="89" r="76"/>
-              <g class="planet-sphere" clip-path="url(#welcome-globe-clip)">
-                <g class="planet-meridians">
-                  <ellipse cx="195" cy="89" rx="56" ry="76"/><ellipse cx="195" cy="89" rx="30" ry="76"/>
-                  <ellipse cx="195" cy="89" rx="8" ry="76"/>
+            <svg class="atlas-planet" viewBox="0 0 200 160" fill="none" aria-hidden="true" focusable="false">
+              <defs>
+                <radialGradient id="welcome-globe-surface" cx="33%" cy="27%" r="77%"><stop class="planet-reflection"/><stop offset="1" class="planet-shade"/></radialGradient>
+              </defs>
+              <g transform="translate(112 80)">
+                <circle class="planet-outline" r="56" fill="url(#welcome-globe-surface)"/>
+                <g transform="rotate(-23)">
+                  <path class="planet-latitudes" d="M-56 0Q0 16 56 0M-49-27Q0-11 49-27M-49 27Q0 44 49 27M-33-45Q0-35 33-45M-33 45Q0 56 33 45"/>
+                  <g class="planet-meridians">
+                    <path class="planet-meridian" d="M0-56A56 56 0 0 1 0 56"/>
+                    <path class="planet-meridian" d="M0-56A56 56 0 0 1 0 56"/>
+                    <path class="planet-meridian" d="M0-56A56 56 0 0 1 0 56"/>
+                    <path class="planet-meridian" d="M0-56A56 56 0 0 1 0 56"/>
+                    <path class="planet-meridian" d="M0-56A56 56 0 0 1 0 56"/>
+                    <path class="planet-meridian" d="M0-56A56 56 0 0 1 0 56"/>
+                    <path class="planet-meridian" d="M0-56A56 56 0 0 1 0 56"/>
+                    <path class="planet-meridian" d="M0-56A56 56 0 0 1 0 56"/>
+                  </g>
+                  <path class="planet-axis" d="M0-64v5M0 59v5"/>
                 </g>
-                <g class="planet-latitudes">
-                  <path d="M119 89h152M127 58q68 20 136 0M139 34q56 14 112 0M146 126q49 12 98 0M158 147q37 8 74 0"/>
+                <g transform="rotate(-31)">
+                  <ellipse class="planet-orbit" rx="84" ry="29"/>
+                  <g transform="scale(1 .345)"><g class="planet-satellite"><circle cx="84" r="2.6"/><circle cx="84" r="6" fill="none" stroke="currentColor" stroke-opacity=".42" vector-effect="non-scaling-stroke"/></g></g>
                 </g>
-                <ellipse class="planet-shine" cx="165" cy="56" rx="18" ry="30" transform="rotate(-34 165 56)"/>
+                <path class="planet-star" d="M44-48q1.5 6 7 7-5.5 1.5-7 7-1.5-5.5-7-7 5.5-1 7-7Z"/>
+                <path class="planet-axis" d="M-75-30h8m-4-4v8M65 22h7m-3.5-3.5v7M-58 49h4m-2-2v4"/>
               </g>
-              <g class="planet-axis"><path d="M195 4v7m0 156v7m-88-85h9m158 0h9"/><circle cx="195" cy="89" r="1.6"/></g>
-              <g class="planet-satellite"><circle cx="284" cy="76" r="2.8"/></g>
-              <path class="planet-star" d="m248 29 1.8 6.1L256 37l-6.2 1.9L248 45l-1.9-6.1L240 37l6.1-1.9Z"/>
             </svg>
           </header>
-          <div class="welcome-sky" aria-hidden="true">
-            <i class="welcome-star" data-float="0"></i><i class="welcome-star" data-float="1"></i><i class="welcome-star" data-float="2"></i>
-            <i class="welcome-star" data-float="3"></i><i class="welcome-star" data-float="4"></i><i class="welcome-star" data-float="5"></i>
-            <i class="welcome-star" data-float="6"></i><i class="welcome-star" data-float="7"></i><i class="welcome-star" data-float="8"></i>
-            <i class="welcome-star" data-float="9"></i><i class="welcome-star" data-float="10"></i><i class="welcome-star" data-float="11"></i>
-            <i class="welcome-star" data-float="12"></i><i class="welcome-star" data-float="13"></i><i class="welcome-star" data-float="14"></i>
-            <i class="welcome-star" data-float="15"></i><i class="welcome-star" data-float="16"></i><i class="welcome-star" data-float="17"></i>
-            <i class="welcome-star welcome-star-accent" data-float="18"></i><i class="welcome-star welcome-star-accent" data-float="19"></i>
-            <i class="welcome-star welcome-star-accent" data-float="20"></i>
+          <div class="welcome-start">
+            <button class="welcome-chip welcome-secondary" type="button" data-action="fill-prompt" hidden><i data-icon="article"></i><span></span><i data-icon="arrow-right"></i></button>
           </div>
-          <div class="welcome-core">
-            <div id="welcome-chips" class="welcome-chips-container" aria-label="快捷启发灵感">
-              <div class="welcome-start">
-                <button class="welcome-chip welcome-secondary" type="button" data-action="fill-prompt" hidden><span></span><i data-icon="arrow-right"></i></button>
-              </div>
-              <div class="welcome-orbit-tools">
-                <span id="welcome-topics-title" class="welcome-orbit-caption">话题巡游</span>
-                <button class="welcome-orbit-pause" type="button" aria-label="暂停话题巡游" aria-pressed="false" title="暂停话题巡游">
-                  <i data-icon="pause"></i>
-                </button>
-              </div>
-            </div>
+          <section class="welcome-topics" aria-labelledby="welcome-topics-title">
+            <header class="welcome-topics-header">
+              <div><h2 id="welcome-topics-title">话题灵感</h2><p>缓慢巡游 · 悬停暂停 · 拖动浏览</p></div>
+            </header>
             <div id="welcome-carousel" class="welcome-carousel" role="region" aria-labelledby="welcome-topics-title" aria-live="off">
               <div class="welcome-carousel-track"></div>
             </div>
-          </div>
-          <span class="welcome-footnote"><i data-icon="lock"></i>本地保存 · 你的模型 · 你的资料</span>
+          </section>
           <template id="welcome-card">
             <button type="button" class="welcome-chip welcome-card">
               <span class="welcome-card-icon" aria-hidden="true"></span>
@@ -158,6 +150,7 @@
           </button>
         </div>
         <div id="composer" class="composer">
+          <div class="composer-draft">
           <div id="selection-chip" class="selection-chip" hidden>
             <span class="selection-chip-icon"><i data-icon="quote"></i></span>
             <span class="selection-chip-copy">
@@ -194,11 +187,12 @@
             </div>
           </div>
           <div id="composer-mode-hint" class="composer-mode-hint" role="status" hidden></div>
+          </div>
           <div class="composer-toolbar">
             <div class="composer-leading">
               <div class="attach-control">
                 <button id="attach-button" class="icon-button composer-icon-button" type="button" aria-label="添加文件、技能或工具" title="添加文件、技能或工具" aria-haspopup="menu" aria-controls="attach-menu" aria-expanded="false"><i data-icon="plus"></i></button>
-                <div id="attach-menu" class="composer-add-menu" role="menu" aria-label="添加到本次提问" hidden>
+                <div id="attach-menu" class="composer-add-menu ui-popover" role="menu" aria-label="添加到本次提问" hidden>
                   <div class="add-menu-heading" role="presentation">添加</div>
                   <button type="button" role="menuitem" data-attach-kind="image"><i data-icon="image"></i><span class="add-menu-name">上传图片</span><span class="add-menu-description">也可直接粘贴</span></button>
                   <button type="button" role="menuitem" data-attach-kind="document"><i data-icon="file"></i><span class="add-menu-name">上传文档</span><span class="add-menu-description">PDF、Word、文本等</span></button>
@@ -224,7 +218,7 @@
                   <span id="context-meter-label" class="sr-only">0%</span>
                   <span class="context-attention-dot" aria-hidden="true"></span>
                 </button>
-                <div id="context-popover" class="context-popover" hidden>
+                <div id="context-popover" class="context-popover ui-popover" hidden>
                   <div class="context-popover-header">
                     <span class="context-popover-title">会话整理</span>
                     <span id="context-model-name" class="context-model-name"></span>
@@ -265,6 +259,12 @@
             </div>
           </div>
         </div>
+        <div class="conversation-status">
+          <span id="storage-badge" class="storage-badge" role="status"><i data-storage-symbol aria-hidden="true"></i><span data-storage-label>临时对话 · 浏览器</span></span>
+          <button id="save-conversation" class="save-conversation" type="button" hidden><i data-icon="folder"></i><span>保存到本地</span></button>
+          <span class="composer-shortcut" aria-hidden="true"><kbd>Enter</kbd> 发送</span>
+        </div>
+        <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
       </footer>
 
       <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
@@ -274,7 +274,7 @@
             <img class="drawer-brand-icon" src="/icons/icon-32.png" alt="" />
             <div>
               <strong>UNK AI</strong>
-              <span>阅读档案 / ARCHIVE</span>
+              <span>对话档案</span>
             </div>
           </div>
           <button id="close-history" class="icon-button" type="button" aria-label="关闭侧边栏" title="关闭"><i data-icon="close"></i></button>
@@ -300,7 +300,6 @@
           <span class="drawer-storage-note"><i data-icon="lock"></i>本地保存</span>
         </footer>
       </aside>
-      <div id="toast-region" class="toast-region" role="status" aria-live="polite"></div>
     </div>
 
     <dialog id="skills-dialog" aria-label="Skill 技能库"></dialog>

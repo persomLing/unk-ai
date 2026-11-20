@@ -130,7 +130,7 @@ export function pageKindFor(tab = {}) {
 
 /** Include the Beijing date and time even if the browser uses another zone. */
 const beijingClock = new Intl.DateTimeFormat('zh-CN', {
-  timeZone: 'Asia/Shanghai', weekday: 'long', year: 'numeric', month: '2-digit', day: '2-digit',
+  timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
 });
 
@@ -154,12 +154,9 @@ export function welcomePromptsFor(tab = {}, { now = new Date() } = {}) {
   const readable = kind !== 'no-page';
   const secondary = PAGE_SECONDARY_ACTIONS[kind];
   const sourceRequirements = '每项附来源链接、发布时间和事件发生时间（未知请注明），区分事实与可能影响，合并重复报道。';
-  const parts = dateParts(now);
-  const datePrompt = promptForDate(parts);
+  const datePrompt = currentDatePrompt(now);
   return Object.freeze({
     kind,
-    weekday: parts.weekday,
-    dateLabel: `${parts.month} / ${parts.day}`,
     title: readable ? '这页想看懂什么？' : '今天想了解什么？',
     subtitle: readable ? '聊聊当前页面，也可以看看最近的大事。' : '直接提问，或挑一个感兴趣的话题。',
     primary: Object.freeze({

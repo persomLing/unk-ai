@@ -4,6 +4,7 @@ const DRAG_DISTANCE = 24;
 const INSET = 10;
 const LAUNCHER_GAP = 8;
 const ANIMATION_MS = 260;
+const LAUNCHER_DRAG_THRESHOLD = 4;
 
 /** Collapse one floating view without changing its conversation or execution. */
 export function createFloatingChatDock({ element, document = element?.ownerDocument, geometry,
@@ -33,6 +34,11 @@ export function createFloatingChatDock({ element, document = element?.ownerDocum
   let generation = 0;
   let timer = null;
   let finishCurrent = null;
+  let launcherTop = null;
+  let launcherPointer = null;
+  let draggedPointerId = null;
+  const listeners = new AbortController();
+  const { signal } = listeners;
   const animations = new Set();
   const initialInert = element.inert;
   const setTimer = view?.setTimeout?.bind(view) || globalThis.setTimeout;
@@ -68,13 +74,14 @@ export function createFloatingChatDock({ element, document = element?.ownerDocum
     return ordered.find(top => occupied.every(slot =>
       top + size + LAUNCHER_GAP <= slot.top || top >= slot.bottom + LAUNCHER_GAP)) ?? target;
   }
-  function positionLauncher(rect = savedRect || geometry.rect()) {
+  function positionLauncher(rect = savedRect || geometry.rect(), preferredTop = launcherTop) {
     const height = Math.max(1, finite(view?.innerHeight, document.documentElement?.clientHeight || 1));
     const width = Math.max(1, finite(view?.innerWidth, document.documentElement?.clientWidth || 1));
     const size = Math.min(LAUNCHER_SIZE, width, height);
     const insetY = Math.min(INSET, Math.max(0, (height - size) / 2));
     const insetX = Math.min(INSET, Math.max(0, (width - size) / 2));
-    const top = availableTop(rect.top + rect.height / 2 - size / 2, size, insetY, height - size - insetY);
+    const desiredTop = Number.isFinite(preferredTop) ? preferredTop : rect.top + rect.height / 2 - size / 2;
+    const top = availableTop(desiredTop, size, insetY, height - size - insetY);
     launcher.style.right = `${insetX}px`;
     launcher.style.top = `${top}px`;
     launcher.style.width = `${size}px`;
@@ -83,7 +90,7 @@ export function createFloatingChatDock({ element, document = element?.ownerDocum
   }
   function sync() {
     if (disposed) return;
-    if (state === 'docked') positionLauncher();
+    if (state === 'docked' && !launcherPointer) positionLauncher();
     const busy = Boolean(getBusy());
     const phase = getActivity();
     const activity = busy ? ['thinking', 'answering', 'preparing'].includes(phase) ? phase : 'preparing' : 'idle';
@@ -96,8 +103,8 @@ export function createFloatingChatDock({ element, document = element?.ownerDocum
     const progressLabel = { preparing: '正在准备回答', thinking: '正在思考', answering: '正在回答' };
     const description = [busy ? `${progressLabel[activity]}，收起后会继续` : unread ? '回答已完成，待查看' : '',
       typeof detached === 'string' ? detached : detached ? '已解除跟随当前对话' : ''].filter(Boolean).join('；');
-    launcher.title = ['展开单独追问', description].filter(Boolean).join(' · ');
-    launcher.setAttribute('aria-description', description);
+    launcher.title = ['展开单独追问', '上下拖动调整位置', description].filter(Boolean).join(' · ');
+    launcher.setAttribute('aria-description', ['可用上、下方向键移动图标', description].filter(Boolean).join('。'));
   }
   function cancelTransition() {
     generation += 1;
@@ -174,6 +181,7 @@ export function createFloatingChatDock({ element, document = element?.ownerDocum
   }
   function expand() {
     if (disposed || state === 'expanded' || state === 'expanding') return false;
+    endLauncherDrag();
     cancelTransition();
     element.hidden = false;
     geometry.restoreRect(savedRect);
@@ -204,10 +212,73 @@ export function createFloatingChatDock({ element, document = element?.ownerDocum
     if (!Number.isFinite(right) || width - right > EDGE_DISTANCE) return false;
     return collapse();
   }
-  const click = event => { event.stopPropagation(); expand(); };
-  const resize = () => { if (!disposed) { positionLauncher(); finishCurrent?.(); } };
-  launcher.addEventListener('click', click);
-  view?.addEventListener('resize', resize);
+
+  function endLauncherDrag(event) {
+    if (!launcherPointer || event?.pointerId !== undefined && event.pointerId !== launcherPointer.pointerId) return;
+    const { pointerId, dragging } = launcherPointer;
+    launcherPointer = null;
+    if (!dragging) return;
+    delete launcher.dataset.dragging;
+    draggedPointerId = pointerId;
+    try { launcher.releasePointerCapture(pointerId); } catch {}
+  }
+
+  function startLauncherDrag(event) {
+    if (state !== 'docked' || launcherPointer || event.isPrimary === false || event.button !== 0) return;
+    if (!Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) return;
+    draggedPointerId = null;
+    launcherPointer = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
+      startTop: finite(parseFloat(launcher.style.top), 0), dragging: false };
+  }
+
+  function moveLauncherPointer(event) {
+    const current = launcherPointer;
+    if (!current || event.pointerId !== current.pointerId) return;
+    if (event.pointerType === 'mouse' && (event.buttons & 1) === 0) { endLauncherDrag(event); return; }
+    const deltaX = event.clientX - current.startX;
+    const deltaY = event.clientY - current.startY;
+    if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) return;
+    if (!current.dragging) {
+      if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < LAUNCHER_DRAG_THRESHOLD) return;
+      current.dragging = true;
+      launcher.dataset.dragging = 'true';
+      try { launcher.setPointerCapture(event.pointerId); } catch {}
+    }
+    launcherTop = positionLauncher(savedRect, current.startTop + deltaY).top;
+    if (event.cancelable) event.preventDefault();
+  }
+
+  function moveLauncherByKey(event) {
+    if (state !== 'docked' || launcherPointer || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    const delta = event.key === 'ArrowUp' ? -20 : 20;
+    launcherTop = positionLauncher(savedRect, parseFloat(launcher.style.top) + delta).top;
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  const click = event => {
+    event.stopPropagation();
+    if (draggedPointerId !== null && event.detail !== 0 && (!(event.pointerId > 0) || event.pointerId === draggedPointerId)) {
+      draggedPointerId = null;
+      event.preventDefault();
+      return;
+    }
+    expand();
+  };
+  launcher.addEventListener('click', click, { signal });
+  launcher.addEventListener('keydown', moveLauncherByKey, { signal });
+  launcher.addEventListener('pointerdown', startLauncherDrag, { signal });
+  launcher.addEventListener('lostpointercapture', endLauncherDrag, { signal });
+  view?.addEventListener('pointermove', moveLauncherPointer, { capture: true, passive: false, signal });
+  view?.addEventListener('pointerup', endLauncherDrag, { capture: true, signal });
+  view?.addEventListener('pointercancel', endLauncherDrag, { capture: true, signal });
+  view?.addEventListener('blur', () => endLauncherDrag(), { signal });
+  view?.addEventListener('resize', () => {
+    endLauncherDrag();
+    if (state !== 'expanded') positionLauncher();
+    finishCurrent?.();
+  }, { signal });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) endLauncherDrag(); }, { signal });
   setState('expanded');
   sync();
 
@@ -216,9 +287,9 @@ export function createFloatingChatDock({ element, document = element?.ownerDocum
     dispose() {
       if (disposed) return;
       cancelTransition();
+      endLauncherDrag();
       disposed = true;
-      launcher.removeEventListener('click', click);
-      view?.removeEventListener('resize', resize);
+      listeners.abort();
       launcher.remove();
       element.hidden = false;
       element.inert = initialInert;

@@ -1,7 +1,13 @@
 
 async function initTheme() {
-  try { const { theme = 'light' } = await chrome.storage.local.get('theme'); applySettingsTheme(theme); }
-  catch { applySettingsTheme('light'); }
+  try {
+    const { theme = 'light', interfacePreferences } = await chrome.storage.local.get(['theme', 'interfacePreferences']);
+    applySettingsTheme(theme);
+    if (appearanceRevision === 0) applySettingsAppearance(interfacePreferences || DEFAULT_APPEARANCE);
+  } catch {
+    applySettingsTheme('light');
+    if (appearanceRevision === 0) applySettingsAppearance(DEFAULT_APPEARANCE);
+  }
 }
 
 function applySettingsTheme(theme) {
@@ -12,9 +18,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.theme) {
     applySettingsTheme(changes.theme.newValue || 'light');
   }
+  if (area === 'local' && changes.interfacePreferences) {
+    applySettingsAppearance(changes.interfacePreferences.newValue || DEFAULT_APPEARANCE);
+  }
 });
-
-initTheme();
 
 import { getProviderConfig, saveProviderConfig } from '../utils/storage.js';
 import { fetchModels, probeResearchCapabilities, resolveApiUrl } from '../utils/llm-client.js';
@@ -32,6 +39,7 @@ import {
 } from '../utils/agent-permissions.js';
 import { icon, hydrateIcons } from '../sidepanel/icons.js';
 import { paintTheme } from '../ui/theme-control.js';
+import { applyAppearance, DEFAULT_APPEARANCE, normalizeAppearance } from '../ui/appearance-control.js';
 import { emptyState } from '../ui/empty-state.js';
 import { createModelSelection, updateModelDraft } from './model-selection.js';
 import { createModelCatalog } from './model-catalog.js';
@@ -131,6 +139,47 @@ document.querySelector('#flush-diagnostics').addEventListener('click', async eve
 
 hydrateIcons();
 const navigation = installSettingsNavigation(document);
+let appearancePreferences = normalizeAppearance({
+  version: 1,
+  font: document.documentElement.dataset.font,
+  density: document.documentElement.dataset.density,
+  accent: document.documentElement.dataset.accent,
+});
+let appearanceSaveQueue = Promise.resolve();
+let appearanceRevision = 0;
+
+function applySettingsAppearance(value) {
+  appearancePreferences = applyAppearance(document, value);
+  document.querySelector('#appearance-font').value = appearancePreferences.font;
+  document.querySelector('#appearance-density').value = appearancePreferences.density;
+  document.querySelectorAll('[data-appearance-accent]').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.appearanceAccent === appearancePreferences.accent));
+  });
+}
+
+function updateAppearance(update) {
+  const revision = ++appearanceRevision;
+  const next = normalizeAppearance({ ...appearancePreferences, ...update, version: 1 });
+  applySettingsAppearance(next);
+  appearanceSaveQueue = appearanceSaveQueue.then(() => chrome.storage.local.set({ interfacePreferences: next })).then(() => {
+    const status = document.querySelector('#appearance-status');
+    if (revision === appearanceRevision) status.textContent = '外观偏好已自动保存。';
+  }).catch(() => {
+    const status = document.querySelector('#appearance-status');
+    if (revision === appearanceRevision) status.textContent = '保存失败，外观仅暂时应用；请重试。';
+  });
+  return appearanceSaveQueue;
+}
+
+document.querySelector('#appearance-font')?.addEventListener('change', event => { void updateAppearance({ font: event.target.value }); });
+document.querySelector('#appearance-density')?.addEventListener('change', event => { void updateAppearance({ density: event.target.value }); });
+document.querySelector('.accent-options')?.addEventListener('click', event => {
+  const button = event.target.closest('[data-appearance-accent]');
+  if (button) void updateAppearance({ accent: button.dataset.appearanceAccent });
+});
+applySettingsAppearance(appearancePreferences);
+initTheme();
+
 document.querySelector('#settings-theme')?.addEventListener('click', async () => {
   const theme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
   try { await chrome.storage.local.set({ theme }); applySettingsTheme(theme); }

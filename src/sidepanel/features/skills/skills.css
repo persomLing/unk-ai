@@ -6,7 +6,7 @@
   box-sizing: border-box;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   background: var(--surface);
   color: var(--ink);
   box-shadow: var(--shadow-lg);
@@ -15,7 +15,7 @@
 .skills-dialog.is-empty { width: min(380px, calc(100vw - 24px)); }
 .skills-dialog[open] { display: flex; flex-direction: column; }
 .skills-dialog [hidden] { display: none !important; }
-.skills-dialog::backdrop { background: #14271f70; }
+.skills-dialog::backdrop { background: var(--scrim); }
 .skills-header, .skills-heading, .skills-toolbar, .skills-footer { display: flex; align-items: center; }
 .skills-header { justify-content: space-between; gap: 12px; flex-shrink: 0; padding: 14px 16px 8px 20px; }
 .skills-heading { gap: 8px; min-width: 0; }

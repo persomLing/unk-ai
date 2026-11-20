@@ -15,4 +15,16 @@
   } catch {
     document.documentElement.dataset.theme = 'light';
   }
+  try {
+    const cached = JSON.parse(localStorage.getItem('interfacePreferences') || 'null');
+    const preferences = cached?.version === 1 ? cached : null;
+    const root = document.documentElement;
+    root.dataset.font = ['system', 'humanist', 'serif', 'rounded'].includes(preferences?.font) ? preferences.font : 'system';
+    root.dataset.density = ['compact', 'comfortable', 'spacious'].includes(preferences?.density) ? preferences.density : 'comfortable';
+    root.dataset.accent = ['forest', 'ocean', 'amber'].includes(preferences?.accent) ? preferences.accent : 'forest';
+  } catch {
+    document.documentElement.dataset.font = 'system';
+    document.documentElement.dataset.density = 'comfortable';
+    document.documentElement.dataset.accent = 'forest';
+  }
 })();

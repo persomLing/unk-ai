@@ -189,7 +189,7 @@ function sourcesMarkup(message) {
       <span class="sources-count">${allRead ? '已读取 ' : ''}${sources.length} 个来源</span>
       <i class="sources-chevron" data-icon="chevron-down"></i>
     </button>
-    <div class="sources-popover" hidden>
+    <div class="sources-popover ui-popover" hidden>
       <div class="sources-popover-list">${listItems}</div>
     </div>
   </div>`;

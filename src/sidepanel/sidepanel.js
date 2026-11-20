@@ -31,6 +31,7 @@
 
 import { awaitWithAbort, awaitWithTimeout } from '../utils/abortable.js';
 import { paintTheme } from '../ui/theme-control.js';
+import { applyAppearance } from '../ui/appearance-control.js';
 import { $, toast } from './core/dom.js';
 import { find, includes, map, trim } from 'lodash-es';
 import { pageControlState, pageFaviconUrl, isReadablePageUrl, pageContextEnabledForNavigation } from './features/page-reading/page-control-state.js';
@@ -493,8 +494,11 @@ function hasVision() {
 async function initTheme(signal) {
   if (!globalThis.chrome?.storage?.local) return;
   try {
-    const { theme = 'light' } = await awaitWithTimeout(chrome.storage.local.get('theme'), { signal, timeoutMs: 2000 });
+    const { theme = 'light', interfacePreferences } = await awaitWithTimeout(
+      chrome.storage.local.get(['theme', 'interfacePreferences']), { signal, timeoutMs: 2000 },
+    );
     applyTheme(theme);
+    applyAppearance(document, interfacePreferences);
   } catch (error) {
     if (signal?.aborted) throw error;
     applyTheme('light');
@@ -550,9 +554,9 @@ function renderPageSelection() {
   chip.title = preview;
 }
 
-const paintWelcome = createWelcomeView($('#welcome'));
+const welcomeView = createWelcomeView($('#welcome'));
 function renderWelcomePrompts() {
-  paintWelcome(welcomePromptsFor(state.activePageSignal || {}));
+  welcomeView.render(welcomePromptsFor(state.activePageSignal || {}));
 }
 
 function setPageSelection(value) {
@@ -901,7 +905,14 @@ function renderStorageBadge() {
     directoryName: state.conversation?.syncDirectoryName,
   });
   badge.classList.toggle('local', !temporary);
-  badge.innerHTML = `${icon(badgeState.icon)}<span>${escapeHtml(badgeState.label)}</span>`;
+  badge.classList.toggle('is-pending', state.conversation?.syncStatus === 'pending');
+  badge.classList.toggle('is-error', state.conversation?.syncStatus === 'error');
+  if (badge.dataset.symbol !== badgeState.icon) {
+    badge.dataset.symbol = badgeState.icon;
+    badge.querySelector('[data-storage-symbol]').innerHTML = icon(badgeState.icon);
+  }
+  const label = badge.querySelector('[data-storage-label]');
+  if (label.textContent !== badgeState.label) label.textContent = badgeState.label;
   badge.title = badgeState.title;
   $('#save-conversation').hidden = !badgeState.saveVisible;
 }
@@ -976,10 +987,13 @@ function renderLocalPrompt() {
   if (setup.hidden) return;
   setup.dataset.storageAction = storageState.hidden ? 'settings' : storageState.action;
   setup.dataset.storageKind = storageState.hidden ? 'model' : storageState.kind;
-  const actionLabel = storageState.action === 'reauthorize' ? '恢复权限' : '去设置';
-  setup.innerHTML = `${icon(storageState.hidden ? 'settings' : 'folder')}<span>${storageState.hidden
-    ? '先在设置中添加并启用一个模型'
-    : escapeHtml(storageState.title)}</span><button type="button">${actionLabel}</button>`;
+  const symbol = storageState.hidden ? 'settings' : 'folder';
+  if (setup.dataset.symbol !== symbol) {
+    setup.dataset.symbol = symbol;
+    setup.querySelector('[data-setup-symbol]').innerHTML = icon(symbol);
+  }
+  setup.querySelector('[data-setup-label]').textContent = storageState.hidden ? '先在设置中添加并启用一个模型' : storageState.title;
+  setup.querySelector('button').textContent = storageState.action === 'reauthorize' ? '恢复权限' : '去设置';
 }
 
 const markMessageArrival = createMessageArrival();
@@ -1006,8 +1020,7 @@ function renderConversation({ scroll = false } = {}) {
   const enteringWelcome = !hasMessages && !messagesElement.hidden;
   $('#welcome').hidden = hasMessages;
   messagesElement.hidden = !hasMessages;
-  const carousel = $('#welcome-carousel');
-  if (carousel) carousel.dataset.active = String(!hasMessages);
+  welcomeView.setActive(!hasMessages);
   const heading = $('#conversation-title');
   const title = hasMessages ? conversation.title || '新对话' : '';
   heading.hidden = !hasMessages;
@@ -1566,6 +1579,7 @@ historySidebar = createHistorySidebar({
 const historyLayout = createHistoryLayout({
   app: $('#app'), drawer: historyDrawer, backdrop: $('#drawer-backdrop'),
   trigger: $('#open-history'), closeButton: $('#close-history'), searchInput: $('#history-search-input'), window,
+  workspace: [$('.app-header'), $('#conversation-stage'), $('.composer-area')],
   onOpenChange: open => historySidebar?.setOpen(open),
 });
 conversationOrganization.subscribe(snapshot => {
@@ -2459,7 +2473,7 @@ if (historySearchClear && historySearchInput) {
   });
 }
 historyDrawer.addEventListener('keydown', (event) => {
-  if (event.key !== 'Tab') return;
+  if (event.key !== 'Tab' || historyLayout.isDocked()) return;
   const focusable = [...historyDrawer.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled)')]
     .filter(node => !node.hidden && node.getClientRects().length);
   const first = focusable[0];
@@ -2639,6 +2653,9 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
   if (area === 'local' && changes.theme) {
     applyTheme(changes.theme.newValue || 'light');
   }
+  if (area === 'local' && changes.interfacePreferences) {
+    applyAppearance(document, changes.interfacePreferences.newValue);
+  }
   if (area === 'local' && changes.storageDirectoryMeta) {
     getDirectoryInfo().then((info) => {
       const wasGranted = Boolean(state.storageInfo?.granted);
@@ -2678,6 +2695,7 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
 const startupController = new AbortController();
 window.addEventListener('pagehide', () => {
   clearTimeout(contextUsageRefreshTimer);
+  if (typeof welcomeView !== 'undefined') welcomeView.dispose();
   contextUsageTracker.dispose();
   composerAddMenu?.dispose();
   videoNotesEntry?.dispose();

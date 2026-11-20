@@ -24,10 +24,11 @@
 
       <div class="settings-layout">
         <aside class="settings-sidebar" aria-label="设置导航">
-          <div class="nav-caption">偏好设置</div>
+          <div class="nav-caption">工作台设置</div>
           <nav class="settings-nav" aria-label="设置分区">
-            <a href="#connection-section" data-settings-nav="connection-section" aria-current="location"><i data-icon="plug"></i><span>连接服务</span></a>
-            <a href="#models-section" data-settings-nav="models-section"><i data-icon="sparkles"></i><span>模型库</span></a>
+            <a href="#appearance-section" data-settings-nav="appearance-section" aria-current="location"><i data-icon="palette"></i><span>界面外观</span></a>
+            <a href="#connection-section" data-settings-nav="connection-section"><i data-icon="plug"></i><span>连接服务</span></a>
+            <a href="#models-section" data-settings-nav="models-section"><i data-icon="cpu"></i><span>模型库</span></a>
             <a href="#parameters-section" data-settings-nav="parameters-section"><i data-icon="settings"></i><span>生成参数</span></a>
             <a href="#research-section" data-settings-nav="research-section"><i data-icon="globe"></i><span>联网检索</span></a>
             <a href="#storage-section" data-settings-nav="storage-section"><i data-icon="folder"></i><span>本地数据</span></a>
@@ -36,18 +37,51 @@
           <div class="sidebar-note"><i data-icon="lock"></i><p>使用你选择的模型服务。<br />配置与对话不经过我们的服务器。</p></div>
         </aside>
 
-        <div class="settings-content">
+        <div class="settings-content" id="settings-content">
           <div class="intro atlas-cover">
-            <span class="atlas-kicker" aria-hidden="true">UNK AI / PREFERENCES</span>
-            <h1>设置</h1>
+            <h1>偏好设置</h1>
             <p>连接常用模型，调整回答方式，管理你的本地数据。</p>
-            <span class="atlas-figure" aria-hidden="true">FIG. 02</span>
           </div>
           <div id="setup-banner" class="setup-banner" hidden>
             <i data-icon="info"></i>
             <div><strong>完成初始设置</strong><span>先选择对话保存位置，再添加一个模型。</span></div>
             <a id="setup-action" href="#storage-section" class="setup-link">查看存储<i data-icon="arrow-right"></i></a>
           </div>
+
+          <section id="appearance-section" class="form-section appearance-section" data-settings-section aria-labelledby="appearance-title">
+            <div class="section-heading">
+              <span class="section-symbol"><i data-icon="palette"></i></span>
+              <div><h2 id="appearance-title">界面外观</h2></div>
+            </div>
+            <div class="field-row appearance-fields">
+              <div class="field">
+                <label for="appearance-font">全局字体</label>
+                <select id="appearance-font" name="appearanceFont">
+                  <option value="system">系统默认</option>
+                  <option value="humanist">清爽无衬线</option>
+                  <option value="serif">阅读衬线</option>
+                  <option value="rounded">柔和圆体</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="appearance-density">界面间距</label>
+                <select id="appearance-density" name="appearanceDensity">
+                  <option value="compact">紧凑</option>
+                  <option value="comfortable">舒适</option>
+                  <option value="spacious">宽松</option>
+                </select>
+              </div>
+            </div>
+            <fieldset class="appearance-accent">
+              <legend>主题色</legend>
+              <div class="accent-options" role="group" aria-label="选择主题色">
+                <button class="accent-choice" type="button" data-appearance-accent="forest" aria-pressed="true"><i aria-hidden="true"></i><span>苔绿</span></button>
+                <button class="accent-choice" type="button" data-appearance-accent="ocean" aria-pressed="false"><i aria-hidden="true"></i><span>雾蓝</span></button>
+                <button class="accent-choice" type="button" data-appearance-accent="amber" aria-pressed="false"><i aria-hidden="true"></i><span>麦芽</span></button>
+              </div>
+            </fieldset>
+            <p id="appearance-status" class="appearance-status" role="status">更改会自动保存并同步到侧栏。</p>
+          </section>
 
           <form id="settings-form" novalidate>
             <section id="connection-section" class="form-section" data-settings-section aria-labelledby="connection-title">
@@ -77,7 +111,7 @@
 
             <section id="models-section" class="form-section" data-settings-section aria-labelledby="models-title">
               <div class="section-heading">
-                <span class="section-symbol"><i data-icon="sparkles"></i></span>
+                <span class="section-symbol"><i data-icon="cpu"></i></span>
                 <div><h2 id="models-title">模型库</h2><p>添加常用模型；选中已添加的模型，可编辑它的生成参数。</p></div>
               </div>
               <div class="field">
@@ -255,7 +289,8 @@
           </section>
 
           <footer class="privacy-note"><i data-icon="info"></i><p>模型请求发送到你配置的服务。网页内容仅在你发起页面相关问答或操作时，按本轮使用范围提供。</p></footer>
-          <div class="settings-save-bar">
+        </div>
+          <div class="settings-save-bar" role="region" aria-label="设置保存与连接测试">
             <div id="settings-status" class="settings-status" role="status" hidden></div>
             <div class="save-bar-main">
               <div class="save-copy"><strong id="save-state" role="status">模型配置需保存后生效</strong><span>文件夹与浏览器权限即时生效</span></div>
@@ -265,7 +300,6 @@
               </div>
             </div>
           </div>
-        </div>
       </div>
     </main>
     <script type="module" src="./options.js"></script>

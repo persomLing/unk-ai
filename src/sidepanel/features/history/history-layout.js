@@ -1,7 +1,7 @@
 const DOCK_QUERY = '(min-width: 960px)';
 
 /** Reuses one history drawer; presentation changes never rebuild its contents. */
-export function createHistoryLayout({ app, drawer, backdrop, trigger, closeButton, searchInput,
+export function createHistoryLayout({ app, drawer, backdrop, trigger, closeButton, searchInput, workspace = [],
   window = globalThis.window, onOpenChange = () => {} }) {
   const media = window.matchMedia(DOCK_QUERY);
   const document = drawer.ownerDocument;
@@ -12,11 +12,22 @@ export function createHistoryLayout({ app, drawer, backdrop, trigger, closeButto
     const changed = open !== nextOpen;
     const hiddenFocus = !nextOpen && drawer.contains(document.activeElement);
     open = nextOpen;
+    const modal = open && !wide;
     app.classList.toggle('history-docked', wide && open);
     drawer.classList.toggle('open', open);
-    drawer.setAttribute('aria-hidden', String(!open));
-    drawer.inert = !open;
-    backdrop.hidden = !open || wide;
+    if (open) {
+      drawer.inert = false;
+      drawer.setAttribute('aria-hidden', 'false');
+    }
+    if (modal) {
+      drawer.setAttribute('role', 'dialog');
+      drawer.setAttribute('aria-modal', 'true');
+    } else {
+      drawer.removeAttribute('role');
+      drawer.removeAttribute('aria-modal');
+    }
+    workspace.forEach(node => { node.inert = modal; });
+    backdrop.hidden = !modal;
     trigger.setAttribute('aria-expanded', String(open));
     if (wide) trigger.removeAttribute('aria-haspopup');
     else trigger.setAttribute('aria-haspopup', 'dialog');
@@ -28,6 +39,10 @@ export function createHistoryLayout({ app, drawer, backdrop, trigger, closeButto
       if (open) (searchInput || closeButton)?.focus({ preventScroll: true });
       else trigger.focus({ preventScroll: true });
     } else if (hiddenFocus) trigger.focus({ preventScroll: true });
+    if (!open) {
+      drawer.inert = true;
+      drawer.setAttribute('aria-hidden', 'true');
+    }
     if (changed || notify) onOpenChange(open);
   }
 

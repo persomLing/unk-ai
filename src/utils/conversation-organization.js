@@ -243,6 +243,18 @@ export function createConversationOrganizationStore({
         return true;
       });
     },
+    moveGroup(id, direction) {
+      return mutate(snapshot => {
+        const groupId = groupIdentifier(id);
+        if (!['up', 'down'].includes(direction)) throw new Error('分组排序方向无效。');
+        const index = snapshot.groups.findIndex(group => group.id === groupId);
+        if (index < 0) throw new Error('该分组已不存在，请刷新列表后重试。');
+        const destination = index + (direction === 'up' ? -1 : 1);
+        if (destination < 0 || destination >= snapshot.groups.length) return false;
+        [snapshot.groups[index], snapshot.groups[destination]] = [snapshot.groups[destination], snapshot.groups[index]];
+        return true;
+      });
+    },
     deleteGroup(id) {
       return mutate(snapshot => {
         findGroup(snapshot, groupIdentifier(id));

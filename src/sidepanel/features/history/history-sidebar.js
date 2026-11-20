@@ -46,6 +46,7 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
   function restoreFocus(key, root = drawer) {
     const node = key && [...root.querySelectorAll('button,input,select')].find(node => node.getAttribute(key[0]) === key[1] && !node.disabled);
     node?.focus({ preventScroll: true });
+    return node;
   }
 
   function announce(message, undoToken = null) { feedbackState.show(message, { undoToken }); }
@@ -107,7 +108,7 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     const details = `${entry.title} · ${groupName(entry.group)} · ${formatDate(entry.updatedAt)} · ${entry.messageCount || 0} 条消息${sync}`;
     return `<article class="ho-row ${state.activeId === entry.id ? 'is-active' : ''} ${state.selected.has(entry.id) ? 'is-selected' : ''} ${state.drag?.ids.includes(entry.id) ? 'is-drag-source' : ''}" data-chat-id="${escape(entry.id)}" data-context-kind="chat" data-context-id="${escape(entry.id)}">
       ${state.multi ? `<input type="checkbox" data-select-chat="${escape(entry.id)}" aria-label="选择：${escape(entry.title)}" ${state.selected.has(entry.id) ? 'checked' : ''} ${state.working ? 'disabled' : ''}>` : ''}
-      ${editing ? editMarkup() : `${btn(`data-open-chat="${escape(entry.id)}" title="${escape(details)}"`, `<span class="ho-chat-title">${escape(entry.title)}</span><span class="ho-date">${escape(formatDate(entry.updatedAt))}${sync}</span>`, '', 'ho-open')}${!state.multi ? btn(`data-menu-kind="chat" data-menu-id="${escape(entry.id)}" aria-label="对话操作：${escape(entry.title)}" aria-haspopup="menu"`, '', 'ellipsis', 'ho-icon') : ''}`}
+      ${editing ? editMarkup() : `${btn(`data-open-chat="${escape(entry.id)}" title="${escape(details)}"${state.activeId === entry.id ? ' aria-current="true"' : ''}`, `<span class="ho-chat-copy"><span class="ho-chat-title">${escape(entry.title)}</span><span class="ho-date">${escape(formatDate(entry.updatedAt))}${sync}</span></span>`, 'message', 'ho-open')}${!state.multi ? btn(`data-menu-kind="chat" data-menu-id="${escape(entry.id)}" aria-label="对话操作：${escape(entry.title)}" aria-haspopup="menu"`, '', 'ellipsis', 'ho-icon') : ''}`}
     </article>`;
   }
   function groupSection(group, projected) {
@@ -173,7 +174,20 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     if (caret && state.form && !state.working) { const input = list.querySelector('[data-name-input]'); input?.focus({ preventScroll: true }); input?.setSelectionRange(...caret); }
     else restoreFocus(previousFocus);
   }
-  const menuItem = (action, label, symbol, extra = '') => `<button type="button" role="menuitem" data-action="${action}" class="${extra}">${icon(symbol)}<span>${escape(label)}</span>${action === 'move-menu' ? `<span class="ho-menu-end">${icon('chevron-right')}</span>` : ''}</button>`;
+  const menuItem = (action, label, symbol, { extra = '', disabled = false } = {}) => `<button type="button" role="menuitem" data-action="${action}" class="${extra}"${disabled ? ' disabled' : ''}>${icon(symbol)}<span>${escape(label)}</span>${action === 'move-menu' ? `<span class="ho-menu-end">${icon('chevron-right')}</span>` : ''}</button>`;
+  function groupMenu(id) {
+    const start = menuItem('new-in-group', '新建对话', 'edit');
+    const select = menuItem('select-group', '选择组内对话', 'list-checks');
+    if (id === 'none') return start + select;
+    const groups = state.organization.groups;
+    const index = groups.findIndex(group => group.id === id);
+    if (index < 0) return '';
+    const reorder = state.query.trim() ? '' : '<hr>'
+      + menuItem('move-group-up', '上移分组', 'arrow-up', { disabled: index === 0 })
+      + menuItem('move-group-down', '下移分组', 'arrow-down', { disabled: index === groups.length - 1 });
+    return start + menuItem('rename', '重命名', 'pencil') + select + reorder + '<hr>'
+      + menuItem('delete-group', '删除分组…', 'trash', { extra: 'ho-danger' });
+  }
   function renderOverlay() {
     const previousFocus = overlay?.contains(doc.activeElement) ? focusKey(doc.activeElement) : null;
     overlay?.remove(); overlay = null;
@@ -191,10 +205,10 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
         const entries = projection().all.filter(entry => ids.includes(entry.id));
         items = `${menuItem('back-menu', '返回', 'arrow-left')}<hr><div class="ho-menu-heading">移至分组</div>${projection().groups.map(group => `<button type="button" role="menuitem" data-move-to="${escape(group.id)}" ${entries.length && entries.every(entry => entry.group === group.id) ? 'disabled' : ''}>${icon(group.id === 'none' ? 'inbox' : 'folder')}<span>${escape(group.name)}</span></button>`).join('')}`;
       } else if (menu.kind === 'global') items = menuItem('new-group', '新建分组', 'folder-plus') + menuItem('select-many', '选择多个', 'list-checks') + (feedbackState.snapshot().undoToken ? '<hr>' + menuItem('undo-last-delete', '撤销上次删除', 'rewind') : '');
-      else if (menu.kind === 'group') items = menuItem('new-in-group', '新建对话', 'edit') + (menu.id === 'none' ? '' : menuItem('rename', '重命名', 'pencil')) + menuItem('select-group', '选择组内对话', 'list-checks') + (menu.id === 'none' ? '' : '<hr>' + menuItem('delete-group', '删除分组…', 'trash', 'ho-danger'));
-      else if (menu.kind === 'selection') items = `<div class="ho-menu-heading">已选 ${state.selected.size} 条对话</div>` + menuItem('move-menu', '移动所选对话', 'folder-input') + menuItem('delete-chats', '删除所选对话…', 'trash', 'ho-danger');
-      else items = menuItem('rename', '重命名', 'pencil') + menuItem('move-menu', '移至分组', 'folder-input') + menuItem('select-many', '选择多个', 'list-checks') + '<hr>' + menuItem('delete-chats', '删除对话…', 'trash', 'ho-danger');
-      overlay.innerHTML = `<div ${menu.kind === 'view' ? 'id="history-view-menu"' : ''} class="ho-menu ${menu.kind === 'view' ? 'ho-view-menu' : ''}" role="menu" aria-label="${menu.kind === 'view' ? '对话视图' : menu.kind === 'group' ? '分组操作' : '对话操作'}">${items}</div>`;
+      else if (menu.kind === 'group') items = groupMenu(menu.id);
+      else if (menu.kind === 'selection') items = `<div class="ho-menu-heading">已选 ${state.selected.size} 条对话</div>` + menuItem('move-menu', '移动所选对话', 'folder-input') + menuItem('delete-chats', '删除所选对话…', 'trash', { extra: 'ho-danger' });
+      else items = menuItem('rename', '重命名', 'pencil') + menuItem('move-menu', '移至分组', 'folder-input') + menuItem('select-many', '选择多个', 'list-checks') + '<hr>' + menuItem('delete-chats', '删除对话…', 'trash', { extra: 'ho-danger' });
+      overlay.innerHTML = `<div ${menu.kind === 'view' ? 'id="history-view-menu"' : ''} class="ho-menu ui-popover ${menu.kind === 'view' ? 'ho-view-menu' : ''}" role="menu" aria-label="${menu.kind === 'view' ? '对话视图' : menu.kind === 'group' ? '分组操作' : '对话操作'}">${items}</div>`;
       drawer.append(overlay);
       const node = overlay.firstElementChild;
       node.style.left = Math.max(8, Math.min(menu.x, drawer.clientWidth - node.offsetWidth - 8)) + 'px';
@@ -244,6 +258,17 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     if (disposed) return;
     state.collapsed.delete(group); state.selected.clear(); announce(`已将 ${ids.length} 条对话移至“${groupName(group)}”`); remember();
   }); }
+  async function moveGroup(menu, direction) {
+    await run(async () => {
+      const snapshot = await organization.moveGroup(menu.id, direction);
+      if (disposed) return;
+      applyOrganization(snapshot);
+      announce('分组顺序已保存');
+    });
+    if (!disposed && drawer.classList.contains('open') && doc.activeElement === doc.body) {
+      restoreFocus(menu.focusKey)?.scrollIntoView({ block: 'nearest' });
+    }
+  }
   function requestDelete(kind, target) {
     if (blocked()) return;
     const ids = kind === 'group' ? [] : [...target];
@@ -299,7 +324,7 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
   }
   drawer.addEventListener('click', event => {
     const button = event.target.closest('button');
-    if (!button || !drawer.contains(button)) return;
+    if (!button || button.disabled || !drawer.contains(button)) return;
     if (button.hasAttribute('data-dismiss-feedback')) { dismissFeedback(); return; }
     if (button.hasAttribute('data-save-name')) { void saveName(); return; }
     if (button.hasAttribute('data-cancel-name')) { if (!state.working) { state.form = null; render(); } return; }
@@ -323,6 +348,9 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
       if (action === 'select-many') selectMany(menu.kind === 'chat' ? [menu.id] : []);
       if (action === 'undo-last-delete') void restoreDeleted();
       if (action === 'select-group') { clearQuery(); state.view = 'groups'; state.collapsed.delete(menu.id); selectMany(projection().all.filter(entry => entry.group === menu.id).map(entry => entry.id)); }
+      if (menu.kind === 'group' && (action === 'move-group-up' || action === 'move-group-down')) {
+        void moveGroup(menu, action === 'move-group-up' ? 'up' : 'down');
+      }
       if (action === 'delete-group') requestDelete('group', menu.id);
       if (action === 'delete-chats') requestDelete('chats', menu.kind === 'chat' ? [menu.id] : [...state.selected]);
       return;
