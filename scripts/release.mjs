@@ -31,7 +31,7 @@ export function releaseNotes(markdown, version) {
   return { date: heading[2], body };
 }
 
-export function prepareReleaseFiles(cwd = root, { reuseGuide = false } = {}) {
+export function prepareReleaseFiles(cwd = root, { skipGuide = false } = {}) {
   const metadata = jsonFile(resolve(cwd, 'package.json'));
   const manifest = jsonFile(resolve(cwd, 'manifest.json'));
   const lock = jsonFile(resolve(cwd, 'package-lock.json'));
@@ -39,14 +39,13 @@ export function prepareReleaseFiles(cwd = root, { reuseGuide = false } = {}) {
   if (!versionPattern.test(version) || [manifest.version, lock.version, lock.packages?.['']?.version].some(value => value !== version)) {
     throw new Error('manifest、package 和锁文件版本必须一致。');
   }
-  const guide = readFileSync(resolve(cwd, 'docs/USER-GUIDE.html'), 'utf8');
-  const userGuideVersion = guide.match(/适用版本：(\d+\.\d+\.\d+)/)?.[1];
-  if (!versionPattern.test(userGuideVersion || '') || (!reuseGuide && userGuideVersion !== version)) {
-    throw new Error('请先更新操作手册并运行 npm run docs:build。');
+  if (!skipGuide) {
+    const guide = readFileSync(resolve(cwd, 'docs/USER-GUIDE.html'), 'utf8');
+    const guideVersion = guide.match(/适用版本：(\d+\.\d+\.\d+)/)?.[1];
+    if (guideVersion !== version) throw new Error('请先更新操作手册并运行 npm run docs:build。');
   }
   const section = releaseNotes(readFileSync(resolve(cwd, 'CHANGELOG.md'), 'utf8'), version);
-  const guideNote = userGuideVersion === version ? '包内 `USER-GUIDE.html` 可离线阅读。'
-    : '包内离线操作手册 `USER-GUIDE.html` 沿用 v' + userGuideVersion + '，本版功能变更见更新说明。';
+  const guideNote = skipGuide ? '' : '包内 `USER-GUIDE.html` 可离线阅读。';
   const notes = '# UNK AI v' + version + '\n\n' + section.body + '\n\n## 安装与更新\n\n'
     + '下载并解压 `unk-ai-v' + version + '.zip`，在 Chrome 扩展管理页加载直接包含 `manifest.json` 的目录。'
     + '更新时替换扩展程序文件、重新加载扩展并重开侧栏。' + guideNote + '\n';
@@ -54,7 +53,7 @@ export function prepareReleaseFiles(cwd = root, { reuseGuide = false } = {}) {
   mkdirSync(output, { recursive: true });
   const notesPath = resolve(output, 'release-notes-v' + version + '.md');
   writeFileSync(notesPath, notes, 'utf8');
-  return { version, tag: 'v' + version, date: section.date, notes, notesPath, userGuideVersion };
+  return { version, tag: 'v' + version, date: section.date, notes, notesPath };
 }
 
 export function validatePackage(packagePath, report, version, commit) {
@@ -141,9 +140,9 @@ export async function publishGitHubRelease({ client, repository, tag, commit, no
   return { tag, commit, url: published.html_url, assets: files.map(file => ({ name: file.name, bytes: file.bytes.length, sha256: file.sha256 })) };
 }
 
-async function releaseCurrent({ reuseGuide } = {}) {
+async function releaseCurrent({ skipGuide } = {}) {
   if (git(['status', '--porcelain'])) throw new Error('请先提交本次版本代码，再运行 npm run release。');
-  const prepared = prepareReleaseFiles(root, { reuseGuide });
+  const prepared = prepareReleaseFiles(root, { skipGuide });
   const commit = git(['rev-parse', 'HEAD']);
   const branch = git(['branch', '--show-current']);
   if (!branch) throw new Error('请在明确的发布分支上运行。');
@@ -166,19 +165,30 @@ async function releaseCurrent({ reuseGuide } = {}) {
   const reportPath = resolve(root, 'output/package-v' + prepared.version + '-validation.json');
   if (!existsSync(packagePath)) {
     const packageArgs = ['-NoProfile', '-File', resolve(root, 'scripts/package-release.ps1')];
-    if (reuseGuide) packageArgs.push('-ReuseGuide');
+    if (skipGuide) packageArgs.push('-SkipGuide');
     execFileSync('pwsh', packageArgs, { cwd: root, stdio: 'inherit', windowsHide: true });
   }
-  const packageInfo = validatePackage(packagePath, jsonFile(reportPath), prepared.version, commit);
+  const packageReport = jsonFile(reportPath);
+  const packageInfo = validatePackage(packagePath, packageReport, prepared.version, commit);
+  if (packageReport.releaseFiles?.includes('USER-GUIDE.html') !== !skipGuide) {
+    throw new Error('版本包内的操作手册与发布选项不符。');
+  }
   const checksum = resolve(root, 'output/unk-ai-v' + prepared.version + '.sha256');
-  const guidePath = resolve(root, 'output/unk-ai-v' + prepared.version + '-user-guide.html');
-  writeFileSync(guidePath, readFileSync(resolve(root, 'docs/USER-GUIDE.html')));
-  writeFileSync(checksum, packageInfo.sha256 + '  ' + basename(packagePath) + '\n' + digest(readFileSync(guidePath)) + '  ' + basename(guidePath) + '\n');
+  const assets = [packagePath, checksum];
+  let checksumContents = packageInfo.sha256 + '  ' + basename(packagePath) + '\n';
+  if (!skipGuide) {
+    const guidePath = resolve(root, 'output/unk-ai-v' + prepared.version + '-user-guide.html');
+    const guideBytes = readFileSync(resolve(root, 'docs/USER-GUIDE.html'));
+    writeFileSync(guidePath, guideBytes);
+    checksumContents += digest(guideBytes) + '  ' + basename(guidePath) + '\n';
+    assets.push(guidePath);
+  }
+  writeFileSync(checksum, checksumContents);
   if (!existingTag) git(['tag', '-a', prepared.tag, commit, '-F', prepared.notesPath]);
   console.log('推送 ' + branch + ' 与 ' + prepared.tag);
   git(['push', '--atomic', 'origin', 'HEAD:refs/heads/' + branch, 'refs/tags/' + prepared.tag]);
   const result = await publishGitHubRelease({ client, repository, tag: prepared.tag, commit, notes: prepared.notes,
-    assets: [packagePath, checksum, guidePath], progress: console.log });
+    assets, progress: console.log });
   writeFileSync(resolve(root, 'output/release-v' + prepared.version + '-published.json'), JSON.stringify(result, null, 2) + '\n');
   console.log(JSON.stringify(result));
 }
@@ -186,10 +196,10 @@ async function releaseCurrent({ reuseGuide } = {}) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const args = process.argv.slice(2);
-    const reuseGuide = args.at(-1) === '--reuse-guide';
-    if (reuseGuide) args.pop();
-    if (args.length === 1 && args[0] === '--prepare-notes') console.log(JSON.stringify(prepareReleaseFiles(root, { reuseGuide })));
-    else if (args.length === 0) await releaseCurrent({ reuseGuide });
-    else throw new Error('使用 npm run release（沿用旧手册时追加 -- --reuse-guide），或 node scripts/release.mjs --prepare-notes。');
+    const skipGuide = args.at(-1) === '--skip-guide';
+    if (skipGuide) args.pop();
+    if (args.length === 1 && args[0] === '--prepare-notes') console.log(JSON.stringify(prepareReleaseFiles(root, { skipGuide })));
+    else if (args.length === 0) await releaseCurrent({ skipGuide });
+    else throw new Error('使用 npm run release（省略手册时追加 -- --skip-guide），或 node scripts/release.mjs --prepare-notes。');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
