@@ -3,6 +3,7 @@ import { createConversationSaver } from '../storage/conversation-save.js';
 import { commitLocalConversation, loadConversation as loadStoredConversation } from '../../../utils/conversation-store.js';
 import { awaitWithTimeout } from '../../../utils/abortable.js';
 import { normalizeConversationSelection, shouldReleaseSelection } from '../../../utils/selection.js';
+import { directImageForMessage } from '../../../utils/image-generation-command.js';
 
 const copy = value => value == null ? null : structuredClone(value);
 const timestamp = () => new Date().toISOString();
@@ -32,7 +33,6 @@ export function createSelectionChatRuntime({ selection, getConfig = () => null, 
   const lifetime = new AbortController();
   let closed = false;
   let transferring = false;
-  let transferDirty = false;
   let commandPending = false;
   // The service projects its submitted quote back into pageSelection after
   // preparation waits. Keep the next quote separately so that old preparation
@@ -49,7 +49,7 @@ export function createSelectionChatRuntime({ selection, getConfig = () => null, 
     try { onError(error, state.conversation.id); } catch {}
     emit({ type: 'notice', kind: 'error', message: error?.message || '侧边对话未能保存，请重试。' });
   };
-  const storedSaver = createConversationSaver({
+  const saver = createConversationSaver({
     getConversation: () => state.conversation, loadConversation, writeConversation,
     getQueue: () => state.saveQueue, setQueue: queue => { state.saveQueue = queue; }, now,
     onSaved: (conversationId, saved) => {
@@ -67,18 +67,9 @@ export function createSelectionChatRuntime({ selection, getConfig = () => null, 
       notifyError(error);
     },
   });
-  const saver = Object.freeze({ ...storedSaver,
-    schedule(conversation, options) {
-      // Only optional completion effects can still decorate a settled chat.
-      // Keep their mutations in the final required snapshot instead of letting
-      // a new delayed write outlive transfer to the main application.
-      if (transferring) { transferDirty = true; return null; }
-      return storedSaver.schedule(conversation, options);
-    },
-  });
   const profileFor = () => copy(fixedProfile);
   const application = createSidepanelApplication({
-    state, conversationSaver: saver, modelGateway, recordDiagnostic,
+    state, conversationSaver: saver, modelGateway, recordDiagnostic, textOnly: true,
     browser: { queryActiveTab: async () => null, sendMessage: async () => ({}) },
     ensureConversation: async signal => { signal?.throwIfAborted(); return state.conversation; },
     ensureConfigured: async signal => {
@@ -111,6 +102,12 @@ export function createSelectionChatRuntime({ selection, getConfig = () => null, 
   function captureConfiguration() {
     state.config = copy(getConfig());
     fixedProfile = copy(getProfile());
+    if (fixedProfile) {
+      delete fixedProfile.imageProfile;
+      fixedProfile.supportsVision = false;
+      fixedProfile.webSearchEnabled = false;
+      fixedProfile.webFetchEnabled = false;
+    }
     state.selectedModelId = fixedProfile?.model || fixedProfile?.id || '';
     state.selectedEffort = fixedProfile?.reasoningEffort || 'default';
   }
@@ -156,7 +153,11 @@ export function createSelectionChatRuntime({ selection, getConfig = () => null, 
   }
   function send(text = state.draft) {
     const submitted = String(text || '').trim();
-    if (!submitted) return Promise.resolve(false);
+    if (!submitted || closed || isBusy()) return Promise.resolve(false);
+    if (directImageForMessage({ content: submitted })) {
+      emit({ type: 'notice', message: '追问窗口仅支持文字对话。可在主对话中使用生图。' });
+      return Promise.resolve(false);
+    }
     return command(() => application.conversations.sendMessage(submitted, {
       pageContextEnabled: false, agentTask: false, directModelRequest: true,
       pageTargetPromise: Promise.resolve(null),
@@ -209,17 +210,12 @@ export function createSelectionChatRuntime({ selection, getConfig = () => null, 
       // A new required save permits recovery from a prior failed queue item.
       // Commands stay frozen while this wait owns the transfer, and a close
       // cancels waiting without pretending the queued disk write was undone.
-      do {
-        assertTransfer();
-        transferDirty = false;
-        await waitForTransfer(saver.save(state.conversation, { required: true }));
-        assertTransfer();
-        saver.flush();
-        await waitForTransfer(state.saveQueue);
-        assertTransfer();
-      } while (transferDirty);
-      // No await separates release and cloning: a late auxiliary callback now
-      // observes the disposed service before it can mutate or schedule a write.
+      assertTransfer();
+      await waitForTransfer(saver.save(state.conversation, { required: true }));
+      assertTransfer();
+      saver.flush();
+      await waitForTransfer(state.saveQueue);
+      assertTransfer();
       application.dispose();
       unsubscribe();
       const conversation = copy(state.conversation);
@@ -228,7 +224,6 @@ export function createSelectionChatRuntime({ selection, getConfig = () => null, 
       return conversation;
     } finally {
       transferring = false;
-      if (transferDirty && !closed) saver.schedule(state.conversation);
       emit({ type: 'composer' });
     }
   }

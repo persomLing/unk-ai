@@ -1,7 +1,10 @@
 import { videoError } from './video-request.js';
+import { captureVideoNavigation } from './video-navigation-request.js';
 
 export const VIDEO_SCAN_PORT = 'unk-ai-video-scan';
 export const VIDEO_DECODER_PORT = 'unk-ai-video-decoder';
+export const VIDEO_STILL_TIMEOUT_MS = 25000;
+export const FRAME_TIME_TOLERANCE_MS = 350;
 export const FRAME_SCAN = Object.freeze({ stepMs: 1000, maxFrames: 240, maxEdge: 1280, maxImageChars: 224 * 1024,
   maxSegmentBytes: 8 * 1024 * 1024, maxIndexBytes: 256 * 1024, maxDownloadBytes: 192 * 1024 * 1024,
   maxSegmentMs: 30000, maxDurationMs: 2 * 60 * 60 * 1000, scanMs: 600000, blockMs: 30000,
@@ -10,6 +13,26 @@ export const FRAME_SCAN = Object.freeze({ stepMs: 1000, maxFrames: 240, maxEdge:
 export const isScanToken = value => typeof value === 'string' && /^[\w:-]{1,160}$/.test(value);
 export const canScanFrames = reason => ['no-subtitles', 'empty-subtitles'].includes(reason);
 export const isScanCursor = (value, limit) => Number.isSafeInteger(value) && value >= 0 && value <= limit;
+
+export function captureVideoStillRequest(input) {
+  const { target, video, startMs, conversationId, turnId, messageId } = captureVideoNavigation({ ...input, action: 'capture' });
+  if (!target.documentId || !isScanToken(input.runId)) throw videoError('VIDEO_SCAN_INVALID', '视频截帧的来源无效。');
+  return { version: 1, target, video, startMs, conversationId, turnId, messageId, runId: input.runId };
+}
+
+const isFrameJpeg = value => typeof value === 'string' && value.length <= FRAME_SCAN.maxImageChars
+  && /^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(value);
+
+export function validateVideoStill(value, startMs) {
+  if (!value || value.startMs !== startMs) return null;
+  const { outcome, frameMs, width, height, dataUrl } = value;
+  if (outcome === 'no-frame') return { outcome, startMs };
+  if (!Number.isSafeInteger(frameMs) || frameMs < 0 || Math.abs(frameMs - startMs) > FRAME_TIME_TOLERANCE_MS) return null;
+  if (outcome === 'black-frame') return { outcome, startMs, frameMs };
+  if (outcome !== 'captured' || !Number.isInteger(width) || !Number.isInteger(height)
+    || Math.min(width, height) < 1 || Math.max(width, height) > FRAME_SCAN.maxEdge || !isFrameJpeg(dataUrl)) return null;
+  return { outcome, startMs, frameMs, width, height, dataUrl };
+}
 
 export function bilibiliHostOrigin(value) {
   try {
@@ -84,8 +107,7 @@ export function validateScanBlock(value, scannedMs, durationMs) {
     const atMs = sample?.atMs;
     if (!isScanCursor(atMs, value.scannedMs - 1) || atMs <= last || atMs % FRAME_SCAN.stepMs !== 0) return null;
     last = atMs;
-    if (sample.dataUrl !== undefined && (typeof sample.dataUrl !== 'string' || sample.dataUrl.length > FRAME_SCAN.maxImageChars
-      || !/^data:image\/jpeg;base64,\/9j\/[A-Za-z0-9+/]*={0,2}$/.test(sample.dataUrl))) return null;
+    if (sample.dataUrl !== undefined && !isFrameJpeg(sample.dataUrl)) return null;
     samples.push({ atMs, ...(sample.dataUrl ? { dataUrl: sample.dataUrl } : {}),
       ...(sample.repeat === true ? { repeat: true } : {}), ...(sample.changed === true ? { changed: true } : {}) });
   }

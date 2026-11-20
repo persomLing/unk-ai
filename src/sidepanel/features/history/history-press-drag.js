@@ -53,7 +53,7 @@ export function installPressDrag(panel, {
   function activate(expected) {
     timer = null;
     if (disposed || press !== expected) return;
-    if (!panel.contains(expected.source) || expected.source.disabled || !canStart()) {
+    if (!panel.contains(expected.source) || expected.source.disabled || !canStart(expected.kind)) {
       press = null;
       return;
     }
@@ -70,7 +70,7 @@ export function installPressDrag(panel, {
     // Capture on the stable root, never on a row that start() may replace.
     try { panel.setPointerCapture(expected.pointerId); } catch {}
     try {
-      start(expected.chatId, {
+      start({ kind: expected.kind, id: expected.id }, {
         x: expected.x,
         y: expected.y,
         pointerId: expected.pointerId
@@ -92,11 +92,14 @@ export function installPressDrag(panel, {
       return;
     }
     if (press) return;
-    const source = event.target.closest?.('button[data-open-chat]');
-    if (!source || !panel.contains(source) || source.disabled || !canStart()) return;
+    const source = event.target.closest?.('button[data-open-chat],button[data-reorder-group]');
+    if (!source || !panel.contains(source) || source.disabled) return;
+    const kind = source.hasAttribute('data-reorder-group') ? 'group' : 'chat';
+    if (!canStart(kind)) return;
     const expected = {
       pointerId: event.pointerId,
-      chatId: source.dataset.openChat,
+      kind,
+      id: kind === 'group' ? source.dataset.collapse : source.dataset.openChat,
       source,
       x: event.clientX,
       y: event.clientY,
@@ -126,6 +129,10 @@ export function installPressDrag(panel, {
     end('finish', { x: event.clientX, y: event.clientY });
   }
 
+  function onTouchMove(event) {
+    if (press?.kind === 'group' && press.started && event.cancelable) event.preventDefault();
+  }
+
   function onPointerCancel(event) {
     if (press && event.pointerId === press.pointerId) cancel();
   }
@@ -144,7 +151,11 @@ export function installPressDrag(panel, {
   }
 
   function onContextMenu(event) {
-    if (panel.contains(event.target) && press) cancel();
+    if (!press || !panel.contains(event.target)) return;
+    if (press.kind === 'group' && event.pointerType === 'touch') {
+      event.preventDefault();
+      event.stopPropagation();
+    } else cancel();
   }
 
   function onKeyDown(event) {
@@ -164,6 +175,7 @@ export function installPressDrag(panel, {
   const registrations = [
     [doc, 'pointerdown', onPointerDown, true],
     [doc, 'pointermove', onPointerMove, { capture: true, passive: false }],
+    [panel, 'touchmove', onTouchMove, { capture: true, passive: false }],
     [doc, 'pointerup', onPointerUp, true],
     [doc, 'pointercancel', onPointerCancel, true],
     [panel, 'lostpointercapture', onLostCapture, true],

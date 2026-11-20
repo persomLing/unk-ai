@@ -48,6 +48,18 @@ function parsePlan(raw) {
   return { prompt, size, caption, anchor: value.anchor, layout: createIllustrationLayout(value, { size }) };
 }
 
+function explicitlyRequestsIllustration(value) {
+  const question = String(value || '').trim();
+  const direct = parseDirectImageCommand(question);
+  if (direct) return !direct.skip;
+  if (!question || /(?:不要|不用|不必|无需|别|怎么|如何|怎样|是什么|什么意思|为什么|配置|教程|提示词|费用|价格)/u.test(question)) return false;
+  if (/^(?:(?:please\s+)?(?:can|could)\s+you\s+)?draw\s+\S+/i.test(question)) return true;
+  if (/\b(?:create|generate|make|design)\s+(?:me\s+)?(?:an?\s+)?(?:image|picture|illustration|diagram|chart|graph)\b/i.test(question)) return true;
+  if (/(?:图片|图像|示意图|配图|插图|插画|图表|流程图|结构图|图示|画图|图)/u.test(question)
+    && /(?:画|绘制|生成|制作|创建|设计|配|加|添加)/u.test(question)) return true;
+  return /^(?:(?:请|麻烦|能不能|可以|可不可以)\s*)?(?:(?:帮我|给我)\s*)?(?:画|绘制|画出)(?!面)\s*(?:一只|一个|一张|一幅|几张|几幅|一|几)?\s*\S+/u.test(question);
+}
+
 /** Post-turn illustration for ordinary chat answers. It subscribes to completed
  * runs, never owns the main reply, and only decorates the matching complete
  * message with a generated image attachment. Video notes use a separate flow. */
@@ -90,7 +102,7 @@ export function createImageIllustration({ repository, modelGateway, getConfig,
       || initial.user.attachments?.some(item => item?.type === 'image')) return;
     const content = initial.assistant.content;
     const question = initial.user.displayContent || initial.user.content || '';
-    if (parseDirectImageCommand(question)) return;
+    if (!explicitlyRequestsIllustration(question) || parseDirectImageCommand(question)) return;
     const job = scope.open(ref, content);
     let effect, profile, phase = 'plan';
     try {

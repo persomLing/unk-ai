@@ -6,7 +6,9 @@ function paintCard(button, item) {
   button.dataset.action = item.action;
   button.querySelector('.welcome-card-icon').innerHTML = icon(item.icon);
   button.querySelector('strong').textContent = item.label;
-  button.querySelector('small').textContent = item.description;
+  const subtitle = button.querySelector('small');
+  subtitle.textContent = item.description;
+  subtitle.hidden = !item.description;
 }
 
 export function createWelcomeView(root, { createCarousel = createTopicCarousel, mountSky = mountWelcomeSky } = {}) {
@@ -21,21 +23,28 @@ export function createWelcomeView(root, { createCarousel = createTopicCarousel, 
   const track = viewport.querySelector('.welcome-carousel-track');
   const carousel = createCarousel({ viewport, track });
   mountSky(root.ownerDocument?.querySelector?.('#welcome-sky') || root.querySelector('.welcome-sky'));
+  const empty = root.querySelector('#welcome-topics-empty');
+  let previousTopics;
   let previousKind;
 
   function render(welcome) {
-    if (welcome.kind === previousKind) return;
-    if (!track.childElementCount) {
-      track.append(...welcome.topics.map(topic => {
+    const topicsKey = JSON.stringify(welcome.topics.map(({ id, label, description, icon }) => [id, label, description, icon]));
+    if (topicsKey !== previousTopics) {
+      previousTopics = topicsKey;
+      empty.hidden = Boolean(welcome.topics.length);
+      viewport.hidden = !welcome.topics.length;
+      track.replaceChildren(...welcome.topics.map(topic => {
         const button = template.cloneNode(true);
         button.classList.add('welcome-topic');
         button.dataset.topicId = topic.id;
+        button.title = [topic.label, topic.description].filter(Boolean).join(' · ');
         button.querySelector('.welcome-card-end').remove();
         paintCard(button, topic);
         return button;
       }));
       carousel.refresh();
     }
+    if (welcome.kind === previousKind) return;
     previousKind = welcome.kind;
     root.querySelector('#welcome-title').textContent = welcome.title;
     root.querySelector('[data-welcome-subtitle]').textContent = welcome.subtitle;

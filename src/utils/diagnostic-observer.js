@@ -23,6 +23,12 @@ export function diagnosticFailure(error) {
   // a credential. Keep a fixed cause even when the user-facing wording changes.
   const causes = {
     PAGE_CHANGED: 'page-changed', PAGE_NOT_READY: 'unavailable', PAGE_READ_ABORTED: 'aborted', PAGE_READ_TIMEOUT: 'timeout',
+    VIDEO_CAPTURE_BLOCKED: 'capture-blocked', VIDEO_PLAYER_NOT_READY: 'not-ready',
+    VIDEO_PLAYER_IDENTITY_UNAVAILABLE: 'identity-unavailable', VIDEO_NAVIGATION_UNCERTAIN: 'uncertain',
+    VIDEO_PAGE_REQUIRED: 'page-required', VIDEO_NAVIGATION_BUSY: 'busy',
+    VIDEO_SCAN_HOST_LOST: 'page-changed', VIDEO_STILL_TIMEOUT: 'timeout', VIDEO_SCAN_INVALID: 'invalid-data',
+    VIDEO_DECODE_UNSUPPORTED: 'unsupported', VIDEO_STREAM_UNAVAILABLE: 'unavailable',
+    VIDEO_MEDIA_INACCESSIBLE: 'capture-blocked', VIDEO_SCAN_ACCESS_DENIED: 'permission-denied',
     READING_BODY_REQUIRED: 'empty', READING_TIMEOUT: 'timeout', BODY_READ_TIMEOUT: 'timeout', DIRECTORY_READ_TIMEOUT: 'timeout',
     ADAPTIVE_READING_TIMEOUT: 'timeout', READING_DECISION_TIMEOUT: 'timeout',
     DEEP_READING_UNSUPPORTED: 'unavailable', DEEP_READING_UNAVAILABLE: 'unavailable', DEEP_READING_PERMISSION_DENIED: 'permission-denied',

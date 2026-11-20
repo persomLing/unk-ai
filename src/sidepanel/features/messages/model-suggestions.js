@@ -6,9 +6,12 @@
  * answer-specific next questions and validates the response before showing it.
  */
 
+import MarkdownIt from 'markdown-it';
+
 const MAX_LENGTH = 48;
 const MAX_ANSWER_CHARS = 6500;
 const GENERIC_FOCUS = new Set(['这', '这个', '这些', '它', '上述', '上面', '上一版', '本轮', '内容', '问题', '回答', '信息', '结论', '影响', '原因', '风险', '方案']);
+const notesMarkdown = new MarkdownIt({ html: false });
 
 function clean(value) {
   if (typeof value !== 'string') return '';
@@ -78,6 +81,45 @@ export function parseSuggestionResponse(content, context = {}) {
   const lines = candidate.split(/\r?\n/).map(clean).filter(Boolean);
   if (!lines.length || lines.length > 6 || lines.some(line => !isQuestion(line))) return [];
   return uniqueQuestions(lines, context);
+}
+
+export function suggestedReadingQuestions(answer) {
+  if (typeof answer !== 'string') return [];
+  const tail = answer.slice(-2400).replace(/\*\*/g, '');
+  const nextStep = /(?:^|[。！？\n])\s*(?:(?:如果还要继续|接下来|下一步)[，,:：\s]*(?:最有价值的是|可以|建议|优先)?|最有价值的是|建议|优先)(?:先|优先|继续)?(?:补读|阅读|查看|核对)[：:\s]*/g;
+  const instruction = [...tail.matchAll(nextStep)].at(-1);
+  if (!instruction) return [];
+  const paragraph = tail.slice(instruction.index + instruction[0].length).split(/[。！？]|\n\s*\n/, 1)[0];
+  const files = [...paragraph.matchAll(/`([\w-][\w./-]{1,119}\.(?:mdx?|json|ya?ml|toml|rst|txt|[cm]?[jt]sx?|py))`/gi)]
+    .map(([, path]) => path).filter(path => path.split('/').every(part => part && part !== '.' && part !== '..'));
+  const questions = [...new Set(files)].map(path => {
+    const reference = `能补读 ${path} 并说明用途吗？`.length <= MAX_LENGTH ? path : path.split('/').at(-1);
+    return `能补读 ${reference} 并说明用途吗？`;
+  });
+  return uniqueQuestions(questions, { answer });
+}
+
+export function suggestedVideoQuestions(answer) {
+  const tokens = notesMarkdown.parse(answerExcerpt(answer), {});
+  const terms = new Set();
+  const headings = new Set();
+  for (const [index, token] of tokens.entries()) {
+    if (token.type !== 'inline') continue;
+    for (const part of token.children || []) {
+      if (part.type === 'code_inline' && /^(?:%[a-z]|[a-z][\w-]{2,23})$/i.test(part.content)) terms.add(part.content);
+    }
+    if (tokens[index - 1]?.type !== 'heading_open') continue;
+    const title = clean(token.content.replace(/^[一二三四五六七八九十\d]+[、.．)）]\s*/, ''));
+    if (/^[\p{Letter}\p{Number}% _-]{3,22}$/u.test(title)
+      && !/^(?:视频笔记|(?:内容)?概览|简介|(?:主要|核心)内容|重点(?:与结论)?|关键要点|结论|总结|小结|总结与建议)$/.test(title)) headings.add(title);
+  }
+  const topics = [...terms, ...headings].filter((term, index, all) => all.indexOf(term) === index);
+  const placeholders = topics.filter(term => term.startsWith('%'));
+  return uniqueQuestions([
+    ...(placeholders.length >= 2 ? [`${placeholders[0]} 和 ${placeholders[1]} 分别适用于什么情况？`] : []),
+    ...topics.filter(term => placeholders.length < 2 || !term.startsWith('%'))
+      .map(term => `能用一个小例子解释「${term}」吗？`),
+  ], { answer });
 }
 
 function answerExcerpt(value) {

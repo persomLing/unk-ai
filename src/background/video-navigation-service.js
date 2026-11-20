@@ -129,6 +129,7 @@ export function createVideoNavigationService({ chrome: api = globalThis.chrome,
       }), captureIoTimeoutMs);
       result = frames?.find(entry => entry.frameId === 0 && entry.documentId === bound.documentId)?.result;
     } catch (error) { if (missingDocument(error)) throw pageChanged(); throw error; }
+    if (result?.restored === false) throw uncertain();
     if (!result || result.ok !== true) {
       const reason = result?.reason;
       if (reason === 'changed') throw pageChanged();

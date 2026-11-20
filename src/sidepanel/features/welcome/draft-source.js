@@ -1,14 +1,13 @@
-const TOPIC_LABELS = Object.freeze({
-  news: '国内外大事',
-  ai: 'AI圈动态',
-  tech: '科技新品',
-  business: '商业与市场',
-});
+import { BUILTIN_TOPIC_LABELS, isWelcomeTopicId, TOPIC_LIMITS } from './topic-preferences.js';
 
 /** Keep source intent separate from editable text and exclude executable fields. */
 export function normalizeDraftSource(value) {
   if (!value || typeof value !== 'object' || value.scope !== 'independent') return null;
-  const topicId = typeof value.topicId === 'string' ? value.topicId : '';
-  if (!Object.hasOwn(TOPIC_LABELS, topicId)) return null;
-  return { scope: 'independent', topicId, label: TOPIC_LABELS[topicId] };
+  const { topicId } = value;
+  if (!isWelcomeTopicId(topicId)) return null;
+  const original = BUILTIN_TOPIC_LABELS[topicId];
+  if (value.version === undefined && original) return { scope: 'independent', topicId, label: original };
+  const label = typeof value.label === 'string' ? value.label.trim().replace(/\s+/g, ' ') : '';
+  if (value.version !== 1 || !label || label.length > TOPIC_LIMITS.title) return null;
+  return original === label ? { scope: 'independent', topicId, label } : { version: 1, scope: 'independent', topicId, label };
 }

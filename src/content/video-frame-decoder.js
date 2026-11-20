@@ -1,5 +1,5 @@
 import { createFile, DataStream } from 'mp4box';
-import { FRAME_SCAN, frameBucket } from '../sidepanel/features/video-notes/video-scan-protocol.js';
+import { FRAME_SCAN, FRAME_TIME_TOLERANCE_MS, frameBucket } from '../sidepanel/features/video-notes/video-scan-protocol.js';
 import { frameSignature, sameFrame } from '../sidepanel/features/video-notes/frame-dedup.js';
 import { videoError } from '../sidepanel/features/video-notes/video-request.js';
 import { awaitWithAbort } from '../utils/abortable.js';
@@ -80,20 +80,20 @@ export function readAvcSegment(init, media, codec) {
     hardwareAcceleration: 'no-preference' }, samples, timestamp, readSample: index => file.getTrackSample(info.id, index) };
 }
 
-async function decodeSegment(init, buffer, media, segment, { signal, cursor, sampleFrame }) {
+async function decodeSegment(init, buffer, media, segment, { signal, cursor, sampleFrame, still = false }) {
   const { config, samples, timestamp, readSample } = readAvcSegment(init, buffer, media.codec);
   if (typeof VideoDecoder !== 'function' || typeof EncodedVideoChunk !== 'function') throw unsupported();
   const support = await awaitWithAbort(VideoDecoder.isConfigSupported(config), signal);
   signal.throwIfAborted();
   if (!support.supported) throw unsupported();
-  let next = Math.ceil(Math.max(cursor, segment.fromMs) / FRAME_SCAN.stepMs) * FRAME_SCAN.stepMs;
+  let next = still ? cursor : Math.ceil(Math.max(cursor, segment.fromMs) / FRAME_SCAN.stepMs) * FRAME_SCAN.stepMs;
   const output = [];
   let failure, previous = null, notifyQueue;
   const collect = (frame, until) => {
     const frameMs = frame.timestamp / 1000;
     while (next < segment.toMs && next < until) {
-      output.push(Math.abs(frameMs - next) <= 350 ? sampleFrame(frame, next) : { atMs: next });
-      next += FRAME_SCAN.stepMs;
+      output.push(Math.abs(frameMs - next) <= FRAME_TIME_TOLERANCE_MS ? sampleFrame(frame, next) : { atMs: next });
+      next = still ? segment.toMs : next + FRAME_SCAN.stepMs;
     }
   };
   const decoder = new VideoDecoder({
@@ -127,12 +127,12 @@ async function decodeSegment(init, buffer, media, segment, { signal, cursor, sam
     signal.throwIfAborted();
     if (failure || !previous) throw unsupported();
     collect(previous, (previous.timestamp + (previous.duration ?? 0)) / 1000 + 2);
-    while (next < segment.toMs) { output.push({ atMs: next }); next += FRAME_SCAN.stepMs; }
+    while (!still && next < segment.toMs) { output.push({ atMs: next }); next += FRAME_SCAN.stepMs; }
     return output;
   } finally { previous?.close(); if (decoder.state !== 'closed') decoder.close(); }
 }
 
-function createFrameSampler(durationMs) {
+function createFrameSampler(durationMs, { still = false } = {}) {
   const canvas = document.createElement('canvas'), hashCanvas = document.createElement('canvas');
   hashCanvas.width = 132; hashCanvas.height = 96;
   const pixels = hashCanvas.getContext('2d', { willReadFrequently: true });
@@ -142,24 +142,32 @@ function createFrameSampler(durationMs) {
   return (frame, atMs) => {
     pixels.drawImage(frame, 0, 0, hashCanvas.width, hashCanvas.height);
     const current = frameSignature(pixels.getImageData(0, 0, hashCanvas.width, hashCanvas.height).data, hashCanvas.width, hashCanvas.height);
-    if (!current) { signature = null; return { atMs }; }
-    if (sameFrame(signature, current)) return { atMs, repeat: true };
-    signature = current;
+    if (!current) {
+      signature = null;
+      return still ? { atMs, frameMs: Math.max(0, Math.round(frame.timestamp / 1000)), blackFrame: true } : { atMs };
+    }
     const bucket = frameBucket(atMs, durationMs);
-    if (bucket === keptBucket) return { atMs, changed: true };
+    if (!still) {
+      if (sameFrame(signature, current)) return { atMs, repeat: true };
+      signature = current;
+      if (bucket === keptBucket) return { atMs, changed: true };
+    }
     const scale = Math.min(1, FRAME_SCAN.maxEdge / Math.max(frame.displayWidth, frame.displayHeight));
     canvas.width = Math.max(1, Math.round(frame.displayWidth * scale));
     canvas.height = Math.max(1, Math.round(frame.displayHeight * scale));
     picture.drawImage(frame, 0, 0, canvas.width, canvas.height);
     for (const quality of [0.72, 0.55, 0.38]) {
       const dataUrl = canvas.toDataURL('image/jpeg', quality);
-      if (dataUrl.length <= FRAME_SCAN.maxImageChars) { keptBucket = bucket; return { atMs, dataUrl }; }
+      if (dataUrl.length > FRAME_SCAN.maxImageChars) continue;
+      if (still) return { atMs, dataUrl, frameMs: Math.max(0, Math.round(frame.timestamp / 1000)), width: canvas.width, height: canvas.height };
+      keptBucket = bucket;
+      return { atMs, dataUrl };
     }
     return { atMs, changed: true };
   };
 }
 
-export async function scanVideoFrames({ media, durationMs, startMs, signal, onBlock, fetcher = fetch }) {
+async function openVideoStream(media, durationMs, signal, fetcher) {
   let source, init, index;
   for (const url of media.urls) {
     signal.throwIfAborted();
@@ -175,19 +183,43 @@ export async function scanVideoFrames({ media, durationMs, startMs, signal, onBl
   if (!source) throw inaccessible();
   const header = new Uint8Array(init.byteLength + index.buffer.byteLength);
   header.set(new Uint8Array(init)); header.set(new Uint8Array(index.buffer), init.byteLength);
-  const segments = readSegmentIndex(header.buffer, media, index.total, durationMs);
+  return { source, init, total: index.total, headerBytes: header.byteLength,
+    segments: readSegmentIndex(header.buffer, media, index.total, durationMs) };
+}
+
+async function readVideoSegment(source, segment, total, signal, fetcher) {
+  try {
+    const response = await fetchBytes(source, segment, signal, fetcher);
+    if (response.total !== total) throw inaccessible();
+    return response.buffer;
+  } catch { signal.throwIfAborted(); throw inaccessible(); }
+}
+
+export async function captureVideoStreamFrame({ media, durationMs, startMs, signal, fetcher = fetch }) {
+  const { source, init, total, segments } = await openVideoStream(media, durationMs, signal, fetcher);
+  signal.throwIfAborted();
+  const segment = segments.find(item => startMs >= item.fromMs && startMs < item.toMs);
+  if (!segment) return { outcome: 'no-frame', startMs };
+  const buffer = await readVideoSegment(source, segment, total, signal, fetcher);
+  const sampleFrame = createFrameSampler(durationMs, { still: true });
+  const [sample] = await decodeSegment(init, buffer, media, segment, { signal, cursor: startMs, sampleFrame, still: true });
+  if (sample?.blackFrame) return { outcome: 'black-frame', startMs, frameMs: sample.frameMs };
+  if (!sample?.dataUrl) return { outcome: 'no-frame', startMs };
+  const { frameMs, width, height, dataUrl } = sample;
+  return { outcome: 'captured', startMs, frameMs, width, height, dataUrl };
+}
+
+export async function scanVideoFrames({ media, durationMs, startMs, signal, onBlock, fetcher = fetch }) {
+  const { source, init, total, segments, headerBytes } = await openVideoStream(media, durationMs, signal, fetcher);
   const sampleFrame = createFrameSampler(durationMs);
-  let downloaded = header.byteLength, scannedMs = startMs;
+  let downloaded = headerBytes, scannedMs = startMs;
   for (const segment of segments) {
     if (segment.toMs <= startMs) continue;
     signal.throwIfAborted();
     if (downloaded + segment.end - segment.start + 1 > FRAME_SCAN.maxDownloadBytes) return { scannedMs, status: 'limited' };
-    let response;
-    try { response = await fetchBytes(source, segment, signal, fetcher); }
-    catch { signal.throwIfAborted(); throw inaccessible(); }
-    if (response.total !== index.total) throw inaccessible();
-    downloaded += response.buffer.byteLength;
-    const samples = await decodeSegment(init, response.buffer, media, segment, { signal, cursor: startMs, sampleFrame });
+    const buffer = await readVideoSegment(source, segment, total, signal, fetcher);
+    downloaded += buffer.byteLength;
+    const samples = await decodeSegment(init, buffer, media, segment, { signal, cursor: startMs, sampleFrame });
     signal.throwIfAborted();
     await onBlock({ scannedMs: segment.toMs, samples });
     scannedMs = segment.toMs;

@@ -2,6 +2,7 @@ const VERSION = 1;
 const MAX_ANCHOR = 160;
 const MAX_TEXT = 500_000;
 const MAX_BLOCKS = 1024;
+const NEARBY_CITATION_SECONDS = 45;
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 
 function quotation(value) {
@@ -89,11 +90,12 @@ export function findIllustrationBlock(blocks, item = {}, index = 0, total = 1) {
     if (matches.length === 1 && occurrences === 1) return matches[0].index;
   }
   const time = placement.time ?? item.videoFrame?.time ?? item.frameTime;
+  let nearby;
   if (finite(time) && time >= 0) {
-    const timed = all.flatMap(block => timestampSeconds(block.text).map(at => ({ index: block.index, at })));
-    const previous = timed.filter(block => block.at <= time).sort((a, b) => b.at - a.at);
-    const target = previous[0] || timed.sort((a, b) => a.at - b.at)[0];
-    if (target) return target.index;
+    const timed = candidates.flatMap(block => timestampSeconds(block.text).map(at => ({ index: block.index, at })));
+    const exact = timed.find(block => block.at === time);
+    if (exact) return exact.index;
+    nearby = timed.sort((left, right) => Math.abs(left.at - time) - Math.abs(right.at - time))[0];
   }
   const tokens = captionTokens(item.name);
   const scores = candidates.map(block => ({ index: block.index, text: block.text.toLowerCase(), terms: 0, score: 0 }));
@@ -106,6 +108,7 @@ export function findIllustrationBlock(blocks, item = {}, index = 0, total = 1) {
   }
   const ranked = scores.sort((a, b) => b.terms - a.terms || b.score - a.score);
   if (ranked[0]?.score > 0 && (!ranked[1] || ranked[0].terms > ranked[1].terms || ranked[0].score > ranked[1].score)) return ranked[0].index;
+  if (nearby && Math.abs(nearby.at - time) <= NEARBY_CITATION_SECONDS) return nearby.index;
   const ratio = placement.ratio ?? distributedRatio(index, total);
   return candidates[Math.round((candidates.length - 1) * ratio)].index;
 }

@@ -1,5 +1,6 @@
 import { isReadablePageUrl } from '../page-reading/page-control-state.js';
 import { normalizeDraftSource } from './draft-source.js';
+import { DEFAULT_WELCOME_TOPICS, TOPIC_DATE_TOKEN, TOPIC_TIME_INSTRUCTIONS } from './topic-preferences.js';
 
 /**
  * Welcome data uses tab metadata only. Rendering never reads the page or calls
@@ -81,36 +82,7 @@ const PAGE_SECONDARY_ACTIONS = {
   },
 };
 
-const TOPICS = [
-  {
-    id: 'news',
-    label: '国内外大事',
-    description: '近24小时，发生了什么',
-    icon: 'globe',
-    request: '整理近24小时值得关注的国内外大事，按重要性选3—5件；必要时补充近7日背景。',
-  },
-  {
-    id: 'ai',
-    label: 'AI圈动态',
-    description: '模型、产品和行业新动向',
-    icon: 'brain',
-    request: '梳理近24小时的 AI 模型、产品和行业重要动态，选3—5件；必要时补充近7日背景，区分正式发布与传闻。',
-  },
-  {
-    id: 'tech',
-    label: '科技新品',
-    description: '近7日，有哪些值得看',
-    icon: 'sparkles',
-    request: '看看近7日值得关注的科技新品，选3—5项，优先近24小时更新；说清新在哪里、发布或上市状态。',
-  },
-  {
-    id: 'business',
-    label: '商业与市场',
-    description: '公司、政策与市场变化',
-    icon: 'article',
-    request: '整理近24小时重要的公司、政策与市场变化，选3—5件；必要时补充近7日背景，市场数据注明时点。',
-  },
-];
+const TOPIC_ICONS = { news: 'globe', ai: 'brain', tech: 'sparkles', business: 'article' };
 
 function hostname(value) {
   try { return new URL(String(value || '')).hostname.toLowerCase(); } catch { return ''; }
@@ -138,23 +110,23 @@ function dateParts(date) {
   return Object.fromEntries(beijingClock.formatToParts(date).map(({ type, value }) => [type, value]));
 }
 
-function promptForDate(parts) {
-  return `现在是北京时间 ${parts.year}年${parts.month}月${parts.day}日 ${parts.hour}:${parts.minute}。请基于可核实的信息作答；无法联网请明说，不编造时事，可信信息不足时宁缺毋滥。`;
+function beijingDate(date) {
+  const { year, month, day, hour, minute } = dateParts(date);
+  return `${year}年${month}月${day}日 ${hour}:${minute}`;
 }
 
-export function currentDatePrompt(date = new Date()) { return promptForDate(dateParts(date)); }
+export function currentDatePrompt(date = new Date()) { return TOPIC_TIME_INSTRUCTIONS.replace(TOPIC_DATE_TOKEN, beijingDate(date)); }
 
 /**
  * primary: summarize-page or focus-input
  * secondary: one fill-prompt action or null
- * topics: four ordered fill-prompt actions; no automatic request or page read
+ * topics: ordered fill-prompt actions; no automatic request or page read
  */
-export function welcomePromptsFor(tab = {}, { now = new Date() } = {}) {
+export function welcomePromptsFor(tab = {}, { now = new Date(), topics = DEFAULT_WELCOME_TOPICS } = {}) {
   const kind = pageKindFor(tab);
   const readable = kind !== 'no-page';
   const secondary = PAGE_SECONDARY_ACTIONS[kind];
-  const sourceRequirements = '每项附来源链接、发布时间和事件发生时间（未知请注明），区分事实与可能影响，合并重复报道。';
-  const datePrompt = currentDatePrompt(now);
+  const date = beijingDate(now);
   return Object.freeze({
     kind,
     title: readable ? '这页想看懂什么？' : '今天想了解什么？',
@@ -168,10 +140,10 @@ export function welcomePromptsFor(tab = {}, { now = new Date() } = {}) {
       action: readable ? 'summarize-page' : 'focus-input',
     }),
     secondary: secondary ? Object.freeze({ ...secondary, action: 'fill-prompt' }) : null,
-    topics: Object.freeze(TOPICS.map(({ request, ...topic }) => Object.freeze({
-      ...topic,
-      prompt: `${request}\n${datePrompt}\n${sourceRequirements}`,
-      draftSource: Object.freeze(normalizeDraftSource({ scope: 'independent', topicId: topic.id })),
+    topics: Object.freeze(topics.map(({ id, title, subtitle, prompt }) => Object.freeze({
+      id, label: title, description: subtitle, icon: TOPIC_ICONS[id] || 'sparkles',
+      prompt: prompt.replaceAll(TOPIC_DATE_TOKEN, date),
+      draftSource: Object.freeze(normalizeDraftSource({ version: 1, scope: 'independent', topicId: id, label: title })),
       action: 'fill-prompt',
     }))),
   });

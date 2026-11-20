@@ -180,7 +180,7 @@ export function videoReplyPolicy(user) {
       summarized = prepared.summarized;
       return { videoContext: prepared.block };
     },
-    ...(request ? { isolated: true, research: false, suggestions: false,
+    ...(request ? { isolated: true, research: false,
       formatContent: content => formatVideoAnswer(transcript, content, { summarized }),
       sources: [videoSource(transcript)], assistantFields: { videoNotesVersion: 1 },
       completionFields: { videoNotesOutcome: 'notes' } } : {}) };

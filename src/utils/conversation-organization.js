@@ -255,6 +255,20 @@ export function createConversationOrganizationStore({
         return true;
       });
     },
+    reorderGroup(id, relativeTo, side) {
+      return mutate(snapshot => {
+        const group = findGroup(snapshot, groupIdentifier(id));
+        const target = findGroup(snapshot, groupIdentifier(relativeTo));
+        if (side !== 'before' && side !== 'after') throw new Error('分组排序位置无效。');
+        if (group === target) return false;
+        const order = snapshot.groups.filter(item => item !== group);
+        const destination = order.indexOf(target) + (side === 'after' ? 1 : 0);
+        if (destination === snapshot.groups.indexOf(group)) return false;
+        order.splice(destination, 0, group);
+        snapshot.groups = order;
+        return true;
+      });
+    },
     deleteGroup(id) {
       return mutate(snapshot => {
         findGroup(snapshot, groupIdentifier(id));

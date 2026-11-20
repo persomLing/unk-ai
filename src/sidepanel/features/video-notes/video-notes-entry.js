@@ -24,8 +24,8 @@ export function createVideoNotesEntry({ button, modeButton, getState, submit, le
     modeButton.textContent = MODE_LABELS[mode];
     modeButton.setAttribute('aria-pressed', String(mode !== 'off'));
     modeButton.setAttribute('aria-label', `视频配图方式：${MODE_NAMES[mode]}`);
-    modeButton.title = `视频配图方式：${MODE_NAMES[mode]}（点击切换）${mode === 'frame' ? '；截帧期间请不要离开视频页面或切换分 P' : ''}`
-      + (!state.imageGenerationAvailable ? '；未配置生图模型，生图模式不可用' : '');
+    modeButton.title = `视频配图方式：${MODE_NAMES[mode]}（点击切换）${mode === 'frame' ? '。按原视频时间点独立取帧，视觉模型审阅通过后插入笔记' : ''}`
+      + (!state.imageGenerationAvailable ? '。配置生图模型后可选生图' : '');
   }
   function sync() {
     if (disposed) return;
@@ -51,7 +51,7 @@ export function createVideoNotesEntry({ button, modeButton, getState, submit, le
       // bubbling menu listener sees the now-disabled button.
       closeMenu(); sync();
       leaveAgent();
-      if (pageCommand.illustration === 'frame') onNotice('截帧期间请不要离开当前视频页面，也不要切换分 P。', 'info');
+      if (pageCommand.illustration === 'frame') onNotice('笔记完成后会独立取帧，你可以继续观看。', 'info');
       await submit('整理当前视频的笔记', { pageCommand, commandId: createId() });
     } catch (error) { if (!disposed) onNotice(error.message || '无法开始视频笔记。', 'error'); }
     finally { if (pending === operation) { pending = null; sync(); } }

@@ -99,3 +99,27 @@ export function videoTimeForLink(transcript, href, label) {
   const time = stamp ? videoCueTimes(transcript).get(stamp) : undefined;
   return time !== undefined && href === videoTimestampUrl(transcript.video, time) ? time : null;
 }
+
+export function citedVideoCues(content, cues, video) {
+  const byStamp = new Map();
+  for (const cue of cues) {
+    if (cue.startMs >= video.duration * 1000) continue;
+    const stamp = videoTimestamp(cue.startMs);
+    if (!byStamp.has(stamp)) byStamp.set(stamp, cue);
+  }
+  const cited = new Map();
+  for (const { children } of markdown.parse(content.slice(0, 500_000), {})) {
+    if (!children) continue;
+    const description = children.filter(token => token.type === 'text' || token.type === 'code_inline')
+      .map(token => token.content).join('').replace(/\[(?:\d{2,}:)?\d{2}:\d{2}\]/g, '').trim().slice(0, 120);
+    for (let index = 0; index < children.length - 2; index++) {
+      const [open, label, close] = children.slice(index, index + 3);
+      if (open.type !== 'link_open' || label.type !== 'text' || close.type !== 'link_close') continue;
+      const stamp = label.content.match(/^\[((?:\d{2,}:)?\d{2}:\d{2})\]$/)?.[1];
+      const cue = byStamp.get(stamp);
+      if (!cue || open.attrGet('href') !== videoTimestampUrl(video, Math.floor(cue.startMs / 1000) * 1000)) continue;
+      if (!cited.has(cue.id)) cited.set(cue.id, { cue, description: description || cue.text.slice(0, 120) });
+    }
+  }
+  return [...cited.values()];
+}

@@ -3,7 +3,8 @@ import { assertPageTarget } from '../utils/page-target.js';
 import { biliVideoMetadata } from '../sidepanel/features/video-notes/bilibili-adapter.js';
 import { validateVideoResult, videoError } from '../sidepanel/features/video-notes/video-request.js';
 import { FRAME_SCAN, VIDEO_SCAN_PORT, VIDEO_DECODER_PORT, bilibiliHostOrigin, canScanFrames,
-  isScanCursor, isScanToken, selectBilibiliDash, validateScanBlock } from '../sidepanel/features/video-notes/video-scan-protocol.js';
+  isScanCursor, isScanToken, selectBilibiliDash, validateScanBlock, captureVideoStillRequest, validateVideoStill,
+  VIDEO_STILL_TIMEOUT_MS } from '../sidepanel/features/video-notes/video-scan-protocol.js';
 
 const hostLost = () => videoError('VIDEO_SCAN_HOST_LOST', '原 B 站页面已离开，画面扫描已停止。');
 const invalid = () => videoError('VIDEO_SCAN_INVALID', '画面扫描任务或返回数据不有效，已停止。');
@@ -56,13 +57,15 @@ export function createVideoScanService({ chrome: api = globalThis.chrome, fetch:
     return { tabId, documentId: frame.documentId, url: frame.result };
   }
 
-  async function attachHost(job, original, resume) {
+  async function attachHost(job, original, resume, still) {
     let host;
     if (!resume) {
       try { host = await readHost(job, original.tabId, original.documentId); }
       catch { job.signal.throwIfAborted(); throw hostLost(); }
-      const expected = assertPageTarget(original, host);
-      if (leases.has(expected.tabId)) throw videoError('VIDEO_SCAN_TAB_BUSY', '这个标签页已有画面扫描正在运行。');
+      if (still) {
+        if (host.documentId !== original.documentId || bilibiliHostOrigin(host.url) !== bilibiliHostOrigin(original.url)) throw hostLost();
+      } else assertPageTarget(original, host);
+      if (leases.has(host.tabId)) throw videoError('VIDEO_SCAN_TAB_BUSY', '这个标签页已有画面扫描正在运行。');
     } else {
       const tabs = await awaitWithTimeout(api.tabs.query({ url: ['https://www.bilibili.com/*', 'https://bilibili.com/*', 'https://m.bilibili.com/*'] }),
         { signal: job.signal, timeoutMs: ioMs });
@@ -92,8 +95,8 @@ export function createVideoScanService({ chrome: api = globalThis.chrome, fetch:
     leases.add(host.tabId);
   }
 
-  async function start(job, offer, quality, resume, connect) {
-    await attachHost(job, offer.target, resume);
+  async function start(job, offer, quality, resume, connect, still) {
+    await attachHost(job, offer.target, resume, still);
     const { video } = offer;
     const view = await fetchMetadata(fetcher, `https://api.bilibili.com/x/web-interface/view?bvid=${video.bvid}`, job.signal);
     job.signal.throwIfAborted();
@@ -122,7 +125,7 @@ export function createVideoScanService({ chrome: api = globalThis.chrome, fetch:
   const accept = port => {
     if (port.name !== VIDEO_SCAN_PORT) return;
     if (disposed || !isSidepanel(api, port.sender)) { port.disconnect(); return; }
-    let job, decoder, requestId, timer, blockTimer, scannedMs = 0, pending, quality, resolution, finished = false;
+    let job, decoder, requestId, timer, blockTimer, scannedMs = 0, pending, quality, resolution, finished = false, still = false;
     const post = value => port.postMessage({ requestId, ...value });
     const close = () => {
       if (finished) return;
@@ -140,7 +143,7 @@ export function createVideoScanService({ chrome: api = globalThis.chrome, fetch:
     const finish = result => { if (!finished) { try { post(result); } catch {} finally { close(); } } };
     const done = status => finish({ type: 'done', status, scannedMs: pending ?? scannedMs, quality, resolution });
     const error = failure => {
-      if (failure.code === 'VIDEO_SCAN_HOST_LOST' && job) done('interrupted');
+      if (!still && failure.code === 'VIDEO_SCAN_HOST_LOST' && job) done('interrupted');
       else finish({ type: 'error', code: failure.code || 'VIDEO_SCAN_FAILED', message: failure.code
         ? failure.message : '未能准备画面扫描，请检查原视频页面或稍后重试。' });
     };
@@ -149,10 +152,10 @@ export function createVideoScanService({ chrome: api = globalThis.chrome, fetch:
       quality = media.quality;
       resolution = `${media.width}×${media.height}`;
       decoder = api.tabs.connect(job.host.tabId, { name: VIDEO_DECODER_PORT, documentId: job.host.documentId });
-      decoder.onDisconnect.addListener(() => done('interrupted'));
+      decoder.onDisconnect.addListener(() => { if (!finished) error(hostLost()); });
       decoder.onMessage.addListener(value => {
         if (finished || value?.requestId !== requestId) return;
-        if (value.type === 'done' && pending === undefined && value.scannedMs === scannedMs && ['complete', 'limited'].includes(value.status)) {
+        if (!still && value.type === 'done' && pending === undefined && value.scannedMs === scannedMs && ['complete', 'limited'].includes(value.status)) {
           done(value.status); return;
         }
         if (value.type === 'error') {
@@ -162,41 +165,53 @@ export function createVideoScanService({ chrome: api = globalThis.chrome, fetch:
             : '无法解码这个视频流；加密流或不兼容的编码/分片格式不受支持。'));
           return;
         }
+        if (still) {
+          const result = value.type === 'frame' && validateVideoStill(value.result, scannedMs);
+          if (!result) error(invalid());
+          else finish({ type: 'frame', result });
+          return;
+        }
         const block = value.type === 'block' && pending === undefined && validateScanBlock(value, scannedMs, durationMs);
         if (!block) { error(invalid()); return; }
         pending = block.scannedMs;
         armBlock();
         try { post({ type: 'block', quality, resolution, ...block }); } catch { close(); }
       });
-      armBlock();
-      decoder.postMessage({ type: 'scan', requestId, media, durationMs, startMs: scannedMs });
+      if (!still) armBlock();
+      decoder.postMessage({ type: still ? 'still' : 'scan', requestId, media, durationMs, startMs: scannedMs });
     };
     const message = input => {
       if (job) {
-        if (input?.type !== 'ack' || input.requestId !== requestId || pending === undefined || input.scannedMs !== pending) return;
+        if (still || input?.type !== 'ack' || input.requestId !== requestId || pending === undefined || input.scannedMs !== pending) return;
         scannedMs = pending; pending = undefined; armBlock();
         try { decoder.postMessage(input); } catch { done('interrupted'); }
         return;
       }
       try {
         requestId = input?.requestId;
-        if (input?.type !== 'scan' || ![requestId, input.runId, input.conversationId, input.turnId].every(isScanToken)
-          || typeof input.resume !== 'boolean' || !Number.isFinite(input.deadlineAt) || disposed || !decoderFile) throw invalid();
+        if (!['scan', 'still'].includes(input?.type) || ![requestId, input.runId, input.conversationId, input.turnId].every(isScanToken)
+          || !Number.isFinite(input.deadlineAt) || disposed || !decoderFile) throw invalid();
         if (jobs.size >= 2) throw videoError('VIDEO_SCAN_BUSY', '已有两项画面扫描在运行，请稍后重试。');
-        const offer = validateVideoResult(input.offer);
+        still = input.type === 'still';
+        const offer = still ? captureVideoStillRequest(input) : validateVideoResult(input.offer);
         const durationMs = Math.round(offer.video.duration * 1000);
-        if (offer.kind !== 'unavailable' || !canScanFrames(offer.reason) || !isScanCursor(input.startMs, durationMs)
+        if (!still && (typeof input.resume !== 'boolean' || offer.kind !== 'unavailable' || !canScanFrames(offer.reason) || !isScanCursor(input.startMs, durationMs)
           || (!input.resume && (input.startMs !== 0 || input.quality !== undefined))
-          || (input.quality !== undefined && (!Number.isInteger(input.quality) || input.quality < 1 || input.quality > 256))) throw invalid();
-        if (durationMs > FRAME_SCAN.maxDurationMs) throw videoError('VIDEO_SCAN_DURATION', '画面扫描只支持不超过 2 小时的单个视频分 P。');
+          || (input.quality !== undefined && (!Number.isInteger(input.quality) || input.quality < 1 || input.quality > 256)))) throw invalid();
+        if (!still && durationMs > FRAME_SCAN.maxDurationMs) throw videoError('VIDEO_SCAN_DURATION', '画面扫描只支持不超过 2 小时的单个视频分集。');
         scannedMs = input.startMs;
         const controller = new AbortController();
         job = { controller, signal: controller.signal, host: null };
         jobs.add(job);
-        const remaining = Math.min(scanMs, input.deadlineAt - Date.now());
-        if (remaining <= 0) { done('timeout'); return; }
-        timer = setTimeout(() => done('timeout'), remaining);
-        void start(job, offer, input.quality, input.resume, media => connect(media, durationMs)).catch(error);
+        const timeout = () => {
+          if (still) error(videoError('VIDEO_STILL_TIMEOUT', '等待视频分片解码超时。'));
+          else done('timeout');
+        };
+        const remaining = Math.min(still ? VIDEO_STILL_TIMEOUT_MS : scanMs, input.deadlineAt - Date.now());
+        if (remaining <= 0) { timeout(); return; }
+        timer = setTimeout(timeout, remaining);
+        void start(job, offer, still ? undefined : input.quality, !still && input.resume,
+          media => connect(media, durationMs), still).catch(error);
       } catch (failure) { error(failure); }
     };
     port.onMessage.addListener(message); port.onDisconnect.addListener(close);

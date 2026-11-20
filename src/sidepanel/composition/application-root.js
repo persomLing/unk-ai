@@ -13,10 +13,9 @@ import { createSkillContextProvider } from '../features/skills/skill-context.js'
 import { createVideoContextProvider } from '../features/video-notes/transcript-context.js';
 import { createVideoNotesCommand, videoReplyPolicy } from '../features/video-notes/video-notes-command.js';
 import { readVideoTranscript as readTranscriptFromPort } from '../features/video-notes/video-reading-client.js';
-import { scanVideoPage } from '../features/video-notes/video-scan-client.js';
+import { captureVideoStill, scanVideoPage } from '../features/video-notes/video-scan-client.js';
 import { createImageIllustration } from '../features/illustration/image-illustration.js';
 import { createVideoIllustration } from '../features/video-notes/video-illustration.js';
-import { captureVideoFrame } from '../features/video-notes/video-navigation-client.js';
 import { settleInterruptedIllustrations } from '../features/illustration/illustration-lifecycle.js';
 import { createImageReply } from '../features/illustration/image-reply.js';
 import { directImageForMessage } from '../../utils/image-generation-command.js';
@@ -31,6 +30,7 @@ export function readingDiagnosticEvidence(page) {
  * descriptors; they never need to change submit/retry or the model stream. */
 export function createSidepanelApplication({ state, conversationSaver, browser, agentSlot,
   modelGateway = createModelGateway(), contextProviders = [],
+  textOnly = false, suggestionsEnabled = () => true,
   readVideoTranscript = (target, options) => readTranscriptFromPort(browser?.connect, target, options),
   scanVideo = (offer, options) => scanVideoPage(browser?.connect, offer, options),
   researchTools = createResearchToolSession, researchOptions = {}, recordDiagnostic = () => {}, nowMs = Date.now, ...ports }) {
@@ -59,21 +59,22 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
         : name === 'getDirectoryInfo' ? { permissionGranted: result?.granted === true } : { ok: Boolean(result?.id) } });
   }
   const videoNotes = createVideoNotesCommand({ readTranscript: readVideoTranscript, scanVideo });
-  const pageCommands = Object.freeze({ 'video-notes': videoNotes });
+  const pageCommands = Object.freeze(textOnly ? {} : { 'video-notes': videoNotes });
   const contextAssembler = createContextAssembler({ providers: [createSkillContextProvider(), createVideoContextProvider(), ...contextProviders] });
   const contextService = createContextService({ state, modelGateway, profileFor: ports.profileFor,
     createId: ports.makeId, now: ports.now,
     save: conversation => conversationSaver.schedule(conversation),
     onEvent: event => emit(event.type === 'settled' ? { ...event, type: 'compression-settled' } : event) });
   const chatService = createChatService({ repository, runner, modelGateway, contextAssembler, now: nowMs,
-    replyPolicyFor: videoReplyPolicy,
-    compress: contextService.compress, researchTools: researchTools ? options => {
+    replyPolicyFor: textOnly ? () => ({ suggestions: false }) : videoReplyPolicy,
+    suggestionsEnabled,
+    compress: textOnly ? undefined : contextService.compress, researchTools: !textOnly && researchTools ? options => {
       const session = researchTools({ ...options, fallbackSearch: publicResearch.search, fallbackFetch: publicResearch.fetch });
       return { ...session, execute: diagnostics.wrap(session.execute, { event: 'research', source: 'web-research', stage: 'research',
         summarize: result => ({ resultCount: result?.sources?.length || (result?.source ? 1 : 0) }) }) };
     } : null });
   const generateImage = createImageReply({ repository, getProfile: ports.profileFor, makeId: ports.makeId });
-  const replyService = { generate: options => directImageForMessage(repository.get(options.run.ref)?.user)
+  const replyService = { generate: options => !textOnly && directImageForMessage(repository.get(options.run.ref)?.user)
     ? generateImage(options) : chatService.generate(options) };
   const conversationService = createConversationService({ state, browser, agentSlot, runner, repository,
     modelGateway, replyService, ...observedPorts, pageCommands });
@@ -84,8 +85,15 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
   const illustration = createImageIllustration({ repository, modelGateway, getConfig: getIllustrationConfig,
     makeId: ports.makeId, isCurrent: ref => state.conversation?.id === ref.conversationId });
   const videoIllustration = createVideoIllustration({ repository, modelGateway, getConfig: getIllustrationConfig,
-    captureFrame: (input, options) => captureVideoFrame(browser?.connect, input, options),
-    makeId: ports.makeId, isCurrent: ref => state.conversation?.id === ref.conversationId });
+    captureFrame: diagnostics.wrap((input, options) => captureVideoStill(browser?.connect, input, options), {
+      event: 'diagnostic', source: 'diagnostics', stage: 'capture',
+      identify: input => ({ conversationId: input?.conversationId, turnId: input?.turnId, runId: input?.runId,
+        tabId: input?.target?.tabId, documentId: input?.target?.documentId }),
+      summarize: result => ({ status: result?.outcome === 'captured' ? 'success' : 'unavailable',
+        blackFrame: result?.outcome === 'black-frame',
+        frameCount: result?.outcome === 'captured' ? 1 : 0 }),
+    }),
+    makeId: ports.makeId, recordDiagnostic, isCurrent: ref => state.conversation?.id === ref.conversationId });
   const cancelIllustrations = assistantId => {
     const chat = illustration.cancel(assistantId), video = videoIllustration.cancel(assistantId);
     return chat || video;
@@ -95,11 +103,13 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
   });
   runner.subscribe(event => { try { diagnostics.observe(event); } catch { /* UI remains independent of diagnostics. */ }
     const typed = { ...event, type: `run:${event.type}` };
-    try { illustration.handle(typed); } catch { /* Optional decoration cannot affect the run. */ }
-    try { videoIllustration.handle(typed); } catch { /* Optional decoration cannot affect the run. */ }
+    if (!textOnly) {
+      try { illustration.handle(typed); } catch { /* Optional decoration cannot affect the run. */ }
+      try { videoIllustration.handle(typed); } catch { /* Optional decoration cannot affect the run. */ }
+    }
     emit(typed); });
   return Object.freeze({ conversations, runner, repository, contextService, contextAssembler, modelGateway,
-    cancelIllustrations, videoFrameRecovery: videoNotes.recovery,
+    cancelIllustrations, cancelSuggestions: chatService.cancelSuggestions, videoFrameRecovery: videoNotes.recovery,
     reconcileIllustrations(conversation) {
       const changed = settleInterruptedIllustrations(conversation, assistantId => illustration.active(conversation.id, assistantId)
         || videoIllustration.active(conversation.id, assistantId));

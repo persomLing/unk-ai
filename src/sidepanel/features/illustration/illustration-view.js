@@ -7,10 +7,12 @@ import { icon } from '../../icons.js';
 const ownedIllustrations = new WeakMap();
 
 const REASONS = Object.freeze({
-  blocked: '画面受保护或跨域', unverified: '画面与要点不符', 'no-vision': '当前模型不支持视觉核对',
+  blocked: '画面受保护或跨域', unverified: '画面与要点不符', 'no-vision': '当前服务未配置支持图片输入的模型',
   'not-ready': '播放器未就绪', uncertain: '播放器状态或画面结果未确认', 'page-changed': '原视频页面已变化',
   'page-required': '请回到原视频标签页', 'no-image-model': '未配置生图模型', 'generate-failed': '图片生成失败',
-  'no-frame': '无可用画面', failed: '截取失败', 'verify-failed': '画面核对失败', 'plan-failed': '配图规划失败', 'plan-invalid': '配图规划返回了无效结果',
+  'no-frame': '该时间点无可用画面', 'black-frame': '所选时间点的画面为黑屏',
+  'stream-unavailable': '原视频流无法读取或解码',
+  failed: '截取失败', 'verify-failed': '视觉模型未能完成审阅', 'plan-failed': '配图规划失败', 'plan-invalid': '配图规划返回了无效结果',
   'prompt-invalid': '请填写有效的画面描述，最多 4000 字',
   timeout: '配图规划或画面读取超时', 'rate-limit': '模型额度不足或请求过于频繁', 'access-denied': '模型服务拒绝访问，请检查模型和 API Key',
   'save-failed': '配图保存失败，请保留当前会话并检查本地文件夹', cancelled: '已取消配图', interrupted: '配图已中断，请重新提交提问',
@@ -22,8 +24,10 @@ function timestamp(seconds) {
 }
 
 function badge(item) {
-  return item.videoFrame ? `视频画面 · ${timestamp(item.videoFrame.time)}${item.videoFrame.verified === false ? ' · 未做内容核对' : ''}`
-    : item.videoGenerated ? 'AI 生成示意图 · 非视频真实画面' : 'AI 生成';
+  if (!item.videoFrame) return item.videoGenerated ? 'AI 生成示意图 · 非视频真实画面' : 'AI 生成';
+  const review = item.videoFrame.verified;
+  const status = review === true ? ' · 模型已审阅' : review === false ? ' · 未做内容核对' : '';
+  return `视频画面 · ${timestamp(item.videoFrame.time)}${status}`;
 }
 
 function locationAttributes(item, index, total) {
@@ -48,11 +52,10 @@ function readyFigure(item, index, total, allowImageReference) {
 
 function pendingFigure(item, index, total) {
   const caption = escapeHtml(item.name || '配图');
-  const label = item.phase === 'planning' ? '正在判断图片布局…' : item.kind === 'frame' ? '正在截取视频画面…' : '正在生成图片…';
-  const notice = item.kind === 'frame' ? '<small class="illustration-frame-notice">请不要离开视频页面</small>' : '';
+  const label = item.phase === 'planning' ? '正在判断图片布局…' : item.kind === 'frame' ? '正在截取视频画面并审阅…' : '正在生成图片…';
   const style = illustrationLayoutStyle(item.layout, { videoFrame: item.kind === 'frame' ? {} : null });
   return `<figure class="generated-image is-loading" ${locationAttributes(item, index, total)} style="${style}" aria-busy="true">
-    <div class="generated-image-placeholder" role="status"><div class="generated-image-progress"><span class="illustration-progress-label"><span class="illustration-spinner" aria-hidden="true"></span><span>${label}</span></span><button class="illustration-cancel" data-action="cancel-illustration" type="button" title="取消本轮剩余配图">取消配图</button></div></div>${notice}
+    <div class="generated-image-placeholder" role="status"><div class="generated-image-progress"><span class="illustration-progress-label"><span class="illustration-spinner" aria-hidden="true"></span><span>${label}</span></span><button class="illustration-cancel" data-action="cancel-illustration" type="button" title="取消本轮剩余配图">取消配图</button></div></div>
     <figcaption><span class="generated-image-badge">${escapeHtml(item.kind === 'frame' ? `视频配图 · ${timestamp(item.time)}` : badge(item))}</span><span class="generated-image-caption">${caption}</span></figcaption>
   </figure>`;
 }
@@ -107,9 +110,18 @@ export function videoIllustrationNote(message) {
   const info = message.videoIllustration;
   if (!info || typeof info !== 'object') return '';
   if (info.status === 'generating' && (info.mode === 'frame' || info.items?.some(item => item.kind === 'frame' && item.status === 'loading'))) {
-    return '<p class="video-illustration-note is-capturing" role="status">正在准备视频截帧，请不要离开当前视频页面，也不要切换分 P；完成后会在对应位置显示画面。</p>';
+    return '<p class="video-illustration-note is-capturing" role="status">正在独立截帧并审阅画面。你可以继续观看原视频。</p>';
   }
-  const warning = info.warnings?.length ? '<p class="video-illustration-note">播放器状态或页面未确认，已停止后续自动截帧，请先核对原视频。</p>' : '';
+  const warning = info.warnings?.length ? '<p class="video-illustration-note">原视频来源或画面时间无法确认，本轮截帧已停止。</p>' : '';
+  if (info.mode === 'frame' && info.status === 'unavailable' && (info.embedded ?? 0) === 0) {
+    const reason = info.reason || info.skipped?.find(item => item.reason !== 'not-needed')?.reason
+      || info.items?.find(item => item.status === 'unavailable' && item.reason !== 'not-needed')?.reason;
+    const explanation = REASONS[reason];
+    if (reason === 'no-vision' || reason === 'verify-failed') {
+      return `${warning}<p class="video-illustration-note">${escapeHtml(explanation)}，本轮未插入截图。</p>`;
+    }
+    if (explanation) return `${warning}<p class="video-illustration-note">本轮截帧未完成。${escapeHtml(explanation)}。</p>`;
+  }
   if (info.reason === 'save-failed') return `${warning}<p class="video-illustration-note">${REASONS['save-failed']}。</p>`;
   if (info.reason === 'no-image-model' || info.items?.some(item => item.reason === 'no-image-model')) return `${warning}<p class="video-illustration-note">${REASONS['no-image-model']}。</p>`;
   if (info.status === 'unavailable' && !info.items?.length) {

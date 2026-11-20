@@ -1,14 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="tile" x2=".7" y2="1">
-      <stop stop-color="#4a535c"/>
-      <stop offset="1" stop-color="#262b31"/>
+    <linearGradient id="sky" x1="0%" y1="0%" x2="85%" y2="100%">
+      <stop stop-color="#263753"/>
+      <stop offset="1" stop-color="#10192b"/>
     </linearGradient>
+    <radialGradient id="planet" cx="30%" cy="23%" r="83%">
+      <stop stop-color="#cdf5e8"/>
+      <stop offset=".62" stop-color="#8fcec8"/>
+      <stop offset="1" stop-color="#7691bc"/>
+    </radialGradient>
   </defs>
-  <rect x="3" y="3" width="122" height="122" rx="29" fill="url(#tile)"/>
-  <rect x="4" y="4" width="120" height="120" rx="28" fill="none" stroke="#939da7" stroke-opacity=".44" stroke-width="2"/>
-  <path d="M30 41q17-6 30 4v46q-13-10-30-4a3 3 0 0 1-4-3V45a4 4 0 0 1 4-4Z" fill="#faf8f3"/>
-  <path d="M68 45q13-10 30-4a4 4 0 0 1 4 4v39a3 3 0 0 1-4 3q-17-6-30 4Z" fill="#d9e0e4"/>
-  <path d="M36 59q8-2 15 2m26 0q7-4 15-2m-56 12q8-2 15 2" fill="none" stroke="#64707a" stroke-width="4" stroke-linecap="round"/>
-  <path d="M84 38v33l5-4 5 4V39a25 25 0 0 0-10-1Z" fill="#929fa9"/>
+  <rect x="2" y="2" width="124" height="124" rx="29" fill="url(#sky)"/>
+  <rect x="3" y="3" width="122" height="122" rx="28" fill="none" stroke="#819ab6" stroke-opacity=".35" stroke-width="2"/>
+  <g transform="translate(62 63) rotate(-29)" fill="none">
+    <path d="M-51 0a51 19 0 0 1 102 0" stroke="#85bac6" stroke-opacity=".64" stroke-width="3.5"/>
+  </g>
+  <circle cx="62" cy="63" r="32" fill="url(#planet)" stroke="#c5e9e5" stroke-width="1.5"/>
+  <path d="M50 46v14a12 12 0 0 0 24 0V46" fill="none" stroke="#1e344e" stroke-width="8" stroke-linecap="round"/>
+  <g transform="translate(62 63) rotate(-29)" fill="none" stroke-linecap="round">
+    <path d="M-51 0a51 19 0 0 0 102 0" stroke="#1a2941" stroke-width="8.5"/>
+    <path d="M-51 0a51 19 0 0 0 102 0" stroke="#e0faf2" stroke-width="4.5"/>
+  </g>
+  <path d="M99 20q2 7 9 9-7 2-9 9-2-7-9-9 7-2 9-9Z" fill="#f6db9c"/>
+  <circle cx="27" cy="39" r="2.5" fill="#b3cbe4"/>
+  <circle cx="91" cy="93" r="1.9" fill="#91b2d2"/>
 </svg>

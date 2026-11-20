@@ -899,16 +899,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   flex: 0 0 29px;
   width: 29px;
   height: 29px;
-  border-radius: 9px 9px 9px 4px;
-  background: var(--accent-fill);
-  color: var(--teal-dark);
-  display: grid;
-  place-items: center;
-}
-
-.assistant-avatar .icon {
-  width: 14px;
-  height: 14px;
+  background: url('../../icons/icon-32.png') center / contain no-repeat;
 }
 
 .user-avatar {
@@ -1227,7 +1218,6 @@ img[data-image-preview]:focus-visible {
 }
 .generated-image-progress { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 6px; text-align: center; line-height: 1.3; }
 .illustration-progress-label { display: flex; align-items: center; justify-content: center; gap: 8px; }
-.illustration-frame-notice { display: block; margin-bottom: 4px; color: var(--teal); font-size: 11px; }
 .illustration-spinner { flex-shrink: 0; width: 18px; height: 18px; border: 2px solid var(--line); border-top-color: var(--teal); border-radius: 50%; animation: illustration-spin 1s linear infinite; }
 .illustration-cancel { padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; font-size: 11px; }
 .illustration-cancel:hover { color: var(--ink); border-color: var(--teal); }
@@ -1627,6 +1617,7 @@ img[data-image-preview]:focus-visible {
 }
 
 /* Try-next 下一步探索 (DeepSeek 风格灵动胶囊) */
+#messages[data-next-exploration="off"] .try-next-container { display: none; }
 .try-next-container {
   margin-top: 14px;
   display: flex;

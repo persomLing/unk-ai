@@ -53,6 +53,7 @@
         <section id="welcome" class="welcome" aria-labelledby="welcome-title">
           <header class="atlas-cover welcome-cover">
             <div class="welcome-cover-copy">
+              <div class="welcome-wordmark"><img src="/icons/icon-32.png" width="24" height="24" alt="" />UNK AI</div>
               <h1 id="welcome-title">今天想了解什么？</h1>
               <p data-welcome-subtitle>直接提问，或挑一个感兴趣的话题。</p>
             </div>
@@ -90,8 +91,10 @@
           </div>
           <section class="welcome-topics" aria-labelledby="welcome-topics-title">
             <header class="welcome-topics-header">
-              <div><h2 id="welcome-topics-title">话题灵感</h2><p>缓慢巡游 · 悬停暂停 · 拖动浏览</p></div>
+              <h2 id="welcome-topics-title">话题灵感</h2>
+              <button id="welcome-topics-settings" type="button" class="welcome-topics-settings" aria-label="管理话题灵感"><i data-icon="settings"></i>管理</button>
             </header>
+            <p id="welcome-topics-empty" hidden>还没有话题，点击「管理」添加。</p>
             <div id="welcome-carousel" class="welcome-carousel" role="region" aria-labelledby="welcome-topics-title" aria-live="off">
               <div class="welcome-carousel-track"></div>
             </div>
@@ -105,7 +108,7 @@
           </template>
         </section>
 
-        <div id="messages" class="messages" aria-live="polite" aria-label="对话消息" hidden></div>
+        <div id="messages" class="messages" aria-live="polite" aria-label="对话消息" data-next-exploration="off" hidden></div>
         <div id="scroll-latest" class="scroll-latest" hidden>
           <button class="scroll-latest-button" type="button" aria-label="滚动到最新消息">
             <i class="scroll-latest-arrow" data-icon="arrow-down"></i>

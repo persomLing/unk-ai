@@ -53,6 +53,8 @@
   animation: none;
 }
 .welcome-cover-copy { position: relative; z-index: 1; width: 69%; }
+.welcome-wordmark { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; font: 700 11px/1 var(--display-font); letter-spacing: .10em; }
+.welcome-wordmark img { flex: none; }
 .welcome-cover h1 { font-size: 30px; line-height: 1.24; text-wrap: balance; }
 .welcome-cover p { max-width: 27em; font-size: 13px; }
 .atlas-planet {
@@ -123,20 +125,24 @@
 .welcome-secondary .icon { width: 14px; height: 14px; }
 
 .welcome-topics { margin-top: calc(17px * var(--density-factor)); min-width: 0; }
-.welcome-topics-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 3px 6px; }
+.welcome-topics-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 3px 3px; }
 .welcome-topics-header h2 { margin: 0; font-size: 14px; font-weight: 680; }
-.welcome-topics-header p { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+.welcome-topics-settings { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 4px 7px; border: 0; border-radius: 6px; color: var(--muted); background: transparent; font-size: 11px; }
+.welcome-topics-settings:hover, .welcome-topics-settings:focus-visible { color: var(--teal); background: var(--teal-soft); }
+.welcome-topics-settings .icon { width: 13px; height: 13px; }
+#welcome-topics-empty { margin: 7px 3px; color: var(--muted); font-size: 12px; }
 .welcome-carousel {
-  overflow: hidden;
+  overflow: clip;
   padding: 3px 1px 6px;
-  cursor: grab;
   touch-action: pan-y;
   -webkit-user-select: none;
   user-select: none;
-  mask-image: linear-gradient(90deg, transparent, #000 2%, #000 98%, transparent);
 }
-.welcome-carousel.is-dragging { cursor: grabbing; }
-.welcome-carousel-track { display: flex; gap: 9px; width: max-content; will-change: transform; }
+.welcome-carousel.is-looping { mask-image: linear-gradient(90deg, transparent, #000 1%, #000 99%, transparent); }
+.welcome-carousel.is-overflowing { cursor: grab; }
+.welcome-carousel.is-dragging, .welcome-carousel.is-dragging .welcome-topic { cursor: grabbing; }
+.welcome-carousel-track { display: flex; gap: 9px; width: max-content; }
+.welcome-carousel.is-overflowing .welcome-carousel-track { will-change: transform; }
 .welcome-topic {
   display: grid;
   grid-template-columns: 27px minmax(0, 1fr);
@@ -147,14 +153,18 @@
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
+  cursor: pointer;
   touch-action: pan-y;
   -webkit-user-select: none;
   user-select: none;
 }
+.welcome-topic strong, .welcome-topic small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.welcome-topic:focus-visible { outline-offset: -3px; }
 .welcome-topic .welcome-card-icon { width: 27px; height: 29px; border-radius: 8px; color: var(--teal); background: var(--teal-soft); }
 .welcome-topic .welcome-card-icon .icon { width: 15px; height: 15px; }
 @media (hover: hover) {
   .welcome-card:hover:not(:disabled) { border-color: color-mix(in srgb, var(--teal) 50%, var(--line)); background: var(--surface-card); box-shadow: var(--shadow-sm); }
+  .welcome-carousel.is-dragging .welcome-topic { box-shadow: none; background: var(--surface); border-color: var(--line); transition: none; }
   .welcome-primary:hover .welcome-card-end { transform: translateX(3px); }
   .welcome-secondary:hover { background: var(--teal-soft); }
 }

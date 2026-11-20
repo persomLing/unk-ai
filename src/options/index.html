@@ -27,6 +27,7 @@
           <div class="nav-caption">工作台设置</div>
           <nav class="settings-nav" aria-label="设置分区">
             <a href="#appearance-section" data-settings-nav="appearance-section" aria-current="location"><i data-icon="palette"></i><span>界面外观</span></a>
+            <a href="#topics-section" data-settings-nav="topics-section"><i data-icon="sparkles"></i><span>话题灵感</span></a>
             <a href="#connection-section" data-settings-nav="connection-section"><i data-icon="plug"></i><span>连接服务</span></a>
             <a href="#models-section" data-settings-nav="models-section"><i data-icon="cpu"></i><span>模型库</span></a>
             <a href="#parameters-section" data-settings-nav="parameters-section"><i data-icon="settings"></i><span>生成参数</span></a>
@@ -81,6 +82,37 @@
               </div>
             </fieldset>
             <p id="appearance-status" class="appearance-status" role="status">更改会自动保存并同步到侧栏。</p>
+            <label class="toggle-card" for="next-exploration-enabled">
+              <span><strong>下一步探索</strong><small id="next-exploration-hint">主对话回答完成后，用一次独立请求生成追问建议。此设置自动保存。</small></span>
+              <span class="ui-switch"><input id="next-exploration-enabled" type="checkbox" role="switch" aria-describedby="next-exploration-hint" checked disabled /><i aria-hidden="true"></i></span>
+            </label>
+            <p id="next-exploration-status" class="topic-settings-status" role="status"></p>
+          </section>
+
+          <section id="topics-section" class="form-section" data-settings-section aria-labelledby="topics-title">
+            <div class="section-heading topic-settings-heading">
+              <span class="section-symbol"><i data-icon="sparkles"></i></span>
+              <div><h2 id="topics-title">话题灵感</h2><p>管理新对话中的快捷话题。点击卡片会把提示内容填入草稿。</p></div>
+              <button id="topics-add" class="inline-action" type="button" disabled><i data-icon="plus"></i>添加话题</button>
+            </div>
+            <div id="topics-list" class="topics-settings-list" aria-label="已保存的话题"></div>
+            <form id="topics-editor" hidden>
+              <fieldset>
+                <div class="field-row">
+                  <div class="field"><label for="topic-title">标题</label><input id="topic-title" name="title" type="text" required /></div>
+                  <div class="field"><label for="topic-subtitle">副标题 <span>可选</span></label><input id="topic-subtitle" name="subtitle" type="text" /></div>
+                </div>
+                <div class="field"><label for="topic-prompt">提示内容</label><textarea id="topic-prompt" name="prompt" rows="5" aria-describedby="topic-date-hint" required></textarea>
+                  <p id="topic-date-hint" class="hint">提示内容中的 <code>{{北京时间}}</code> 会在选中话题时替换为当时的日期和时间。</p>
+                </div>
+                <div class="topic-editor-actions">
+                  <button id="topics-remove" class="inline-action topic-remove" type="button"><i data-icon="trash"></i>删除话题</button>
+                  <button id="topics-cancel" class="button button-secondary" type="button">取消</button>
+                  <button class="button button-primary" type="submit">保存话题</button>
+                </div>
+              </fieldset>
+            </form>
+            <p id="topics-status" class="topic-settings-status" role="status"></p>
           </section>
 
           <form id="settings-form" novalidate>

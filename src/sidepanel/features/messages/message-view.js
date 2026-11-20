@@ -15,7 +15,7 @@ import { replyElapsedLabel, replyProgress } from './reply-progress.js';
 import { messageErrorMarkup, messageModeBadgeMarkup, syncMessageDecorations } from './message-decorations.js';
 import { syncChildren } from './dom-reconcile.js';
 import { thinkingPresentation } from './thinking-view.js';
-import { parseSuggestionResponse } from './model-suggestions.js';
+import { parseSuggestionResponse, suggestedReadingQuestions, suggestedVideoQuestions } from './model-suggestions.js';
 import { articleQuotes } from './article-quote-draft.js';
 import { shouldCollapseMessageText } from './text-preview.js';
 import { videoAttachmentName } from '../video-notes/video-notes-presentation.js';
@@ -88,9 +88,10 @@ function renderedContent(content, streaming, ownerDocument) {
   return fragment;
 }
 
-export function renderMessageContent(container, content, streaming = false) {
+export function renderMessageContent(container, content, streaming = false, { textOnly = false } = {}) {
   if (!container) return;
   const fragment = renderedContent(content, streaming, container.ownerDocument);
+  if (textOnly) fragment.querySelectorAll('picture, img, audio, video').forEach(node => node.remove());
   if (!streaming && container.hasAttribute('data-message-content')) decorateCodeBlocks(fragment);
   detachMessageIllustrations(container);
   syncChildren(container, fragment);
@@ -196,11 +197,15 @@ function sourcesMarkup(message) {
 }
 
 function tryNextMarkup(message, { showSuggestions = false } = {}) {
-  if (!showSuggestions) return '';
-  const suggestions = Array.isArray(message.suggestions) && message.suggestions.length > 0
+  if (!showSuggestions || (message.status && message.status !== 'complete')) return '';
+  let suggestions = Array.isArray(message.suggestions) && message.suggestions.length > 0
     ? parseSuggestionResponse(JSON.stringify(message.suggestions.filter(value => typeof value === 'string')), { answer: message.content })
     : [];
-  if (!suggestions.length || message.status === 'streaming') return '';
+  if (!suggestions.length && !message.agent) {
+    if (message.videoNotesOutcome === 'notes') suggestions = suggestedVideoQuestions(message.content);
+    else if (!message.videoNotesVersion) suggestions = suggestedReadingQuestions(message.content);
+  }
+  if (!suggestions.length) return '';
   const chips = suggestions.map((s) =>
     `<button class="try-next-chip" type="button" data-suggestion="${escapeHtml(s)}">
       <span>${escapeHtml(s)}</span>
@@ -217,7 +222,7 @@ function requestProgressMarkup(progress, phase) {
   return `<div class="message-state request-progress" data-message-progress data-request-phase="${escapeHtml(phase || '')}">${icon(phase === 'reading' ? 'article' : 'history')}<span data-progress-text><span role="status" data-progress-label>${escapeHtml(progress.label)}</span><span data-progress-detail>${escapeHtml(progress.details)}</span></span></div>`;
 }
 
-function assistantMessageMarkup(message, { showSuggestions = false, frameActions, allowImageReference = false } = {}) {
+function assistantMessageMarkup(message, { showSuggestions = false, frameActions, allowImageReference = false, textOnly = false } = {}) {
   const status = message.status || 'complete';
   const stopped = status === 'stopped'
     ? `<div class="message-state">${icon('stop')}已停止，已保留当前回答</div>`
@@ -258,13 +263,13 @@ function assistantMessageMarkup(message, { showSuggestions = false, frameActions
   const agentState = message.agent && message.status === 'streaming'
     ? `<div class="message-state">${icon('globe')}正在执行浏览器任务，进度会实时更新</div>`
     : '';
-  const sources = sourcesMarkup(message);
-  const tryNext = tryNextMarkup(message, { showSuggestions });
+  const sources = textOnly ? '' : sourcesMarkup(message);
+  const tryNext = textOnly ? '' : tryNextMarkup(message, { showSuggestions });
   const frameButtons = frameActions?.buttons?.length ? `<div class="video-frame-actions" role="group" aria-label="视频画面识别">${frameActions.buttons.map(button =>
     `<button class="action-text" data-action="${escapeHtml(button.action)}" type="button" aria-haspopup="dialog">${icon('article')}${escapeHtml(button.label)}</button>`).join('')}</div>` : '';
   return `<article class="message assistant-message" data-message-id="${message.id}">
-    <div class="message-label"><span class="assistant-avatar">${icon('asterisk')}</span><span class="assistant-name">UNK AI</span>${model}<span class="message-meta">${elapsed ? `<span class="message-elapsed" data-message-elapsed title="${elapsedTitle}">${escapeHtml(elapsed)}</span>` : ''}<time>${formatTime(message.createdAt)}</time></span></div>
-    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${frameButtons}${generatedImagesMarkup(message, { allowImageReference })}${illustrationNote(message)}${videoIllustrationNote(message)}${sources}${tryNext}${stopped}${error}
+    <div class="message-label"><span class="assistant-avatar" aria-hidden="true"></span><span class="assistant-name">UNK AI</span>${model}<span class="message-meta">${elapsed ? `<span class="message-elapsed" data-message-elapsed title="${elapsedTitle}">${escapeHtml(elapsed)}</span>` : ''}<time>${formatTime(message.createdAt)}</time></span></div>
+    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${frameButtons}${textOnly ? '' : generatedImagesMarkup(message, { allowImageReference }) + illustrationNote(message) + videoIllustrationNote(message)}${sources}${tryNext}${stopped}${error}
     <div class="message-actions">
       <button class="icon-button" data-action="copy" type="button" aria-label="复制回答" title="选择复制格式" aria-haspopup="menu" aria-expanded="false">${icon('copy')}</button>
       ${message.agent ? (['failed', 'cancelled'].includes(message.agent.status) ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>` : '') : frameActions?.hideRetry ? '' : `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`}${retry}

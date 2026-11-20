@@ -105,6 +105,7 @@ import {
 } from './features/welcome/welcome-prompts.js';
 import { createWelcomeView } from './features/welcome/welcome-view.js';
 import { normalizeDraftSource } from './features/welcome/draft-source.js';
+import { decodeWelcomeTopics, DEFAULT_WELCOME_TOPICS, loadWelcomeTopics, WELCOME_TOPICS_KEY } from './features/welcome/topic-preferences.js';
 import { createAgentTurnCallbacks } from './features/agent/agent-turn-callbacks.js';
 import { createConversationSaver } from './features/storage/conversation-save.js';
 import { createConversationOrganizationStore } from '../utils/conversation-organization.js';
@@ -132,6 +133,7 @@ import {
   storageSetupState,
 } from './features/storage/storage-state.js';
 import { showSuggestionsFor } from './features/messages/suggestion-visibility.js';
+import { watchNextExploration } from './features/messages/suggestion-preference.js';
 import {
   messageMarkup,
   renderMessageContent,
@@ -555,8 +557,10 @@ function renderPageSelection() {
 }
 
 const welcomeView = createWelcomeView($('#welcome'));
+let welcomeTopics = DEFAULT_WELCOME_TOPICS;
+let welcomeTopicsChanged = false;
 function renderWelcomePrompts() {
-  welcomeView.render(welcomePromptsFor(state.activePageSignal || {}));
+  welcomeView.render(welcomePromptsFor(state.activePageSignal || {}, { topics: welcomeTopics }));
 }
 
 function setPageSelection(value) {
@@ -1738,8 +1742,10 @@ const enhancePageReading = createSupplementalReader({
 });
 void composition.ready.then(() => updateComposer());
 
+let nextExplorationEnabled = false;
 const application = createSidepanelApplication({
   state, conversationSaver, agentSlot, modelGateway, recordDiagnostic,
+  suggestionsEnabled: () => nextExplorationEnabled,
   browser: {
     queryActiveTab: () => chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => tab || null),
     sendMessage: message => chrome.runtime.sendMessage(message),
@@ -1750,6 +1756,14 @@ const application = createSidepanelApplication({
   activeChatProfile, profileFor: (modelId = state.selectedModelId, effort = state.selectedEffort) => requestProfile(state.config, { modelId, effort }),
   conversationTitle, hasVision, makeId, now, truncateText,
 });
+function applyNextExploration(enabled) {
+  nextExplorationEnabled = enabled;
+  messagesElement.dataset.nextExploration = enabled ? 'on' : 'off';
+  if (!enabled) application.cancelSuggestions();
+}
+const disposeNextExploration = chrome.storage?.local && chrome.storage?.onChanged
+  ? watchNextExploration({ storage: chrome.storage.local, changes: chrome.storage.onChanged,
+    onChange: applyNextExploration, onError: () => applyNextExploration(false) }) : () => {};
 const replyClock = createReplyClock({ root: messagesElement, getConversation: () => state.conversation,
   getRun: application.runner.active });
 const skillLibrary = createSkillLibrary({ storage: chrome.storage.local, locks: navigator.locks });
@@ -2379,7 +2393,7 @@ $('#welcome')?.addEventListener('click', async (event) => {
     return;
   }
   const topic = chip.dataset.topicId
-    ? welcomePromptsFor(state.activePageSignal || {}).topics.find(item => item.id === chip.dataset.topicId)
+    ? welcomePromptsFor(state.activePageSignal || {}, { topics: welcomeTopics }).topics.find(item => item.id === chip.dataset.topicId)
     : null;
   const prompt = topic?.prompt || chip.dataset.prompt;
   if (prompt) {
@@ -2396,6 +2410,12 @@ $('#welcome')?.addEventListener('click', async (event) => {
     updateComposer();
     input.focus();
   }
+});
+
+$('#welcome-topics-settings')?.addEventListener('click', () => {
+  if (!chrome.runtime?.getURL || !chrome.tabs?.create) return;
+  void awaitWithTimeout(chrome.tabs.create({ url: `${chrome.runtime.getURL('src/options/index.html')}#topics-section` }),
+    { timeoutMs: 3000, message: '打开话题设置超时。' }).catch(() => toast('无法打开话题设置，可从历史侧栏进入设置。', 'error'));
 });
 
 $('#queue-recall')?.addEventListener('click', recallQueueItem);
@@ -2505,10 +2525,12 @@ messagesElement.addEventListener('click', async (event) => {
   const tryNextChip = event.target.closest('.try-next-chip');
   if (tryNextChip && tryNextChip.dataset.suggestion) {
     event.preventDefault();
+    if (!nextExplorationEnabled) return;
     if (historyMutationBusy) { toast('正在整理历史对话，请稍后重试。'); return; }
     if (agentSlot?.isBusy()) return;
     const sourceArticle = tryNextChip.closest('[data-message-id]');
     const sourceAssistant = find(state.conversation?.messages, (message) => message.id === sourceArticle?.dataset.messageId);
+    if (!sourceAssistant || state.conversation?.messages.at(-1) !== sourceAssistant) return;
     const sourceIndex = state.conversation?.messages?.indexOf(sourceAssistant) ?? -1;
     const sourceQuestion = sourceIndex > 0 ? state.conversation.messages[sourceIndex - 1] : null;
     if (sourceAssistant && sourceQuestion?.role === 'user' && samePrompt(tryNextChip.dataset.suggestion, sourceQuestion.displayContent || sourceQuestion.content || '')) {
@@ -2520,7 +2542,10 @@ messagesElement.addEventListener('click', async (event) => {
     state.draftSource = null;
     state.rewoundCommand = null;
     resizeInput();
-    await sendMessage();
+    if (sourceAssistant.videoNotesOutcome === 'notes') {
+      setPageSelection(null);
+      await sendMessage(undefined, { pageContextEnabled: false, agentTask: false });
+    } else await sendMessage();
     return;
   }
   const button = event.target.closest('[data-action]');
@@ -2656,6 +2681,10 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
   if (area === 'local' && changes.interfacePreferences) {
     applyAppearance(document, changes.interfacePreferences.newValue);
   }
+  if (area === 'local' && changes[WELCOME_TOPICS_KEY]) {
+    welcomeTopicsChanged = true;
+    try { welcomeTopics = decodeWelcomeTopics(changes[WELCOME_TOPICS_KEY].newValue); renderWelcomePrompts(); } catch {}
+  }
   if (area === 'local' && changes.storageDirectoryMeta) {
     getDirectoryInfo().then((info) => {
       const wasGranted = Boolean(state.storageInfo?.granted);
@@ -2694,6 +2723,7 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
 });
 const startupController = new AbortController();
 window.addEventListener('pagehide', () => {
+  disposeNextExploration();
   clearTimeout(contextUsageRefreshTimer);
   if (typeof welcomeView !== 'undefined') welcomeView.dispose();
   contextUsageTracker.dispose();
@@ -2882,4 +2912,11 @@ function watchSelectionInteractions() {
   window.addEventListener('focus', resync, true);
 }
 
+if (chrome.storage?.local) {
+  void loadWelcomeTopics(chrome.storage.local, startupController.signal).then(topics => {
+    if (startupController.signal.aborted || welcomeTopicsChanged) return;
+    welcomeTopics = topics;
+    renderWelcomePrompts();
+  }).catch(() => {});
+}
 initialize();

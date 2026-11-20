@@ -1,4 +1,6 @@
 # npm run release validates the committed release before invoking this packager.
+param([switch]$ReuseGuide)
+
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 $distRoot = Join-Path $taskRoot 'dist'
@@ -14,14 +16,16 @@ $status = @(git -C $taskRoot status --porcelain)
 if ($LASTEXITCODE -ne 0 -or $status.Count) { throw 'Commit the release before packaging; the Git working tree must be clean.' }
 $commit = git -C $taskRoot rev-parse HEAD
 if ($LASTEXITCODE -ne 0) { throw 'Cannot identify release commit.' }
-$preparedJson = node (Join-Path $PSScriptRoot 'release.mjs') --prepare-notes
+$prepareArgs = @('--prepare-notes')
+if ($ReuseGuide) { $prepareArgs += '--reuse-guide' }
+$preparedJson = node (Join-Path $PSScriptRoot 'release.mjs') @prepareArgs
 if ($LASTEXITCODE -ne 0) { throw 'Release notes or user guide validation failed.' }
 $prepared = $preparedJson | ConvertFrom-Json
 if ($prepared.version -ne $version) { throw 'Release notes version differs.' }
 $checkPath = Join-Path $taskRoot "output/release-check-v$version.json"
 $releaseInfo = [ordered]@{ schemaVersion = 1; name = 'UNK AI'; version = $version; tag = "v$version";
   commit = $commit; releaseDate = $prepared.date; generatedAt = [DateTime]::UtcNow.ToString('o');
-  releaseNotes = 'RELEASE-NOTES.md'; userGuide = 'USER-GUIDE.html' }
+  releaseNotes = 'RELEASE-NOTES.md'; userGuide = 'USER-GUIDE.html'; userGuideVersion = $prepared.userGuideVersion }
 if (Test-Path -LiteralPath $checkPath -PathType Leaf) {
   $check = Get-Content -LiteralPath $checkPath -Raw | ConvertFrom-Json
   if ($check.version -ne $version -or $check.commit -ne $commit -or $check.passed -ne $true) { throw 'Release check record differs from this commit.' }

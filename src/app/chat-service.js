@@ -21,6 +21,7 @@ function friendlyError(error) {
 export function createChatService({ repository, runner, modelGateway, contextAssembler,
   researchTools = null,
   replyPolicyFor = () => ({}),
+  suggestionsEnabled = () => true,
   compress = async () => {}, now = Date.now, setInterval: every = globalThis.setInterval,
   clearInterval: clearEvery = globalThis.clearInterval } = {}) {
   const effects = new Set();
@@ -29,10 +30,10 @@ export function createChatService({ repository, runner, modelGateway, contextAss
 
   async function suggest(ref, profile, answer) {
     const target = repository.get(ref);
-    if (!target || target.assistant.status !== 'complete') return;
-    if (disposed) return;
+    if (!target || target.assistant.status !== 'complete' || disposed) return;
     let effect;
     try {
+      if (!suggestionsEnabled()) return;
       effect = modelGateway.createRun({ runId: `${ref.runId}:suggestions`, profile,
         diagnosticContext: { conversationId: ref.conversationId, turnId: ref.turnId } });
       effects.add(effect);
@@ -40,7 +41,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
       const raw = await effect.request({ requestId: 'suggestions', purpose: 'suggestions', timeoutMs: 12000,
         messages: suggestionMessages({ question, answer, sources: target.assistant.sources,
           page: target.user.pageContextEnabled === false ? null : target.user.pageSource || null }) });
-      if (disposed) return;
+      if (disposed || !effects.has(effect) || !suggestionsEnabled()) return;
       const current = repository.get(ref);
       if (!current || current.assistant.status !== 'complete' || current.assistant.content !== answer) return;
       const suggestions = parseSuggestionResponse(raw, { question, answer, requireGrounding: true }).filter(value => !samePrompt(value, question));
@@ -206,5 +207,10 @@ export function createChatService({ repository, runner, modelGateway, contextAss
     finally { clearEvery(timer); if (!modelRun) connection?.dispose(); }
   }
 
-  return Object.freeze({ generate, dispose() { disposed = true; for (const effect of effects) effect.dispose(); effects.clear(); } });
+  function cancelSuggestions() {
+    for (const effect of effects) effect.dispose();
+    effects.clear();
+  }
+
+  return Object.freeze({ generate, cancelSuggestions, dispose() { disposed = true; cancelSuggestions(); } });
 }

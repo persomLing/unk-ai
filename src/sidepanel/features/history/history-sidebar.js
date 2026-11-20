@@ -37,6 +37,7 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     onChange: renderFeedback,
   });
   const blocked = () => state.busy || state.working || !state.organization || disposed;
+  const canReorder = () => state.view === 'groups' && !state.query.trim() && !state.multi && (state.organization?.groups.length || 0) > 1;
   const projection = () => projectHistory(state.entries, state.organization,
     { query: state.query, view: state.view, collapsed: state.collapsed });
   const groupName = id => projection().groups.find(group => group.id === id)?.name || '未分组';
@@ -106,7 +107,7 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     const editing = state.form?.kind === 'chat' && state.form.id === entry.id;
     const sync = entry.syncStatus === 'pending' ? ' · 待同步' : '';
     const details = `${entry.title} · ${groupName(entry.group)} · ${formatDate(entry.updatedAt)} · ${entry.messageCount || 0} 条消息${sync}`;
-    return `<article class="ho-row ${state.activeId === entry.id ? 'is-active' : ''} ${state.selected.has(entry.id) ? 'is-selected' : ''} ${state.drag?.ids.includes(entry.id) ? 'is-drag-source' : ''}" data-chat-id="${escape(entry.id)}" data-context-kind="chat" data-context-id="${escape(entry.id)}">
+    return `<article class="ho-row ${state.activeId === entry.id ? 'is-active' : ''} ${state.selected.has(entry.id) ? 'is-selected' : ''} ${state.drag?.ids?.includes(entry.id) ? 'is-drag-source' : ''}" data-chat-id="${escape(entry.id)}" data-context-kind="chat" data-context-id="${escape(entry.id)}">
       ${state.multi ? `<input type="checkbox" data-select-chat="${escape(entry.id)}" aria-label="选择：${escape(entry.title)}" ${state.selected.has(entry.id) ? 'checked' : ''} ${state.working ? 'disabled' : ''}>` : ''}
       ${editing ? editMarkup() : `${btn(`data-open-chat="${escape(entry.id)}" title="${escape(details)}"${state.activeId === entry.id ? ' aria-current="true"' : ''}`, `<span class="ho-chat-copy"><span class="ho-chat-title">${escape(entry.title)}</span><span class="ho-date">${escape(formatDate(entry.updatedAt))}${sync}</span></span>`, 'message', 'ho-open')}${!state.multi ? btn(`data-menu-kind="chat" data-menu-id="${escape(entry.id)}" aria-label="对话操作：${escape(entry.title)}" aria-haspopup="menu"`, '', 'ellipsis', 'ho-icon') : ''}`}
     </article>`;
@@ -117,9 +118,11 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     if (projected.searching && !entries.length) return '';
     const open = !state.collapsed.has(group.id) || projected.searching;
     const renaming = state.form?.kind === 'group' && state.form.id === group.id;
-    return `<section class="ho-group" data-group-id="${escape(group.id)}" data-drop-group="${escape(group.id)}"><header class="ho-group-head" data-context-kind="group" data-context-id="${escape(group.id)}">
+    const dragSource = state.drag?.kind === 'group' && state.drag.id === group.id;
+    const reorder = canReorder() && group.id !== 'none' ? ' data-reorder-group' : '';
+    return `<section class="ho-group${dragSource ? ' is-drag-source' : ''}" data-group-id="${escape(group.id)}" data-drop-group="${escape(group.id)}"><header class="ho-group-head" data-context-kind="group" data-context-id="${escape(group.id)}">
       ${state.multi ? `<input type="checkbox" data-select-group="${escape(group.id)}" aria-label="选择${escape(group.name)}中的 ${entries.length} 条对话" ${entries.length && entries.every(entry => state.selected.has(entry.id)) ? 'checked' : ''} ${!entries.length || state.working ? 'disabled' : ''}>` : ''}
-      ${renaming ? editMarkup() : `${btn(`data-collapse="${escape(group.id)}" aria-expanded="${open}"`, `<span class="ho-group-name">${escape(group.name)}</span><span class="ho-count">${all.length}</span>`, open ? 'chevron-down' : 'chevron-right', 'ho-group-toggle')}${!state.multi ? `${btn(`data-new-in-group="${escape(group.id)}" aria-label="在${escape(group.name)}新建对话" title="在${escape(group.name)}新建对话"`, '', 'plus', 'ho-icon')}${btn(`data-menu-kind="group" data-menu-id="${escape(group.id)}" aria-label="分组操作：${escape(group.name)}" aria-haspopup="menu"`, '', 'ellipsis', 'ho-icon')}` : ''}`}
+      ${renaming ? editMarkup() : `${btn(`data-collapse="${escape(group.id)}" aria-expanded="${open}"${reorder}`, `<span class="ho-group-name">${escape(group.name)}</span><span class="ho-count">${all.length}</span>`, open ? 'chevron-down' : 'chevron-right', 'ho-group-toggle')}${!state.multi ? `${btn(`data-new-in-group="${escape(group.id)}" aria-label="在${escape(group.name)}新建对话" title="在${escape(group.name)}新建对话"`, '', 'plus', 'ho-icon')}${btn(`data-menu-kind="group" data-menu-id="${escape(group.id)}" aria-label="分组操作：${escape(group.name)}" aria-haspopup="menu"`, '', 'ellipsis', 'ho-icon')}` : ''}`}
       </header><div class="ho-group-body" ${open ? '' : 'hidden'}>${entries.map(row).join('') || (projected.all.length ? '<div class="ho-empty">暂无对话</div>' : '')}</div></section>`;
   }
   function render() {
@@ -215,8 +218,10 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
       node.style.top = Math.max(8, Math.min(menu.y, drawer.clientHeight - node.offsetHeight - 8)) + 'px';
       restoreFocus(previousFocus, overlay);
     } else {
-      const name = projection().all.find(entry => entry.id === state.drag.ids[0])?.title || '对话';
-      overlay.innerHTML = `${state.view === 'all' ? `<div class="ho-drop-tray"><div class="ho-menu-heading">松开以移至分组</div>${projection().groups.map(group => `<div class="ho-drop-choice" data-drop-group="${escape(group.id)}">${icon(group.id === 'none' ? 'inbox' : 'folder')}${escape(group.name)}</div>`).join('')}</div>` : ''}<div class="ho-ghost" aria-hidden="true">${escape(state.drag.ids.length > 1 ? `${state.drag.ids.length} 条对话` : name)}<small>拖到分组，Esc 取消</small></div>`;
+      const drag = state.drag;
+      const name = drag.kind === 'group' ? groupName(drag.id) : drag.ids.length > 1
+        ? `${drag.ids.length} 条对话` : projection().all.find(entry => entry.id === drag.ids[0])?.title || '对话';
+      overlay.innerHTML = `${drag.kind === 'chat' && state.view === 'all' ? `<div class="ho-drop-tray"><div class="ho-menu-heading">松开以移至分组</div>${projection().groups.map(group => `<div class="ho-drop-choice" data-drop-group="${escape(group.id)}">${icon(group.id === 'none' ? 'inbox' : 'folder')}${escape(group.name)}</div>`).join('')}</div>` : ''}<div class="ho-ghost" aria-hidden="true">${escape(name)}<small></small></div>`;
       drawer.append(overlay);
     }
   }
@@ -258,15 +263,15 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
     if (disposed) return;
     state.collapsed.delete(group); state.selected.clear(); announce(`已将 ${ids.length} 条对话移至“${groupName(group)}”`); remember();
   }); }
-  async function moveGroup(menu, direction) {
+  async function saveGroupOrder(change, restoreKey) {
     await run(async () => {
-      const snapshot = await organization.moveGroup(menu.id, direction);
+      const snapshot = await change();
       if (disposed) return;
       applyOrganization(snapshot);
       announce('分组顺序已保存');
     });
     if (!disposed && drawer.classList.contains('open') && doc.activeElement === doc.body) {
-      restoreFocus(menu.focusKey)?.scrollIntoView({ block: 'nearest' });
+      restoreFocus(restoreKey)?.scrollIntoView({ block: 'nearest' });
     }
   }
   function requestDelete(kind, target) {
@@ -349,7 +354,7 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
       if (action === 'undo-last-delete') void restoreDeleted();
       if (action === 'select-group') { clearQuery(); state.view = 'groups'; state.collapsed.delete(menu.id); selectMany(projection().all.filter(entry => entry.group === menu.id).map(entry => entry.id)); }
       if (menu.kind === 'group' && (action === 'move-group-up' || action === 'move-group-down')) {
-        void moveGroup(menu, action === 'move-group-up' ? 'up' : 'down');
+        void saveGroupOrder(() => organization.moveGroup(menu.id, action === 'move-group-up' ? 'up' : 'down'), menu.focusKey);
       }
       if (action === 'delete-group') requestDelete('group', menu.id);
       if (action === 'delete-chats') requestDelete('chats', menu.kind === 'chat' ? [menu.id] : [...state.selected]);
@@ -408,28 +413,60 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
   }, { signal });
   dialog.addEventListener('cancel', event => { if (state.working) event.preventDefault(); else pendingDelete = null; }, { signal });
   dialog.addEventListener('keydown', event => { if (event.key === 'Escape') event.stopPropagation(); }, { signal });
-  doc.addEventListener('pointerdown', event => { if (state.menu && !event.target.closest('.ho-menu') && !event.target.closest('[data-menu-kind],#history-manage,#history-view')) closeMenu(); }, { signal, capture: true });
+  doc.addEventListener('pointerdown', event => { if (state.menu && !event.target.closest('.ho-menu,[data-menu-kind],#history-manage,#history-view')) closeMenu(); }, { signal, capture: true });
   list.addEventListener('scroll', () => { if (state.menu) closeMenu(); }, { signal });
+
+  function groupDrop(point, target) {
+    if (!canReorder() || !target || !list.contains(target)) return null;
+    const groups = state.organization.groups;
+    const index = groups.findIndex(group => group.id === state.drag.id);
+    const destination = groups.findIndex(group => group.id === target.dataset.dropGroup);
+    if (index < 0 || destination < 0 || destination === index) return null;
+    const header = target.firstElementChild.getBoundingClientRect();
+    const side = point.y < header.top + header.height / 2 ? 'before' : 'after';
+    if ((destination === index + 1 && side === 'before') || (destination === index - 1 && side === 'after')) return null;
+    return { id: target.dataset.dropGroup, side };
+  }
+
   function updateDrag(point) {
     if (!state.drag || disposed) return;
     dragPoint = point;
     const bounds = drawer.getBoundingClientRect(), ghost = overlay?.querySelector('.ho-ghost');
     const targetNode = doc.elementFromPoint(point.x, point.y)?.closest('[data-drop-group]');
     const target = targetNode && drawer.contains(targetNode) ? targetNode.dataset.dropGroup : null;
-    if (state.drag.target !== target) {
-      clearTimeout(expandTimer); state.drag.target = target;
-      if (target && state.view === 'groups' && state.collapsed.has(target)) expandTimer = setTimeout(() => {
-        if (!state.drag || state.drag.target !== target) return;
-        state.collapsed.delete(target); render(); updateDrag(dragPoint);
-      }, 600);
+    let hint;
+    if (state.drag.kind === 'group') {
+      const origin = state.drag.origin;
+      if (origin && Math.hypot(point.x - origin.x, point.y - origin.y) > 6) state.drag.origin = null;
+      const drop = state.drag.origin ? null : groupDrop(point, targetNode);
+      state.drag.target = drop;
+      drawer.querySelectorAll('[data-group-id]').forEach(node => {
+        node.classList.toggle('is-drop-before', node.dataset.groupId === drop?.id && drop.side === 'before');
+        node.classList.toggle('is-drop-after', node.dataset.groupId === drop?.id && drop.side === 'after');
+      });
+      hint = drop ? `放在“${groupName(drop.id)}”${drop.side === 'before' ? '之前' : '之后'}` : '拖到另一分组，Esc 取消';
+    } else {
+      if (state.drag.target !== target) {
+        clearTimeout(expandTimer); state.drag.target = target;
+        if (target && state.view === 'groups' && state.collapsed.has(target)) expandTimer = setTimeout(() => {
+          if (!state.drag || state.drag.target !== target) return;
+          state.collapsed.delete(target); render(); updateDrag(dragPoint);
+        }, 600);
+      }
+      drawer.querySelectorAll('[data-drop-group]').forEach(node => node.classList.toggle('is-drop', node.dataset.dropGroup === target));
+      hint = target ? `松开移至“${groupName(target)}”` : '拖到分组，Esc 取消';
     }
-    drawer.querySelectorAll('[data-drop-group]').forEach(node => node.classList.toggle('is-drop', node.dataset.dropGroup === target));
-    if (ghost) { ghost.style.left = Math.max(8, Math.min(point.x - bounds.left + 12, drawer.clientWidth - ghost.offsetWidth - 8)) + 'px'; ghost.style.top = Math.max(8, Math.min(point.y - bounds.top + 17, drawer.clientHeight - ghost.offsetHeight - 8)) + 'px'; ghost.querySelector('small').textContent = target ? `松开移至“${groupName(target)}”` : '拖到分组，Esc 取消'; }
+    if (ghost) {
+      ghost.style.left = Math.max(8, Math.min(point.x - bounds.left + 12, drawer.clientWidth - ghost.offsetWidth - 8)) + 'px';
+      ghost.style.top = Math.max(8, Math.min(point.y - bounds.top + 17, drawer.clientHeight - ghost.offsetHeight - 8)) + 'px';
+      const caption = ghost.querySelector('small');
+      if (caption.textContent !== hint) caption.textContent = hint;
+    }
   }
   function autoScroll() {
     if (!state.drag || disposed) return;
     const bounds = list.getBoundingClientRect(), point = dragPoint;
-    if (point && state.view === 'groups' && point.x >= bounds.left && point.x <= bounds.right) {
+    if (point && !state.drag.origin && state.view === 'groups' && point.x >= bounds.left && point.x <= bounds.right) {
       const delta = point.y < bounds.top + 30 ? -9 : point.y > bounds.bottom - 30 ? 9 : 0;
       if (delta) { list.scrollTop += delta; updateDrag(point); }
     }
@@ -437,10 +474,28 @@ export function createHistorySidebar({ drawer, organization, onOpen, onNew, onRe
   }
   function clearDrag() { clearTimeout(expandTimer); win.cancelAnimationFrame(scrollFrame); scrollFrame = null; state.drag = null; dragPoint = null; }
   const pressDrag = installPressDrag(drawer, {
-    canStart: () => !blocked() && !state.form && !state.menu && !dialog.open && drawer.classList.contains('open'),
-    start: (id, point) => { state.drag = { ids: state.multi && state.selected.has(id) ? [...state.selected] : [id], target: null }; render(); updateDrag(point); autoScroll(); },
+    canStart: kind => !blocked() && !state.form && !state.menu && !dialog.open && drawer.classList.contains('open') && (kind === 'chat' || canReorder()),
+    start: ({ kind, id }, point) => {
+      state.drag = { kind, id, target: null, ...(kind === 'group' ? { origin: point }
+        : { ids: state.multi && state.selected.has(id) ? [...state.selected] : [id] }) };
+      if (kind === 'group') {
+        list.querySelector(`[data-group-id="${CSS.escape(id)}"]`)?.classList.add('is-drag-source');
+        renderOverlay();
+      } else render();
+      updateDrag(point);
+      autoScroll();
+    },
     move: updateDrag,
-    finish: point => { updateDrag(point); const drag = state.drag; clearDrag(); if (drag?.target) void move(drag.ids, drag.target); else render(); },
+    finish: point => {
+      updateDrag(point);
+      const drag = state.drag;
+      clearDrag();
+      if (!drag?.target) { render(); return; }
+      if (drag.kind === 'group') {
+        const { id, target } = drag;
+        void saveGroupOrder(() => organization.reorderGroup(id, target.id, target.side), ['data-collapse', id]);
+      } else void move(drag.ids, drag.target);
+    },
     cancel: () => { clearDrag(); render(); },
   });
   const unsubscribe = organization.subscribe(applyOrganization);

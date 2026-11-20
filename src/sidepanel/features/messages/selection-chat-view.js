@@ -3,7 +3,6 @@ import { icon, hydrateIcons } from '../../icons.js';
 import { createReplyClock, messageMarkup, renderMessageContent } from './message-view.js';
 import { createFloatingWindow } from './floating-window.js';
 import { createFloatingChatDock } from './floating-chat-dock.js';
-import { createSourcePopover } from './source-popover.js';
 import { createFloatingChatActivity } from './floating-chat-activity.js';
 import { createPastedTextDraft } from './pasted-text-draft.js';
 import { copyCodeBlock } from './code-blocks.js';
@@ -48,7 +47,6 @@ export function createSelectionChatView({ document = globalThis.document, runtim
   const feedback = element.querySelector('.selection-chat-feedback');
   const scope = element.querySelector('.selection-chat-scope');
   const reference = element.querySelector('.selection-chat-reference');
-  const sources = createSourcePopover({ root: messages, document });
   let dock;
   const geometry = createFloatingWindow({ element, dragHandle: element.querySelector('header'),
     resizeHandle: element.querySelector('.selection-chat-resize'), window: view,
@@ -69,7 +67,7 @@ export function createSelectionChatView({ document = globalThis.document, runtim
   dock = createFloatingChatDock({ element, document, geometry, iconMarkup: icon('message'),
     getBusy: () => runtime.isBusy(), getDetachedLabel: () => detachedLabel,
     getActivity: () => activity.snapshot().activity, getUnread: () => activity.snapshot().unread,
-    onCollapse: () => { sources.close(); replyClock.stop(); }, onExpand: () => {
+    onCollapse: replyClock.stop, onExpand: () => {
       if (isVisible()) activity.acknowledge();
       replyClock.sync();
       dock.sync();
@@ -142,12 +140,12 @@ export function createSelectionChatView({ document = globalThis.document, runtim
     const atBottom = messages.scrollHeight - messages.clientHeight - messages.scrollTop < 48;
     const previousTop = messages.scrollTop;
     const conversation = runtime.state.conversation;
-    sources.close();
-    messages.innerHTML = (conversation?.messages || []).map(message => messageMarkup(message)).join('');
+    messages.innerHTML = (conversation?.messages || []).map(message => messageMarkup(message, { textOnly: true })).join('');
     messages.querySelectorAll('.user-message-actions, [data-action="copy"], .message-diagnostic-help').forEach(node => node.remove());
     for (const message of conversation?.messages || []) {
       const article = [...messages.querySelectorAll('[data-message-id]')].find(node => node.dataset.messageId === message.id);
-      if (message.role === 'assistant') renderMessageContent(article?.querySelector('[data-message-content]'), message.content, message.status === 'streaming');
+      if (message.role === 'assistant') renderMessageContent(article?.querySelector('[data-message-content]'), message.content,
+        message.status === 'streaming', { textOnly: true });
     }
     replyClock.sync();
     hydrateIcons(messages);
@@ -185,7 +183,6 @@ export function createSelectionChatView({ document = globalThis.document, runtim
     replyClock.stop();
     unsubscribe();
     activity.dispose();
-    sources.dispose();
     dock.dispose();
     geometry.dispose();
     pastedText.dispose();
@@ -274,8 +271,6 @@ export function createSelectionChatView({ document = globalThis.document, runtim
     } else if (action === 'toggle-error') {
       message.errorExpanded = !message.errorExpanded;
       paint();
-    } else if (action === 'toggle-sources') {
-      sources.toggle(button);
     }
   });
   paint();
