@@ -93,7 +93,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
         blackFrame: result?.outcome === 'black-frame',
         frameCount: result?.outcome === 'captured' ? 1 : 0 }),
     }),
-    makeId: ports.makeId, recordDiagnostic, isCurrent: ref => state.conversation?.id === ref.conversationId });
+    makeId: ports.makeId, now: nowMs, recordDiagnostic, isCurrent: ref => state.conversation?.id === ref.conversationId });
   const cancelIllustrations = assistantId => {
     const chat = illustration.cancel(assistantId), video = videoIllustration.cancel(assistantId);
     return chat || video;

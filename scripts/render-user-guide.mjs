@@ -54,14 +54,15 @@ body = body.replace(/<table>/g, '<div class="table-scroll" tabindex="0" aria-lab
 if ((body.match(/<figure /g) || []).length !== figures.length) throw new Error('Every figure requires a caption.');
 const css = readFileSync(resolve(docs, 'user-guide-reader.css'), 'utf8')
   + '\n' + readFileSync(resolve(root, 'src/styles/scrollbars.css'), 'utf8');
+const logo = `data:image/png;base64,${readFileSync(resolve(root, 'icons/icon-48.png')).toString('base64')}`;
 figures.sort((a, b) => a.number - b.number);
 const html = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light"><title>UNK AI 操作手册 · ${escape(version)}</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2320685d'/%3E%3Ctext x='16' y='24' text-anchor='middle' font-size='26' fill='white'%3E✳%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="${logo}">
 <style>${css}</style></head><body>
 <a class="skip-link" href="#guide-content">跳到正文</a>
-<header class="masthead"><div class="brand"><span class="brand-mark">✳</span> UNK AI</div><span class="edition">操作手册 · v${escape(version)}</span></header>
+<header class="masthead"><div class="brand"><img class="brand-mark" src="${logo}" width="32" height="32" alt="" /> UNK AI</div><span class="edition">操作手册 · v${escape(version)}</span></header>
 <div class="layout"><aside class="toc" aria-label="操作手册目录"><p class="toc-title">阅读目录</p><nav>${headings.map(({ id, label }) => `<a href="#${id}">${escape(label)}</a>`).join('\n')}</nav>
 <details class="figure-index"><summary>图解索引 · ${figures.length} 张</summary>${figures.map(figure => `<a href="#figure-${figure.number}">图 ${figure.number} · ${escape(figure.alt)}</a>`).join('\n')}</details>
 <small>依据当前插件实现核对<br>更新于 ${escape(date)}<br>全部图片已嵌入，可离线打开<br>宽图与表格可横向滚动查看</small></aside>

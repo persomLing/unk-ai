@@ -96,6 +96,9 @@ code { padding: 2px 5px; border-radius: 4px; background: var(--teal-soft); color
 .inline-feedback { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; color: var(--ink-secondary); background: var(--surface-alt); font-size: 11px; line-height: 1.75; white-space: pre-line; overflow-wrap: anywhere; }
 .inline-feedback.error { color: var(--danger); background: var(--danger-soft); }
 .inline-feedback.success { color: var(--teal); background: var(--teal-soft); }
+.update-actions, .update-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.update-links { margin-top: 14px; font-size: 12px; }
+.update-links a { color: var(--teal); text-decoration: underline; text-underline-offset: 3px; }
 .auto-fill-note { color: var(--teal); font-weight: 550; }
 .model-select-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
 .model-meta { margin-top: 10px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-card); line-height: 1.65; overflow-wrap: anywhere; }

@@ -9,7 +9,7 @@ import {
   streamChatToolCompletion,
 } from '../utils/llm-client.js';
 import { requestTokenUsage } from '../utils/token-usage.js';
-import { IMAGE_PROMPT_LIMIT, imageReferenceData } from '../utils/image-generation-command.js';
+import { IMAGE_PROMPT_LIMIT, IMAGE_TURN_TIMEOUT_MS, imageReferenceData } from '../utils/image-generation-command.js';
 
 export const MODEL_PURPOSES = Object.freeze([
   'answer', 'agent-decision', 'visual-decision', 'reading-decision', 'research-decision', 'web-search', 'web-fetch', 'compression', 'suggestions', 'video-summary', 'video-frame-transcript', 'image-generation', 'illustration-plan',
@@ -17,7 +17,8 @@ export const MODEL_PURPOSES = Object.freeze([
 export const DEFAULT_MODEL_TIMEOUTS = Object.freeze({
   answer: 120000, 'agent-decision': 60000, 'visual-decision': 8000,
   'reading-decision': 8000,
-  'research-decision': 8000, 'web-search': 25000, 'web-fetch': 25000, compression: 30000, suggestions: 15000, 'video-summary': 60000, 'video-frame-transcript': 45000, 'image-generation': null, 'illustration-plan': 15000,
+  'research-decision': 8000, 'web-search': 25000, 'web-fetch': 25000, compression: 30000, suggestions: 15000,
+  'video-summary': 60000, 'video-frame-transcript': 45000, 'image-generation': IMAGE_TURN_TIMEOUT_MS, 'illustration-plan': 15000,
 });
 
 const MODEL_FIELDS = ['model', 'temperature', 'contextLength', 'maxTokens',
@@ -213,14 +214,12 @@ export function createModelGateway({
         || !['auto', 'none'].includes(options.toolChoice))) {
         return Promise.reject(errorWith('ERR_MODEL_PURPOSE', '工具选择只允许带工具数组的主回答使用 auto 或 none。'));
       }
-      // Only image generation may wait without a timer. Its owner still
-      // cancels it on Stop, a new turn, a conversation switch or disposal.
-      const timeoutMs = options.timeoutMs === undefined ? DEFAULT_MODEL_TIMEOUTS[purpose] : options.timeoutMs;
-      const unlimitedImage = purpose === 'image-generation' && timeoutMs === null;
-      if ((!unlimitedImage && (!Number.isFinite(timeoutMs) || timeoutMs < 0))
+      const requestedTimeout = options.timeoutMs === undefined ? DEFAULT_MODEL_TIMEOUTS[purpose] : options.timeoutMs;
+      if (!Number.isFinite(requestedTimeout) || requestedTimeout < 0
         || (options.deadlineAt !== undefined && !Number.isFinite(options.deadlineAt))) {
         return Promise.reject(new TypeError('Model request timeout/deadline must be finite.'));
       }
+      const timeoutMs = purpose === 'image-generation' ? Math.min(requestedTimeout, IMAGE_TURN_TIMEOUT_MS) : requestedTimeout;
       const defaultTokens = ['answer', 'agent-decision', 'suggestions'].includes(purpose) ? config.maxTokens
         : purpose === 'visual-decision' ? 400
           : purpose === 'research-decision' ? 120
@@ -255,7 +254,7 @@ export function createModelGateway({
         : Promise.reject(errorWith('ERR_MODEL_REQUEST_ID_REUSED', '相同 requestId 不可用于不同模型请求。'));
 
       const startedAt = now();
-      const deadline = Math.min(unlimitedImage ? Infinity : startedAt + timeoutMs, runDeadline ?? Infinity, options.deadlineAt ?? Infinity);
+      const deadline = Math.min(startedAt + timeoutMs, runDeadline ?? Infinity, options.deadlineAt ?? Infinity);
       const requestController = new AbortController();
       const entry = { id: requestId, purpose, fingerprint, startedAt, settled: false, timer: null, promise: null,
         diagnostics: {}, firstSignals: new Set() };

@@ -19,3 +19,5 @@ pre code { padding: 0; }
 .table-scroll:focus-visible { outline: 2px solid #20685d; outline-offset: 3px; }
 .skip-link { position: absolute; left: 20px; top: -80px; padding: 8px 12px; background: white; z-index: 10; }
 .skip-link:focus { top: 8px; }
+
+.masthead .brand-mark { display: block; width: 32px; height: 32px; margin: 0; border: 0; background: transparent; }

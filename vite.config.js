@@ -16,6 +16,7 @@ function copyExtensionAssets() {
         ['src/content/figure-picker.js', 'content/figure-picker.js'],
         ['_locales/zh_CN/messages.json', '_locales/zh_CN/messages.json'],
         ['node_modules/mp4box/LICENSE', 'third-party/mp4box.LICENSE'],
+        ['node_modules/fflate/LICENSE', 'third-party/fflate.LICENSE'],
       ];
       for (const size of [16, 32, 48, 128]) {
         files.push([`icons/icon-${size}.png`, `icons/icon-${size}.png`]);

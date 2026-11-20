@@ -5,11 +5,13 @@ import { illustrationLayoutStyle } from './illustration-layout.js';
 import { icon } from '../../icons.js';
 
 const ownedIllustrations = new WeakMap();
+const GENERATION_FAILURES = new Set(['generate-failed', 'generate-timeout', 'rate-limit', 'access-denied']);
 
 const REASONS = Object.freeze({
   blocked: '画面受保护或跨域', unverified: '画面与要点不符', 'no-vision': '当前服务未配置支持图片输入的模型',
   'not-ready': '播放器未就绪', uncertain: '播放器状态或画面结果未确认', 'page-changed': '原视频页面已变化',
   'page-required': '请回到原视频标签页', 'no-image-model': '未配置生图模型', 'generate-failed': '图片生成失败',
+  'generate-timeout': '生图等待超时',
   'no-frame': '该时间点无可用画面', 'black-frame': '所选时间点的画面为黑屏',
   'stream-unavailable': '原视频流无法读取或解码',
   failed: '截取失败', 'verify-failed': '视觉模型未能完成审阅', 'plan-failed': '配图规划失败', 'plan-invalid': '配图规划返回了无效结果',
@@ -106,11 +108,21 @@ export function restoreMessageIllustrations(container) {
   if (owned) owned.groups = placeIllustrationNodes(container, owned.entries);
 }
 
+function generationFailureText(failure) {
+  if (!GENERATION_FAILURES.has(failure?.reason)) return '';
+  const code = failure.httpStatus;
+  const http = Number.isInteger(code) && code >= 400 && code <= 599 ? `（HTTP ${code}）` : '';
+  return `${REASONS[failure.reason]}${http}。`;
+}
+
 export function videoIllustrationNote(message) {
   const info = message.videoIllustration;
   if (!info || typeof info !== 'object') return '';
   if (info.status === 'generating' && (info.mode === 'frame' || info.items?.some(item => item.kind === 'frame' && item.status === 'loading'))) {
     return '<p class="video-illustration-note is-capturing" role="status">正在独立截帧并审阅画面。你可以继续观看原视频。</p>';
+  }
+  if (info.mode === 'generate' && info.status === 'generating' && info.phase === 'planning') {
+    return '<p class="video-illustration-note" role="status">正在规划视频配图…</p>';
   }
   const warning = info.warnings?.length ? '<p class="video-illustration-note">原视频来源或画面时间无法确认，本轮截帧已停止。</p>' : '';
   if (info.mode === 'frame' && info.status === 'unavailable' && (info.embedded ?? 0) === 0) {
@@ -124,8 +136,13 @@ export function videoIllustrationNote(message) {
   }
   if (info.reason === 'save-failed') return `${warning}<p class="video-illustration-note">${REASONS['save-failed']}。</p>`;
   if (info.reason === 'no-image-model' || info.items?.some(item => item.reason === 'no-image-model')) return `${warning}<p class="video-illustration-note">${REASONS['no-image-model']}。</p>`;
+  if (info.mode === 'generate' && info.status === 'unavailable' && (info.embedded ?? 0) === 0) {
+    const failure = info.skipped?.find(item => GENERATION_FAILURES.has(item.reason)) || info;
+    const explanation = generationFailureText(failure);
+    if (explanation) return `<p class="video-illustration-note">${escapeHtml(explanation)}</p>`;
+  }
   if (info.status === 'unavailable' && !info.items?.length) {
-    const reason = ['plan-failed', 'plan-invalid'].includes(info.reason) ? REASONS[info.reason] : '';
+    const reason = ['plan-failed', 'plan-invalid', 'timeout'].includes(info.reason) ? REASONS[info.reason] : '';
     return `${warning}${reason ? `<p class="video-illustration-note">${reason}。</p>` : ''}`;
   }
   return warning;
@@ -134,6 +151,10 @@ export function videoIllustrationNote(message) {
 export function illustrationNote(message) {
   const info = message.illustration;
   if (!info || typeof info !== 'object' || info.status !== 'unavailable') return '';
+  if (info.phase === 'generate') {
+    const explanation = generationFailureText(info);
+    if (explanation) return `<p class="video-illustration-note">${escapeHtml(explanation)}</p>`;
+  }
   if (info.items?.length && !['save-failed', 'no-image-model'].includes(info.reason)) return '';
   const reason = REASONS[info.reason] || '配图失败';
   return `<p class="video-illustration-note">${escapeHtml(reason)}。</p>`;

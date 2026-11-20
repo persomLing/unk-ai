@@ -2508,8 +2508,7 @@ img[data-image-preview]:focus-visible {
 }
 
 .composer:focus-within {
-  border-color: var(--teal);
-  box-shadow: 0 0 0 3px var(--teal-glow), var(--shadow-md);
+  box-shadow: var(--shadow-sm), 0 2px 12px color-mix(in srgb, var(--teal) 15%, transparent);
 }
 
 .composer.is-dragging {
@@ -2597,9 +2596,16 @@ img[data-image-preview]:focus-visible {
   border-color: var(--teal);
 }
 
-.composer-page-pill:focus-within {
-  outline: 2px solid var(--teal);
-  outline-offset: 2px;
+.composer-page-pill:has(input:focus-visible) {
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--teal) 22%, transparent);
+}
+
+.composer-page-pill .ui-switch input:focus-visible + span {
+  outline: 0;
+}
+
+@media (forced-colors: active) {
+  .composer-page-pill:has(input:focus-visible) { outline: 1px solid Highlight; }
 }
 
 .composer-page-pill.is-changed {
@@ -4119,6 +4125,17 @@ img[data-image-preview]:focus-visible {
   width: 16px;
   height: 16px;
 }
+
+.drawer-github {
+  margin-right: auto;
+  padding: 8px 4px;
+  border-radius: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  text-underline-offset: 3px;
+}
+
+.drawer-github:hover { color: var(--teal); }
 
 .drawer-storage-note {
   display: inline-flex;

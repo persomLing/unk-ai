@@ -48,7 +48,7 @@ function Assert-DistFile([string]$relative) {
   }
 }
 $required = @($distManifest.background.service_worker, $distManifest.side_panel.default_path, $distManifest.options_ui.page,
-  'src/sidepanel/theme-boot.js', 'content/agent-scanner.js', 'pdfjs/LICENSE', 'third-party/mp4box.LICENSE',
+  'src/sidepanel/theme-boot.js', 'content/agent-scanner.js', 'pdfjs/LICENSE', 'third-party/mp4box.LICENSE', 'third-party/fflate.LICENSE',
   "_locales/$($distManifest.default_locale)/messages.json")
 $required += $distManifest.content_scripts | ForEach-Object { $_.js }
 $required += $distManifest.icons.PSObject.Properties.Value
@@ -69,7 +69,7 @@ $expected = @{}
 foreach ($file in $files) {
   $relative = [IO.Path]::GetRelativePath($distRoot, $file.FullName).Replace('\', '/')
   if (($relative.Split('/')[0] -notin @('_locales', 'assets', 'content', 'icons', 'pdfjs', 'src', 'manifest.json', 'service-worker.js') -and
-    $relative -ne 'third-party/mp4box.LICENSE') -or
+    $relative -notin @('third-party/mp4box.LICENSE', 'third-party/fflate.LICENSE')) -or
     $file.Extension -in @('.zip', '.map', '.pem', '.key', '.pfx', '.env') -or
     ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Unexpected build file: $relative" }
   $expected[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash

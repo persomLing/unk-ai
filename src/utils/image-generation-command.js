@@ -1,6 +1,6 @@
 export const IMAGE_MODEL_REQUIRED = '未配置生图模型，请先在设置中选择默认生图模型。';
 export const IMAGE_PROMPT_LIMIT = 4000;
-export const IMAGE_TURN_TIMEOUT_MS = 10 * 60 * 1000;
+export const IMAGE_TURN_TIMEOUT_MS = 20 * 60 * 1000;
 export const IMAGE_DRAFT_PREFIX = '生成图片：\n';
 const MAX_REFERENCE_BYTES = 8 * 1024 * 1024;
 

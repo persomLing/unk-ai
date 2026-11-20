@@ -34,6 +34,7 @@
             <a href="#research-section" data-settings-nav="research-section"><i data-icon="globe"></i><span>联网检索</span></a>
             <a href="#storage-section" data-settings-nav="storage-section"><i data-icon="folder"></i><span>本地数据</span></a>
             <a href="#agent-section" data-settings-nav="agent-section"><i data-icon="shield"></i><span>浏览器控制</span></a>
+            <a href="#update-section" data-settings-nav="update-section"><i data-icon="history"></i><span>版本更新</span></a>
           </nav>
           <div class="sidebar-note"><i data-icon="lock"></i><p>使用你选择的模型服务。<br />配置与对话不经过我们的服务器。</p></div>
         </aside>
@@ -317,6 +318,23 @@
               <div id="agent-site-list" class="agent-site-list"></div>
               <div id="agent-settings-feedback" class="inline-feedback" role="status" hidden></div>
               <details class="settings-details"><summary>需要你接管的操作<i data-icon="chevron-down"></i></summary><p>Agent 不会自动输入密码、CVV 或 PIN，不执行支付或下单。验证码与登录需要你接管。</p></details>
+            </div>
+          </section>
+
+          <section id="update-section" class="form-section" data-settings-section aria-labelledby="update-title">
+            <div class="section-heading">
+              <span class="section-symbol"><i data-icon="history"></i></span>
+              <div><h2 id="update-title">版本更新</h2><p>当前版本 <strong id="extension-installed-version"></strong></p></div>
+            </div>
+            <div class="update-actions">
+              <button id="check-extension-update" class="button button-primary" type="button">检查更新</button>
+              <button id="install-extension-update" class="button button-primary" type="button" hidden>更新并重启</button>
+              <a id="download-extension-update" class="button button-secondary" target="_blank" rel="noopener noreferrer" hidden>下载 ZIP</a>
+            </div>
+            <p id="extension-update-status" class="inline-feedback" role="status" hidden></p>
+            <div class="update-links">
+              <a id="extension-release-notes" href="https://github.com/persomLing/unk-ai/releases" target="_blank" rel="noopener noreferrer">发布记录</a>
+              <a href="https://github.com/persomLing/unk-ai" target="_blank" rel="noopener noreferrer">GitHub 仓库</a>
             </div>
           </section>
 

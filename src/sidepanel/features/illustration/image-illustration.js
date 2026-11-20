@@ -125,7 +125,7 @@ export function createImageIllustration({ repository, modelGateway, getConfig,
       if (!commit(job, { illustration }) || !job.read()) return;
       phase = 'generate';
       const image = await awaitWithAbort(effect.request({ requestId: 'image-1', purpose: 'image-generation',
-        prompt: illustrationGenerationPrompt(plan.prompt, plan.layout), size: illustrationGenerationSize(plan.size, plan.layout), timeoutMs: null }), job.signal);
+        prompt: illustrationGenerationPrompt(plan.prompt, plan.layout), size: illustrationGenerationSize(plan.size, plan.layout) }), job.signal);
       const pair = job.read();
       if (!pair) return;
       if (!safeAttachmentDataUrl(image?.dataUrl)) throw new Error('生图服务没有返回可显示的图片。');

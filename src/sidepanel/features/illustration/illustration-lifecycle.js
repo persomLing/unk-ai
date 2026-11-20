@@ -2,8 +2,6 @@ import { awaitWithAbort } from '../../../utils/abortable.js';
 
 export const illustrationKey = ref => JSON.stringify([ref.conversationId, ref.turnId, ref.runId, ref.assistantId, ref.userId]);
 
-/** Cancellable post-turn ownership. Image generation has no elapsed-time
- * limit; planning, browser capture and verification keep their own bounds. */
 export function createIllustrationScope({ repository, isCurrent = () => true, onCancel = () => {} }) {
   const jobs = new Map();
   let disposed = false;
@@ -41,8 +39,7 @@ export function createIllustrationScope({ repository, isCurrent = () => true, on
   });
 }
 
-/** A timed read/capture must also revoke the underlying port or model request,
- * not just release its caller's wait. Never use this around image generation. */
+/** Revoke the underlying port or request when preparation times out. */
 export async function illustrationStage(operation, { signal, timeoutMs, message }) {
   signal?.throwIfAborted();
   const controller = new AbortController();
@@ -64,7 +61,7 @@ export function illustrationFailure(error, phase, profile) {
   const reason = error?.code === 'ILLUSTRATION_PROMPT_INVALID' ? 'prompt-invalid'
     : error?.code === 'ILLUSTRATION_PLAN_INVALID' ? 'plan-invalid'
     : error?.code === 'ERR_IMAGE_MODEL_MISSING' ? 'no-image-model'
-    : error?.name === 'TimeoutError' ? 'timeout'
+    : error?.name === 'TimeoutError' ? (phase === 'generate' ? 'generate-timeout' : 'timeout')
       : status === 429 ? 'rate-limit' : status === 401 || status === 403 ? 'access-denied'
         : phase === 'plan' ? 'plan-failed' : phase === 'save' ? 'save-failed' : phase === 'verify' ? 'verify-failed' : 'generate-failed';
   let message = String(error?.message || '').replace(/bearer\s+\S+/gi, 'Bearer [redacted]');

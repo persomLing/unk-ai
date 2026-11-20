@@ -48,6 +48,7 @@ import { validateModelGeneration } from './model-validation.js';
 import { installAgentSettings } from './agent-settings.js';
 import { installTopicSettings } from './topic-settings.js';
 import { installSuggestionSettings } from './suggestion-settings.js';
+import { installUpdateSettings } from './update-settings.js';
 import { awaitWithTimeout } from '../utils/abortable.js';
 import { recordDiagnostic, getDiagnosticStatus, collectDiagnosticLogs, flushDiagnostics } from '../utils/diagnostic-log.js';
 import { installRuntimeDiagnostics } from '../utils/diagnostic-observer.js';
@@ -145,6 +146,7 @@ const topicSettings = installTopicSettings({ root: document.querySelector('#topi
   storage: chrome.storage.local, storageChanges: chrome.storage.onChanged });
 const disposeSuggestionSettings = installSuggestionSettings({ toggle: document.querySelector('#next-exploration-enabled'),
   feedback: document.querySelector('#next-exploration-status'), storage: chrome.storage.local, changes: chrome.storage.onChanged });
+const disposeUpdateSettings = installUpdateSettings({ root: document.querySelector('#update-section'), runtime: chrome.runtime });
 let appearancePreferences = normalizeAppearance({
   version: 1,
   font: document.documentElement.dataset.font,
@@ -847,6 +849,7 @@ window.addEventListener('pagehide', () => {
   agentSettings.dispose();
   topicSettings.dispose();
   disposeSuggestionSettings();
+  disposeUpdateSettings();
 });
 
 try {
