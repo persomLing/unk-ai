@@ -156,10 +156,10 @@ import { createMessageRewind } from './features/messages/message-rewind.js';
 import { rewoundCommandForDraft, rewoundCommandHint } from './features/messages/rewound-command.js';
 import { hasVideoTranscript } from './features/video-notes/video-request.js';
 import { createAgentTaskRestart, agentRestartControl } from './features/agent/agent-task-restart.js';
+import { modelSelectionFor, resolveConversationModel } from './features/models/conversation-model.js';
 import {
   activeModel,
   renderModelSwitcher as renderModelSwitcherView,
-  selectedEffortFor,
   toggleModelDropdown,
   selectModelOption,
 } from './features/models/model-switcher.js';
@@ -204,6 +204,9 @@ let historyOrganization = null;
 let deletedActiveConversationId = null;
 let selectionChatSessions = null;
 let contextUsageRefreshTimer = null;
+let configRevision = 0;
+let draftModelSelection = null;
+let modelSelectionSave = null;
 const conversationOrganization = createConversationOrganizationStore();
 
 const state = {
@@ -318,8 +321,9 @@ function renderQueueBar() {
   const sourceHint = normalizeDraftSource(item.requestSource) ? '独立话题 · ' : '';
   const waitingForConversation = Object.hasOwn(item, 'conversationId') && item.conversationId !== state.conversation?.id;
   const waitingForPage = item.pageContextEnabled && item.readingPolicy?.scope !== 'none' && state.disablePageContext;
+  const waitingForModel = !image && !activeModel(state.config, item.modelId ?? state.selectedModelId);
   const waiting = waitingForConversation ? (item.conversationId ? '等待返回原会话' : '等待会话准备')
-    : waitingForPage ? '等待开启页面读取' : '';
+    : waitingForModel ? '原模型不可用，可撤回后重选' : waitingForPage ? '等待开启页面读取' : '';
   $('#queue-tag').textContent = count > 1 ? `${count} 条排队` : '排队中';
   queuePreview.textContent = sourceHint + truncateText(preview.replace(/\s+/g, ' '), 240);
   queuePreview.title = queuePreview.textContent;
@@ -524,12 +528,51 @@ function activeChatProfile() {
   return activeModel(state.config, state.selectedModelId);
 }
 
+function chatRequestProfile(modelId = state.selectedModelId, effort = state.selectedEffort, { allowDefaultModel = false } = {}) {
+  return requestProfile(state.config, { modelId, effort, exactModel: !allowDefaultModel });
+}
+
+function syncConversationModel() {
+  const selection = resolveConversationModel(state.config, state.conversation, draftModelSelection);
+  state.selectedModelId = selection.modelId;
+  state.selectedEffort = selection.effort;
+}
+
+function showConversation(conversation) {
+  draftModelSelection = null;
+  toggleModelDropdown(false);
+  state.conversation = conversation;
+  syncConversationModel();
+}
+
+function rememberConversationModel(model, effort) {
+  const selection = modelSelectionFor(model, effort);
+  const conversation = state.conversation;
+  if (conversation) {
+    conversation.modelSelection = selection;
+    const pending = conversationSaver.save(conversation, { touch: false });
+    modelSelectionSave = pending;
+    void pending.then(() => { if (modelSelectionSave === pending) modelSelectionSave = null; });
+  } else draftModelSelection = selection;
+  syncConversationModel();
+  updateComposer();
+  renderQueueBar();
+}
+
+function promptForConversationModel() {
+  const trigger = $('#model-trigger');
+  if (!trigger?.disabled && !historyMutationBusy) {
+    toggleModelDropdown(true);
+    trigger?.focus({ preventScroll: true });
+  }
+}
+
 function renderModelSwitcher() {
   return renderModelSwitcherView({
     config: state.config,
     selectedModelId: state.selectedModelId,
     selectedEffort: state.selectedEffort,
-    generating: Boolean(state.generatingId) || Boolean(agentSlot?.isBusy()),
+    generating: Boolean(state.generatingId || state.isSubmitting || state.compressing || historyMutationBusy || agentSlot?.isBusy()),
     onClose: () => toggleModelDropdown(false),
   });
 }
@@ -1396,6 +1439,7 @@ async function selectConversation(id) {
   if (floatingChat) return floatingChat.openInMain();
   return historyNavigation.run(async operation => {
     visualPreparation.cancel();
+    if (modelSelectionSave) await operation.read(modelSelectionSave);
     const conversation = await operation.read(loadConversation(id));
     if (!conversation) {
       toast('会话不存在，可能已被删除。', 'error');
@@ -1403,7 +1447,7 @@ async function selectConversation(id) {
       return;
     }
     operation.commit(() => {
-      state.conversation = conversation;
+      showConversation(conversation);
       agentTurnCallbacks.reconcile(conversation);
       application.repository.reconcile(conversation);
       application.reconcileIllustrations(conversation);
@@ -1445,7 +1489,9 @@ async function newConversation(groupId = null) {
         renderStorageBadge();
         toast(saved.syncStatus === 'pending' ? '上一条对话已保存在浏览器，等待同步到文件夹。' : '上一条对话已保存到本地文件夹。');
       }
-      created = await operation.persist(() => createTemporaryConversation('新对话'));
+      created = await operation.persist(() => createTemporaryConversation('新对话', {
+        modelSelection: resolveConversationModel(state.config),
+      }));
       if (typeof groupId === 'string' && groupId !== 'none') {
         // Group metadata does not make an empty draft a saved history record.
         // The existing submission/save paths promote it when it is used.
@@ -1459,7 +1505,7 @@ async function newConversation(groupId = null) {
       }
     }));
     operation.commit(() => {
-      state.conversation = created;
+      showConversation(created);
       agentTurnCallbacks.reconcile(created);
       application.repository.reconcile(created);
       application.reconcileIllustrations(created);
@@ -1478,15 +1524,22 @@ async function newConversation(groupId = null) {
 
 async function ensureConversation(signal) {
   signal?.throwIfAborted();
-  if (state.conversation) return state.conversation;
+  const choice = draftModelSelection || modelSelectionFor(activeChatProfile(), state.selectedEffort);
+  const current = state.conversation;
+  if (current) {
+    if (!current.messages.length && !Object.hasOwn(current, 'modelSelection') && choice.modelId) {
+      current.modelSelection = choice;
+    }
+    return current;
+  }
   const storageInfo = await getDirectoryInfo();
   signal?.throwIfAborted();
-  const conversation = await createTemporaryConversation('新对话');
+  const conversation = await createTemporaryConversation('新对话', { modelSelection: choice });
   signal?.throwIfAborted();
   state.storageInfo = storageInfo;
-  state.conversation = conversation;
+  showConversation(conversation);
   renderConversation();
-  return state.conversation;
+  return conversation;
 }
 
 const conversationSaver = createConversationSaver({
@@ -1555,7 +1608,7 @@ historySidebar = createHistorySidebar({
     if (!startupController.signal.aborted && state.conversation === original
       && [...result.deletedIds, ...result.pendingIds].includes(original?.id)) {
       deletedActiveConversationId = state.conversation.id;
-      state.conversation = null; state.pendingPage = null;
+      showConversation(null); state.pendingPage = null;
       renderConversation();
     }
     return result;
@@ -1569,7 +1622,7 @@ historySidebar = createHistorySidebar({
           const restored = await operation.read(loadConversation(originalId));
           if (state.conversation || deletedActiveConversationId !== originalId) return;
           operation.commit(() => {
-            state.conversation = restored;
+            showConversation(restored);
             if (restored) { agentTurnCallbacks.reconcile(restored); application.repository.reconcile(restored); application.reconcileIllustrations(restored); }
             deletedActiveConversationId = null;
             renderConversation();
@@ -1607,11 +1660,15 @@ function conversationTitle(text, attachments = []) {
 }
 
 async function ensureConfigured(signal) {
+  const revision = configRevision;
   const config = await getProviderConfig();
   signal?.throwIfAborted();
   const storageInfo = await getDirectoryInfo();
   signal?.throwIfAborted();
-  state.config = config;
+  if (revision === configRevision) {
+    state.config = config;
+    syncConversationModel();
+  }
   state.storageInfo = storageInfo;
 
   const normalized = normalizeProviderConfig(state.config);
@@ -1710,10 +1767,7 @@ const composition = createSidepanelComposition({
       && isReadablePageUrl(state.activePageSignal?.url),
     sendMessage: (message) => chrome.runtime.sendMessage(message),
     queryActiveTab: () => chrome.tabs.query({ active: true, currentWindow: true }).then(([tab]) => tab),
-    getProfile: () => requestProfile(state.config, {
-      modelId: state.selectedModelId,
-      effort: state.selectedEffort,
-    }),
+    getProfile: chatRequestProfile,
     focusInput: () => input.focus(),
     restoreTurn: restoreAgentTurn,
     beginTurn: beginAgentTurn,
@@ -1753,7 +1807,7 @@ const application = createSidepanelApplication({
   },
   ensureConversation, ensureConfigured, saveCurrent, scheduleSave, getDirectoryInfo,
   promoteTemporaryConversation, readCurrentPageForRequest, autoVisualAttachments, enhancePageReading,
-  activeChatProfile, profileFor: (modelId = state.selectedModelId, effort = state.selectedEffort) => requestProfile(state.config, { modelId, effort }),
+  activeChatProfile, profileFor: chatRequestProfile,
   conversationTitle, hasVision, makeId, now, truncateText,
 });
 function applyNextExploration(enabled) {
@@ -1829,7 +1883,7 @@ selectionChatSessions = createSelectionChatSessions({ getConversationId: () => s
   createChat: (selection, anchorRect) => {
     const runtime = createSelectionChatRuntime({ selection, modelGateway, recordDiagnostic,
       getConfig: () => state.config,
-      getProfile: () => requestProfile(state.config, { modelId: state.selectedModelId, effort: state.selectedEffort }),
+      getProfile: chatRequestProfile,
       onSaved: () => { if (!selectionChatsDisposed) void refreshHistory().catch(() => {}); },
     });
     let chat;
@@ -1874,7 +1928,7 @@ async function replaceWithSelectionChat(runtime, { signal, isCurrent }) {
     const conversation = await operation.read(runtime.takeConversation({ signal, isCurrent: () => { check(); return true; } }));
     check();
     operation.commit(() => {
-      state.conversation = conversation;
+      showConversation(conversation);
       agentTurnCallbacks.reconcile(conversation);
       application.repository.reconcile(conversation);
       application.reconcileIllustrations(conversation);
@@ -1968,6 +2022,7 @@ application.subscribe(event => {
   else if (event.type === 'queue') renderQueueBar();
   else if (event.type === 'context') { renderContextChip(); refreshContextUsage(); }
   else if (event.type === 'notice') toast(event.message, event.kind);
+  else if (event.type === 'model-required') promptForConversationModel();
   else if (event.type === 'conversation') renderConversation({ scroll: event.scroll });
   else if (event.type === 'progress' || event.type === 'run:phase') {
     if (event.type === 'run:phase' && state.conversation?.id !== event.conversationId) return;
@@ -2046,7 +2101,7 @@ async function sendMessage(text = pastedText.getValue(), options = {}) {
   }
   state.draft = pastedText.getValue();
   const restoredCommand = rewoundCommandForDraft(state, text, options);
-  if (state.ready && !options.fromQueue && !options.requirePage && !Object.hasOwn(options, 'pageContextEnabled')
+  if (state.ready && activeChatProfile() && !options.fromQueue && !options.requirePage && !Object.hasOwn(options, 'pageContextEnabled')
     && !restoredCommand && !directImageForMessage({ content: text })
     && needsPageQuestionChoice({ question: text, enabled: !state.disablePageContext,
       active: state.activePageSignal, messages: state.conversation?.messages,
@@ -2323,7 +2378,8 @@ $('#page-locate')?.addEventListener('keydown', (event) => {
   }
 });
 $('#chat-effort').addEventListener('change', (event) => {
-  state.selectedEffort = event.target.value;
+  const model = activeChatProfile();
+  if (model?.supportsReasoning && !event.target.disabled) rememberConversationModel(model, event.target.value);
 });
 
 $('#theme-toggle')?.addEventListener('click', toggleTheme);
@@ -2335,30 +2391,21 @@ $('#model-trigger')?.addEventListener('click', (event) => {
 
 $('#model-dropdown')?.addEventListener('click', (event) => {
   event.stopPropagation();
+  if ($('#model-trigger').disabled) return;
   const modelItem = event.target.closest('[data-model-id]');
   if (modelItem) {
     const modelId = modelItem.dataset.modelId;
     const selected = selectModelOption(state.config, modelId);
     if (!selected) return;
-    state.selectedModelId = selected.id;
-    state.selectedEffort = selectedEffortFor(selected);
-    renderModelSwitcher();
-    updatePageToolbar();
-    updateComposer();
+    if (selected.id !== state.selectedModelId) rememberConversationModel(selected);
     toggleModelDropdown(false);
     return;
   }
 
   const effortPill = event.target.closest('[data-effort]');
   if (effortPill) {
-    const effortValue = effortPill.dataset.effort;
-    state.selectedEffort = effortValue;
-    const effortSelect = $('#chat-effort');
-    if (effortSelect) {
-      effortSelect.value = effortValue;
-      effortSelect.dispatchEvent(new Event('change'));
-    }
-    renderModelSwitcher();
+    const model = activeChatProfile();
+    if (model?.supportsReasoning) rememberConversationModel(model, effortPill.dataset.effort);
     toggleModelDropdown(false);
     return;
   }
@@ -2374,7 +2421,7 @@ document.addEventListener('click', (event) => {
   if (!event.target.closest('#model-switcher')) {
     toggleModelDropdown(false);
   }
-});
+}, { capture: true });
 
 $('#welcome')?.addEventListener('click', async (event) => {
   const chip = event.target.closest('.welcome-chip');
@@ -2701,14 +2748,15 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
     }).catch(() => {});
   }
   if (area === 'local' && changes.providerConfig) {
+    configRevision++;
     state.config = normalizeProviderConfig(changes.providerConfig.newValue);
-    state.selectedModelId = state.config?.selectedModelId || state.config?.models?.[0]?.id || '';
-    state.selectedEffort = state.config?.selectedEffort || state.config?.models?.[0]?.reasoningDefaultEffort || 'default';
-    renderModelSwitcher();
+    syncConversationModel();
     updatePageToolbar();
     updateComposer();
     state.contextUsage = null;
     refreshContextUsage();
+    renderQueueBar();
+    if (state.ready) void processQueue();
   }
   if (area === 'session' && Object.prototype.hasOwnProperty.call(changes, 'pageSelection')) {
     setPageSelection(changes.pageSelection.newValue);
@@ -2797,11 +2845,12 @@ async function initialize() {
     setPageSelection(session?.pageSelection);
     state.storageInfo = await waitStartup(getDirectoryInfo(), '读取文件夹状态');
     if (state.storageInfo.granted) await waitStartup(migrateLegacyConversations(), '兼容旧会话');
+    const revision = configRevision;
     const config = await waitStartup(getProviderConfig(), '读取模型配置');
     const conversations = await waitStartup(listSavedConversations(), '读取会话目录');
-    state.config = config;
+    if (revision === configRevision) state.config = config;
     state.conversations = conversations;
-    state.conversation = await waitStartup(loadTemporaryConversation(), '读取临时会话');
+    showConversation(await waitStartup(loadTemporaryConversation(), '读取临时会话'));
     if (state.conversation?.messages?.some((message) => message.status === 'streaming')) {
       state.conversation.messages.forEach((message) => {
         settleInterruptedReply(message, { aborted: true });
@@ -2809,7 +2858,7 @@ async function initialize() {
       await waitStartup(saveCurrent(), '保存恢复后的会话');
     }
     if (!state.conversation && conversations.length) {
-      state.conversation = await waitStartup(loadConversation(conversations[0].id), '恢复会话');
+      showConversation(await waitStartup(loadConversation(conversations[0].id), '恢复会话'));
       if (state.conversation?.messages.some((message) => message.status === 'streaming')) {
         state.conversation.messages.forEach((message) => {
           settleInterruptedReply(message, { aborted: true });

@@ -20,10 +20,12 @@
     const preferences = cached?.version === 1 ? cached : null;
     const root = document.documentElement;
     root.dataset.font = ['system', 'humanist', 'serif', 'rounded'].includes(preferences?.font) ? preferences.font : 'system';
+    root.dataset.bodyFontSize = [12, 13, 14, 16, 18, 20].includes(preferences?.bodyFontSize) ? String(preferences.bodyFontSize) : '13';
     root.dataset.density = ['compact', 'comfortable', 'spacious'].includes(preferences?.density) ? preferences.density : 'comfortable';
     root.dataset.accent = ['forest', 'ocean', 'amber'].includes(preferences?.accent) ? preferences.accent : 'forest';
   } catch {
     document.documentElement.dataset.font = 'system';
+    document.documentElement.dataset.bodyFontSize = '13';
     document.documentElement.dataset.density = 'comfortable';
     document.documentElement.dataset.accent = 'forest';
   }

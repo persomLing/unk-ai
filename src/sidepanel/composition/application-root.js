@@ -73,7 +73,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
       return { ...session, execute: diagnostics.wrap(session.execute, { event: 'research', source: 'web-research', stage: 'research',
         summarize: result => ({ resultCount: result?.sources?.length || (result?.source ? 1 : 0) }) }) };
     } : null });
-  const generateImage = createImageReply({ repository, getProfile: ports.profileFor, makeId: ports.makeId });
+  const generateImage = createImageReply({ repository, getProfile: () => ports.profileFor(undefined, undefined, { allowDefaultModel: true }), makeId: ports.makeId });
   const replyService = { generate: options => !textOnly && directImageForMessage(repository.get(options.run.ref)?.user)
     ? generateImage(options) : chatService.generate(options) };
   const conversationService = createConversationService({ state, browser, agentSlot, runner, repository,

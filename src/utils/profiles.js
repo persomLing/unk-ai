@@ -115,9 +115,8 @@ export function requestProfile(config, overrides = {}) {
   const normalized = normalizeProviderConfig(config);
   if (!normalized) return null;
   const chatModels = normalized.models.filter((item) => item.kind !== 'image');
-  const model = chatModels.find((item) => item.id === (overrides.modelId || normalized.selectedModelId))
-    || chatModels[0]
-    || null;
+  const selectedId = overrides.exactModel ? overrides.modelId : overrides.modelId || normalized.selectedModelId;
+  const model = chatModels.find((item) => item.id === selectedId) || (overrides.exactModel ? null : chatModels[0]);
   if (!model) return null;
   const reasoningEnabled = overrides.reasoningEnabled ?? model.supportsReasoning;
   const effort = normalizeEffort(overrides.effort || normalized.selectedEffort || model.reasoningDefaultEffort);

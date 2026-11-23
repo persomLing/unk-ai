@@ -53,6 +53,10 @@ export function createConversationService(deps) {
   const renderConversation = options => emit('conversation', options);
   const renderContextChip = () => emit('context');
   const toast = (message, kind) => emit('notice', { message, kind });
+  const requireModel = () => {
+    toast('请先为当前对话选择模型，草稿已保留。');
+    emit('model-required');
+  };
   const setPageSelection = value => { state.pageSelection = value; emit('selection'); };
   const setAssistantPhase = (assistant, phase) => {
     if (!assistant) return;
@@ -91,6 +95,8 @@ export function createConversationService(deps) {
     isDisposed: () => disposed,
     isBusy: () => Boolean(state.generatingId || state.isSubmitting || state.compressing || agentSlot?.isBusy()),
     isPageDisabled: item => item.pageContextEnabled && item.readingPolicy?.scope !== 'none' && state.disablePageContext,
+    isModelUnavailable: item => !directImageForMessage(item)
+      && !profileFor(item.modelId ?? state.selectedModelId, item.effort ?? state.selectedEffort),
     getConversationId: () => state.conversation?.id,
     send: (content, options) => sendMessage(content, options),
     onChange: renderQueueBar,
@@ -132,14 +138,14 @@ export function createConversationService(deps) {
     try { restoredCommand = rewoundCommandForDraft(state, submittedText, options); }
     catch (error) { toast(error.message, 'error'); return; }
     const requestedCommand = options.pageCommand || restoredCommand?.pageCommand;
-    const modelId = options.modelId || state.selectedModelId;
-    const effort = options.effort || state.selectedEffort;
+    const modelId = options.modelId ?? state.selectedModelId;
+    const effort = options.effort ?? state.selectedEffort;
     const imageCommand = !requestedCommand && directImageForMessage({ content: submittedText });
     let imageProfile;
     if (imageCommand) {
       try {
         if (options.agentTask ?? agentSlot?.isMode()) throw new Error('请先退出页面操作，再使用聊天生图。');
-        imageProfile = structuredClone(profileFor(modelId, effort));
+        imageProfile = structuredClone(profileFor(modelId, effort, { allowDefaultModel: true }));
         assertImageCommand(imageCommand, options.fromQueue ? options.attachments || [] : state.attachments, imageProfile);
       } catch (error) {
         toast(error.message, 'error');
@@ -184,10 +190,11 @@ export function createConversationService(deps) {
       ? captureReadingHistory(options.readingHistory) : captureReadingHistory(state.conversation?.messages);
     const researchEnabled = false; // Legacy field; new turns use the versioned reading policy.
     const replaceActiveReply = !preserveDraft && state.directReplaceReply === true;
-    if (!preserveDraft) state.directReplaceReply = false;
 
     if (!content && !attachments.length && !selection?.text) return;
     if (!state.ready || state.preparingAttachments) return;
+    if (!command && !imageCommand && !profileFor(modelId, effort)) { requireModel(); return; }
+    if (!preserveDraft) state.directReplaceReply = false;
     try {
       assertImageAttachmentsAvailable(attachments);
       selectedSkill(attachments, { agentTask });
@@ -387,9 +394,9 @@ export function createConversationService(deps) {
           content: '',
           status: 'streaming',
           createdAt: now(),
-          model: activeChatProfile()?.id || '',
-          modelId: activeChatProfile()?.id || '',
-          reasoningEffort: state.selectedEffort,
+          model: modelId ?? activeChatProfile()?.id ?? '',
+          modelId: modelId ?? activeChatProfile()?.id ?? '',
+          reasoningEffort: effort,
           optimistic: true,
           ...command?.assistantFields,
         };
@@ -425,7 +432,14 @@ export function createConversationService(deps) {
           return;
         }
         assertSubmission();
-        profiles.set(submissionOwner.runId, command ? commandProfile : imageProfile || structuredClone(profileFor(modelId, effort)));
+        const available = imageProfile || profileFor(modelId, effort);
+        if (!available || (command && !commandProfile)) {
+          if (command) throw new Error('字幕已保留，请为当前对话选择模型后重试。');
+          restoreDraft();
+          requireModel();
+          return;
+        }
+        profiles.set(submissionOwner.runId, structuredClone(command ? commandProfile : available));
       }
       assertSubmission();
       const savedSelectedImages = !agentTask ? retainedSelectionVisuals(selection, attachments) : [];
@@ -648,7 +662,7 @@ export function createConversationService(deps) {
             ...(includeVisual ? { includeVisual: true } : {}),
             ...(attachments.length ? { attachments: attachments.slice(0, 6) } : {}),
           };
-        earlyAssistantMessage = { id: makeId(), role: 'assistant', content: '', status: 'streaming', createdAt: now(), model: activeChatProfile()?.id || '', modelId: activeChatProfile()?.id || '', reasoningEffort: state.selectedEffort, selectionUsed: selectionForMessage };
+        earlyAssistantMessage = { id: makeId(), role: 'assistant', content: '', status: 'streaming', createdAt: now(), model: modelId ?? activeChatProfile()?.id ?? '', modelId: modelId ?? activeChatProfile()?.id ?? '', reasoningEffort: effort, selectionUsed: selectionForMessage };
         Object.assign(earlyAssistantMessage, command?.assistantFields);
         conversation.messages.push(earlyUserMessage, earlyAssistantMessage);
         submissionOwner.bind({ conversation, user: earlyUserMessage, assistant: earlyAssistantMessage });
@@ -745,12 +759,13 @@ export function createConversationService(deps) {
         commandAttachments = snapshot.attachments;
         preparationAction = snapshot.preparationAction;
       } catch (error) { toast(error.message, 'error'); return; }
+      if ((commandAttachments.length || commandRequest.frameFallback) && !commandProfile) { requireModel(); return; }
     } else if (imageCommand) {
       try {
-        imageProfile = structuredClone(profileFor(modelId, effort));
+        imageProfile = structuredClone(profileFor(modelId, effort, { allowDefaultModel: true }));
         assertImageCommand(imageCommand, originalQuestion.attachments || [], imageProfile);
       } catch (error) { toast(error.message, 'error'); return; }
-    }
+    } else if (!profileFor(modelId, effort)) { requireModel(); return; }
     stopActiveReply();
     conversationQueue.clear();
     const submissionOwner = runner.begin({ commandId: makeId(), mode: 'chat',
@@ -805,12 +820,14 @@ export function createConversationService(deps) {
         const configured = await waitWithTimeout(ensureConfigured(submissionController.signal), { signal: submissionController.signal, message: '读取模型配置超时，请重试。' });
         assertCurrent();
         if (!configured) return;
-        profiles.set(submissionOwner.runId, imageProfile || structuredClone(profileFor(modelId, effort)));
+        const profile = imageProfile || profileFor(modelId, effort);
+        if (!profile) { requireModel(); return; }
+        profiles.set(submissionOwner.runId, structuredClone(profile));
       }
       const messages = conversation.messages;
       const assistant = find(messages, (message) => message.id === assistantId);
       if (!assistant || assistant.role !== 'assistant') return;
-      const replacement = { id: makeId(), role: 'assistant', content: '', status: 'streaming', requestPhase: 'preparing', createdAt: now(), model: activeChatProfile()?.id || '', modelId: activeChatProfile()?.id || '', reasoningEffort: state.selectedEffort };
+      const replacement = { id: makeId(), role: 'assistant', content: '', status: 'streaming', requestPhase: 'preparing', createdAt: now(), model: modelId ?? activeChatProfile()?.id ?? '', modelId: modelId ?? activeChatProfile()?.id ?? '', reasoningEffort: effort };
       Object.assign(replacement, command?.assistantFields);
       const replacementMessages = messagesForRetry(messages, assistantId, replacement);
       if (!replacementMessages) throw new Error('找不到这条回答对应的提问，无法重新生成。');
@@ -844,6 +861,7 @@ export function createConversationService(deps) {
           });
           assertCurrent();
           if (!configured) throw new Error('字幕已保留，请在设置中添加模型后重试。');
+          if (!commandProfile || !profileFor(modelId, effort)) throw new Error('字幕已保留，请为当前对话选择模型后重试。');
           profiles.set(submissionOwner.runId, commandProfile);
         }
       } else if (retainedReading) {

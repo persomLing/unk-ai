@@ -96,12 +96,12 @@ export function createConversationSaver({
     return target;
   }
 
-  async function save(conversation = getConversation(), { required = false, agentMessage = null, message = null, isCurrent = null, turn = null } = {}) {
+  async function save(conversation = getConversation(), { required = false, agentMessage = null, message = null, isCurrent = null, turn = null, touch = true } = {}) {
     if (isCurrent && !isCurrent()) return null;
     cancelScheduled(conversation);
     if (!conversation) return;
     try {
-      conversation.updatedAt = now();
+      if (touch) conversation.updatedAt = now();
       const snapshot = structuredClone({ ...conversation,
         messages: (conversation.messages || []).filter(message => !message.optimistic) });
       const ownedMessage = agentMessage ? structuredClone(agentMessage) : null;

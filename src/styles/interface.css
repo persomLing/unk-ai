@@ -2,6 +2,7 @@
   color-scheme: light;
   --interface-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   --density-factor: 1;
+  --chat-font-size: 13px;
   font-family: var(--interface-font);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -108,6 +109,11 @@
 
 [data-density="compact"] { --density-factor: .88; }
 [data-density="spacious"] { --density-factor: 1.14; }
+[data-body-font-size="12"] { --chat-font-size: 12px; }
+[data-body-font-size="14"] { --chat-font-size: 14px; }
+[data-body-font-size="16"] { --chat-font-size: 16px; }
+[data-body-font-size="18"] { --chat-font-size: 18px; }
+[data-body-font-size="20"] { --chat-font-size: 20px; }
 
 :root[data-accent="ocean"] {
   --accent-swatch: var(--ocean-swatch);

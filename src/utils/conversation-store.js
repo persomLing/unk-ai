@@ -70,7 +70,7 @@ function entry(conversation) {
   };
 }
 
-export async function createTemporaryConversation(title = '新对话') {
+export async function createTemporaryConversation(title = '新对话', { modelSelection } = {}) {
   const current = await getTemporaryConversation();
   if (current) await clearTemporaryConversation();
   const createdAt = timestamp();
@@ -82,6 +82,7 @@ export async function createTemporaryConversation(title = '新对话') {
     createdAt,
     updatedAt: createdAt,
     messages: [],
+    ...(modelSelection?.modelId ? { modelSelection } : {}),
   };
   return saveTemporaryConversation(conversation);
 }

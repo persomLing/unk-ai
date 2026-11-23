@@ -246,7 +246,8 @@ code { padding: 2px 5px; border-radius: 4px; background: var(--teal-soft); color
 .diagnostic-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .diagnostic-actions svg { width: 14px; height: 14px; }
 
-.appearance-fields { margin-bottom: 8px; }
+.appearance-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 8px; }
+@media (max-width: 480px) { .appearance-fields { grid-template-columns: minmax(0, 1fr); } }
 .appearance-fields .field { margin-bottom: 12px; }
 .appearance-accent { min-width: 0; margin: 0; padding: 0; border: 0; }
 .appearance-accent legend { margin-bottom: 9px; color: var(--ink); font-size: 13px; font-weight: 600; }

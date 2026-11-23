@@ -150,6 +150,7 @@ const disposeUpdateSettings = installUpdateSettings({ root: document.querySelect
 let appearancePreferences = normalizeAppearance({
   version: 1,
   font: document.documentElement.dataset.font,
+  bodyFontSize: Number(document.documentElement.dataset.bodyFontSize),
   density: document.documentElement.dataset.density,
   accent: document.documentElement.dataset.accent,
 });
@@ -159,6 +160,7 @@ let appearanceRevision = 0;
 function applySettingsAppearance(value) {
   appearancePreferences = applyAppearance(document, value);
   document.querySelector('#appearance-font').value = appearancePreferences.font;
+  document.querySelector('#appearance-body-font-size').value = String(appearancePreferences.bodyFontSize);
   document.querySelector('#appearance-density').value = appearancePreferences.density;
   document.querySelectorAll('[data-appearance-accent]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.appearanceAccent === appearancePreferences.accent));
@@ -180,6 +182,7 @@ function updateAppearance(update) {
 }
 
 document.querySelector('#appearance-font')?.addEventListener('change', event => { void updateAppearance({ font: event.target.value }); });
+document.querySelector('#appearance-body-font-size')?.addEventListener('change', event => { void updateAppearance({ bodyFontSize: Number(event.target.value) }); });
 document.querySelector('#appearance-density')?.addEventListener('change', event => { void updateAppearance({ density: event.target.value }); });
 document.querySelector('.accent-options')?.addEventListener('click', event => {
   const button = event.target.closest('[data-appearance-accent]');

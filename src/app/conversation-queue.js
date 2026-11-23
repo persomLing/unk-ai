@@ -4,6 +4,7 @@ export function createConversationQueue({
   isDisposed = () => false,
   isBusy = () => false,
   isPageDisabled = () => false,
+  isModelUnavailable = () => false,
   getConversationId = () => state?.conversation?.id,
   send,
   onChange = () => {},
@@ -39,7 +40,7 @@ export function createConversationQueue({
       notify();
       return;
     }
-    if (isPageDisabled(head)) {
+    if (isPageDisabled(head) || isModelUnavailable(head)) {
       notify();
       return;
     }

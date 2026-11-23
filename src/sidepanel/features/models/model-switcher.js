@@ -1,4 +1,4 @@
-import { find, includes, map } from 'lodash-es';
+import { includes, map } from 'lodash-es';
 import { normalizeProviderConfig } from '../../../utils/profiles.js';
 import { $, escapeHtml } from '../../core/dom.js';
 import { hydrateIcons, icon } from '../../icons.js';
@@ -13,17 +13,7 @@ const EFFORT_LABELS = Object.freeze({
 });
 
 export function activeModel(config, selectedModelId) {
-  const normalized = normalizeProviderConfig(config);
-  if (!normalized) return null;
-  const chatModels = normalized.models.filter((model) => model.kind !== 'image');
-  return find(chatModels, (model) => model.id === selectedModelId)
-    || find(chatModels, (model) => model.id === normalized.selectedModelId)
-    || chatModels[0]
-    || null;
-}
-
-export function selectedEffortFor(model, fallback = 'default') {
-  return model?.reasoningDefaultEffort || fallback;
+  return selectModelOption(config, selectedModelId);
 }
 
 export function renderModelSwitcher({
@@ -43,19 +33,13 @@ export function renderModelSwitcher({
   const effortBadge = $('#effort-display-badge');
   if (!switcher) return null;
   const chatModels = normalized?.models?.filter((model) => model.kind !== 'image') || [];
-  if (!chatModels.length) {
-    switcher.hidden = true;
-    return null;
-  }
   switcher.hidden = false;
-  const model = activeModel(config, selectedModelId);
-  const active = model || chatModels[0];
+  const active = chatModels.find(item => item.id === selectedModelId) || null;
   const modelIndex = (item) => String(chatModels.indexOf(item));
   if (select) {
-    select.innerHTML = map(chatModels, (item) =>
+    select.innerHTML = '<option value="">选择模型</option>' + map(chatModels, (item) =>
       `<option value="${escapeHtml(modelIndex(item))}">${escapeHtml(item.name)}</option>`).join('');
-    select.value = modelIndex(active);
-    if (select.value !== modelIndex(active)) select.selectedIndex = chatModels.indexOf(active);
+    select.value = active ? modelIndex(active) : '';
   }
   const efforts = active?.reasoningEfforts?.length
     ? active.reasoningEfforts
@@ -91,7 +75,7 @@ export function renderModelSwitcher({
   }
   if (dropdown) {
     const modelItems = map(chatModels, (item) => {
-      const isActive = item.id === active.id;
+      const isActive = item.id === active?.id;
       return `
         <button type="button" class="dropdown-model-item ${isActive ? 'is-active' : ''}" role="option" aria-selected="${isActive}" data-model-id="${escapeHtml(item.id)}">
           <div class="dropdown-model-info"><span class="dropdown-model-name">${escapeHtml(item.name)}</span>
@@ -101,7 +85,7 @@ export function renderModelSwitcher({
             </div>
           </div>${isActive ? `<span class="dropdown-check">${icon('check')}</span>` : ''}
         </button>`;
-    }).join('');
+    }).join('') || '<p class="dropdown-model-empty">请在设置中添加对话模型。</p>';
     const effortHtml = active?.supportsReasoning
       ? `<div class="dropdown-section"><span class="dropdown-section-title">思考强度</span><div class="dropdown-effort-pills">${
         map(['default', ...efforts], (item) =>
