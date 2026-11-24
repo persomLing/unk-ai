@@ -11,7 +11,7 @@ import { createResearchToolSession } from '../features/web-research/research-too
 import { createPublicResearchTransport } from '../features/web-research/public-research-transport.js';
 import { createSkillContextProvider } from '../features/skills/skill-context.js';
 import { createVideoContextProvider } from '../features/video-notes/transcript-context.js';
-import { createVideoNotesCommand, videoReplyPolicy } from '../features/video-notes/video-notes-command.js';
+import { createVideoNotesCommand } from '../features/video-notes/video-notes-command.js';
 import { readVideoTranscript as readTranscriptFromPort } from '../features/video-notes/video-reading-client.js';
 import { captureVideoStill, scanVideoPage } from '../features/video-notes/video-scan-client.js';
 import { createImageIllustration } from '../features/illustration/image-illustration.js';
@@ -58,7 +58,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
       summarize: result => name === 'ensureConfigured' ? { ok: result === true }
         : name === 'getDirectoryInfo' ? { permissionGranted: result?.granted === true } : { ok: Boolean(result?.id) } });
   }
-  const videoNotes = createVideoNotesCommand({ readTranscript: readVideoTranscript, scanVideo });
+  const videoNotes = createVideoNotesCommand({ readTranscript: readVideoTranscript, scanVideo, now: nowMs });
   const pageCommands = Object.freeze(textOnly ? {} : { 'video-notes': videoNotes });
   const contextAssembler = createContextAssembler({ providers: [createSkillContextProvider(), createVideoContextProvider(), ...contextProviders] });
   const contextService = createContextService({ state, modelGateway, profileFor: ports.profileFor,
@@ -66,7 +66,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
     save: conversation => conversationSaver.schedule(conversation),
     onEvent: event => emit(event.type === 'settled' ? { ...event, type: 'compression-settled' } : event) });
   const chatService = createChatService({ repository, runner, modelGateway, contextAssembler, now: nowMs,
-    replyPolicyFor: textOnly ? () => ({ suggestions: false }) : videoReplyPolicy,
+    replyPolicyFor: textOnly ? () => ({ suggestions: false }) : videoNotes.replyPolicy,
     suggestionsEnabled,
     compress: textOnly ? undefined : contextService.compress, researchTools: !textOnly && researchTools ? options => {
       const session = researchTools({ ...options, fallbackSearch: publicResearch.search, fallbackFetch: publicResearch.fetch });

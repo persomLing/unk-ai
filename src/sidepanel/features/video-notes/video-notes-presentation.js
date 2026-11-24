@@ -31,7 +31,7 @@ export function presentVideoNotesMessage(message, messages, { includeScope = fal
   const transcript = videoTranscriptForMessage(message, messages);
   if (!transcript) return message;
   const { videoNotesContext: info } = message;
-  const scope = message.videoNotesOutcome === 'notes' && info?.version === 1 && info.structured === true
+  const scope = message.videoNotesOutcome === 'notes' && info?.version === 1
     ? videoNotesScope(transcript, info) : null;
   const content = upgradeVideoAnswer(transcript, message.content);
   return { ...message, content: scope && includeScope ? appendVideoNotesScope(content, scope) : content,

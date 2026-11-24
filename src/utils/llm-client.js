@@ -1131,20 +1131,36 @@ export async function requestTextCompletion(options = {}) {
   return diagnosticRequest(options, textCompletion);
 }
 
+function retryAfterMilliseconds(response) {
+  const hint = response.headers?.get('Retry-After')?.trim();
+  if (!hint || hint.length > 64) return undefined;
+  const delay = /^\d+$/.test(hint) ? Number(hint) * 1000 : Date.parse(hint) - Date.now();
+  return Number.isNaN(delay) ? undefined : Math.max(0, Math.min(2147483647, delay));
+}
+
 async function textCompletion({
-  endpointUrl, apiKey, model, messages, temperature, maxTokens, reasoningEnabled, signal,
+  endpointUrl, apiKey, model, messages, temperature, maxTokens, reasoningEnabled, reasoningEffort, signal,
   fetchImpl = globalThis.fetch, diagnostic,
 } = {}) {
   signal?.throwIfAborted();
   const body = { model, messages, stream: false };
   if (temperature !== undefined && temperature !== null && temperature !== '') body.temperature = temperature;
   if (maxTokens !== undefined && maxTokens !== null && maxTokens !== '') body.max_tokens = maxTokens;
-  // Auxiliary classifiers explicitly disable thinking; other non-streaming
-  // purposes keep their previous provider-default behavior unchanged.
+  // Non-streaming callers may explicitly select a reasoning effort.
   if (reasoningEnabled === false) body.reasoning_effort = 'none';
+  else if (reasoningEnabled === true && reasoningEffort && reasoningEffort !== 'default') body.reasoning_effort = reasoningEffort;
   const url = resolveApiUrl(endpointUrl, 'chat');
   const headers = { ...requestHeaders(apiKey), 'Content-Type': 'application/json' };
-  let response = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(body), signal });
+  const send = async payload => {
+    const encoded = JSON.stringify(payload);
+    try { return await fetchImpl(url, { method: 'POST', headers, body: encoded, signal }); }
+    catch (error) {
+      signal?.throwIfAborted();
+      if (!['TypeError', 'NetworkError'].includes(error?.name)) throw error;
+      throw Object.assign(new Error(error.message, { cause: error }), { name: error.name, networkFailure: true });
+    }
+  };
+  let response = await send(body);
   signal?.throwIfAborted();
   let errorDetail;
   if (!response.ok && body.reasoning_effort && [400, 422].includes(response.status)) {
@@ -1156,14 +1172,16 @@ async function textCompletion({
       const fallbackBody = { ...body };
       delete fallbackBody.reasoning_effort;
       signal?.throwIfAborted();
-      response = await fetchImpl(url, { method: 'POST', headers, body: JSON.stringify(fallbackBody), signal });
+      response = await send(fallbackBody);
       signal?.throwIfAborted();
       errorDetail = undefined;
     }
   }
   if (!response.ok) {
     const detail = errorDetail ?? await readErrorBody(response, apiKey);
-    throw Object.assign(new Error(`模型请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`), { status: response.status });
+    throw Object.assign(new Error(`模型请求失败（HTTP ${response.status}）${detail ? `：${detail}` : ''}`), {
+      status: response.status, ...(response.status === 429 ? { retryAfterMs: retryAfterMilliseconds(response) } : {}),
+    });
   }
   const payload = await diagnostic.json(response);
   signal?.throwIfAborted();

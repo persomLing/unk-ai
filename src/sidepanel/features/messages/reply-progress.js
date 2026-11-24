@@ -55,7 +55,17 @@ export function replyElapsedLabel(message, now = Date.now()) {
     return `已用时 ${formatElapsedSeconds(Math.max(0, Math.floor((now - timing.startedAt) / 1000)))}`;
   }
   if (!Number.isSafeInteger(timing.durationMs) || timing.durationMs < 0) return '';
-  return `总耗时 ${formatSettledDuration(timing.durationMs)}`;
+  const total = `总耗时 ${formatSettledDuration(timing.durationMs)}`;
+  const context = message.videoNotesContext;
+  if (message.status !== 'complete' || context?.version !== 1) return total;
+  const { preparationMs, answerMs } = context;
+  if (!Number.isSafeInteger(preparationMs) || preparationMs < 0 || !Number.isSafeInteger(answerMs) || answerMs < 0
+    || preparationMs + answerMs > timing.durationMs) return total;
+  const stages = [];
+  if (context.reusedOutline === true) stages.push('复用预读');
+  else if (context.structured === true) stages.push(`预读 ${formatSettledDuration(preparationMs)}`);
+  stages.push(`成稿 ${formatSettledDuration(answerMs)}`);
+  return `${total}（${stages.join(' · ')}）`;
 }
 
 export function replyProgress(message, now = Date.now()) {

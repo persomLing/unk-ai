@@ -139,6 +139,7 @@ export function requestProfile(config, overrides = {}) {
     maxTokens: Number(overrides.maxTokens) || Number(model.maxOutputTokens) || normalized.maxTokens || undefined,
     reasoningEnabled,
     reasoningEffort: effort,
+    reasoningEfforts: model.reasoningEfforts.slice(),
     supportsVision: model.supportsVision,
     ...(imageModel ? { imageProfile: { model: imageModel.id } } : {}),
   };

@@ -24,6 +24,9 @@ export function resolveConversationModel(config, conversation, draftSelection) {
   const saved = conversation?.modelSelection ?? draftSelection;
   const selection = hasSelection ? (saved?.version === 1 ? saved : { modelId: '' })
     : lastConversationModel(conversation?.messages);
+  if (!selection && !conversation?.messages?.length) {
+    return modelSelectionFor(normalized?.models.find(item => item.kind === 'chat'));
+  }
   const modelId = selection ? selection.modelId : normalized?.selectedModelId;
   const model = normalized?.models.find(item => item.kind === 'chat' && item.id === modelId);
   const effort = selection?.effort ?? (selection ? model?.reasoningDefaultEffort : normalized?.selectedEffort);

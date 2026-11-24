@@ -24,8 +24,8 @@ export const DEFAULT_MODEL_TIMEOUTS = Object.freeze({
 const MODEL_FIELDS = ['model', 'temperature', 'contextLength', 'maxTokens',
   'reasoningEnabled', 'reasoningEffort', 'supportsVision',
   'webSearchEndpoint', 'webFetchEndpoint', 'webSearchEnabled', 'webFetchEnabled'];
-// Structured classifiers output tiny JSON and must not spend the chat model's
-// reasoning budget thinking, which can leave the answer body empty.
+// These requests use small classification budgets by default. Video outlining
+// may explicitly use reasoning under the frozen model's supported settings.
 const NON_REASONING_PURPOSES = new Set(['illustration-plan', 'visual-decision', 'video-frame-transcript', 'video-summary', 'suggestions']);
 const PROFILE_FIELDS = ['endpointUrl', 'apiKey', 'imageProfile', ...MODEL_FIELDS];
 const TRANSPORT_EVENTS = new Set(['started', 'headers', 'first-byte', 'progress', 'first-reasoning', 'first-content',
@@ -90,8 +90,14 @@ function safeFailure(error, key, purpose) {
   const failure = errorWith(code, redact(error?.message || error, key), name);
   // A read-only capability adapter may fall back only after a confirmed HTTP
   // absence. Preserve the bounded status, never raw endpoints or error objects.
-  if (name === 'Error' && ['web-search', 'web-fetch', 'image-generation', 'illustration-plan', 'visual-decision', 'video-frame-transcript'].includes(purpose)
+  if (name === 'Error' && ['web-search', 'web-fetch', 'image-generation', 'illustration-plan', 'visual-decision', 'video-frame-transcript', 'video-summary'].includes(purpose)
     && Number.isInteger(error?.status) && error.status >= 400 && error.status <= 599) failure.status = error.status;
+  if (name === 'Error' && purpose === 'video-summary') {
+    if (error?.networkFailure === true) failure.networkFailure = true;
+    if (failure.status === 429 && Number.isSafeInteger(error?.retryAfterMs) && error.retryAfterMs >= 0) {
+      failure.retryAfterMs = Math.min(2147483647, error.retryAfterMs);
+    }
+  }
   return failure;
 }
 
@@ -112,7 +118,7 @@ export function createModelTransport({ fetchImpl } = {}) {
     if (purpose === 'image-generation') return requestImageGeneration({ ...input, model: profile.imageProfile?.model });
     if (purpose === 'web-search') return requestGatewayWebSearch({ ...input, endpointName: profile.webSearchEndpoint, maxResults: input.maxResults });
     if (purpose === 'web-fetch') return requestGatewayWebFetch({ ...input, endpointName: profile.webFetchEndpoint });
-    return requestTextCompletion(input);
+    return requestTextCompletion({ ...input, reasoningEffort: request.reasoningEffort });
   };
 }
 
@@ -227,6 +233,8 @@ export function createModelGateway({
               : config.maxTokens ? Math.min(4000, config.maxTokens) : undefined;
       const defaultTemperature = purpose === 'compression' ? undefined
         : (NON_REASONING_PURPOSES.has(purpose) || ['agent-decision', 'research-decision'].includes(purpose)) ? 0 : config.temperature;
+      const reasoningOverride = config.reasoningEnabled === true && purpose === 'video-summary'
+        && validId(options.reasoningEffort);
       let input;
       let fingerprint;
       try {
@@ -242,7 +250,8 @@ export function createModelGateway({
             maxTokens: Object.hasOwn(options, 'maxTokens') ? options.maxTokens : defaultTokens,
             temperature: Object.hasOwn(options, 'temperature') ? options.temperature : defaultTemperature,
           }),
-          ...(NON_REASONING_PURPOSES.has(purpose) ? { reasoningEnabled: false } : {}),
+          ...(reasoningOverride ? { reasoningEnabled: true, reasoningEffort: options.reasoningEffort }
+            : NON_REASONING_PURPOSES.has(purpose) ? { reasoningEnabled: false } : {}),
         }));
         fingerprint = JSON.stringify(canonical({ purpose, input, timeoutMs, deadlineAt: options.deadlineAt,
           ...(purpose === 'image-generation' ? { imageProfile: config.imageProfile } : {}) }));
@@ -257,7 +266,7 @@ export function createModelGateway({
       const deadline = Math.min(startedAt + timeoutMs, runDeadline ?? Infinity, options.deadlineAt ?? Infinity);
       const requestController = new AbortController();
       const entry = { id: requestId, purpose, fingerprint, startedAt, settled: false, timer: null, promise: null,
-        diagnostics: {}, firstSignals: new Set() };
+        diagnostics: purpose === 'video-summary' && options.retried === true ? { retried: true } : {}, firstSignals: new Set() };
       let resolveResult;
       let rejectResult;
       entry.promise = new Promise((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });

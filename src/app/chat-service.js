@@ -85,6 +85,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
       };
       if (!profile) { run.fail(new Error('请先在设置中添加至少一个模型。')); return null; }
       const fixedProfile = structuredClone(profile);
+      const outlineEffort = policy.outlineReasoningEffortFor?.(fixedProfile);
       const messageOptions = { imageGenerationAvailable: Boolean(fixedProfile.imageProfile?.model) };
       const researchEnabled = policy.research !== false && typeof researchTools === 'function' && fixedProfile.webSearchEnabled !== false;
       const requestPage = policy.isolated || user.pageContextEnabled === false
@@ -126,11 +127,17 @@ export function createChatService({ repository, runner, modelGateway, contextAss
               // Reserve the real current question and wrappers; history can be
               // compressed after required data has been prepared.
               messages: requestMessagesFor({ messages: [submittedUser, assistant] }, assistant.id, requestPage, messageOptions),
-              contextWindow, maxTokens: requestReserve, signal: run.signal, assertCurrent,
-              requestText: async ({ requestId, messages, maxTokens }) => {
+              contextWindow, maxTokens: requestReserve, signal: run.signal, assertCurrent, ref,
+              profile: { id: fixedProfile.id, endpointUrl: fixedProfile.endpointUrl, model: fixedProfile.model, reasoningEffort: outlineEffort },
+              onProgress({ completed, total, label = '预读字幕' }) {
                 assertCurrent();
-                const raw = await connection.request({ requestId, messages, maxTokens,
-                  purpose: 'video-summary', timeoutMs: 60000, temperature: 0 });
+                run.phase('collecting-context', `${label} ${completed}/${total}`);
+              },
+              requestText: async ({ requestId, messages, maxTokens, signal, retried }) => {
+                assertCurrent();
+                const raw = await connection.request({ requestId, messages, maxTokens, signal, retried,
+                  purpose: 'video-summary', timeoutMs: 60000,
+                  ...(outlineEffort ? { reasoningEffort: outlineEffort, temperature: undefined } : { temperature: 0 }) });
                 assertCurrent();
                 return raw;
               } });
@@ -140,7 +147,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
         }
         let collected = { blocks: [], issues: [] };
         if (contextAssembler) {
-          run.phase('collecting-context');
+          if (!policy.prepareContext) run.phase('collecting-context');
           collected = await contextAssembler.collect(contextInput, {
             ...ref, signal: run.signal, deadlineAt: run.deadlineAt, mode: 'chat',
             model: connection.modelInfo, target: pageSourceFor(requestPage),
@@ -182,6 +189,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
         };
         const pageSources = [...(policy.sources || []), ...readSourcesForPage(requestPage, favicon)];
         assertCurrent();
+        const answerStartedAt = now();
         const result = researchEnabled
           ? await runResearchAnswer({ connection, run, messages, createTools: researchTools, contextWindow,
             maxTokens: fixedProfile.maxTokens, fetchEnabled: fixedProfile.webFetchEnabled !== false, now, ...callbacks,
@@ -192,6 +200,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
             } })
           : { content: await connection.request({ requestId: 'answer', purpose: 'answer', messages, timeoutMs: 120000, ...callbacks }), sources: [] };
         assertCurrent();
+        const answerMs = Math.max(0, now() - answerStartedAt);
         pauseReasoning();
         const sources = [...pageSources, ...result.sources];
         if (requestPage && conversation.repository?.url === requestPage.url && !sources.some(source => source.url === requestPage.url)) {
@@ -199,7 +208,7 @@ export function createChatService({ repository, runner, modelGateway, contextAss
           sources.push({ title: `${repo.owner}/${repo.name}`, url: repo.url, domain: 'github.com', favicon: 'https://github.githubassets.com/favicons/favicon.svg' });
         }
         return { content: formatContent(result.content), reasoning, reasoningSeconds: duration(), sources,
-          pageSource: pageSourceFor(requestPage), ...policy.assistantFields, ...policy.completionFields };
+          pageSource: pageSourceFor(requestPage), ...policy.assistantFields, ...policy.completionFields?.({ answerMs }) };
       });
       if (policy.suggestions !== false && run.status === 'completed' && result?.content) void suggest(ref, fixedProfile, result.content);
       return result;
