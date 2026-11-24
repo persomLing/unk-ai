@@ -1,0 +1,91 @@
+.conversation-scene-exit {
+  position: fixed;
+  overflow: clip;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.composer-send-controls { position: relative; display: flex; align-items: center; gap: 5px; }
+.send-glyph-out, .send-glyph-dot, .send-accepted-ring { position: absolute; pointer-events: none; }
+.send-glyph-out { inset: 0; display: grid; place-items: center; opacity: 0; }
+.send-glyph-dot { inset: 0; margin: auto; width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: 0; }
+.send-accepted-ring { inset-block: -1px; inset-inline-end: -1px; width: 39px; border: 1px solid var(--teal); border-radius: 12px; opacity: 0; }
+
+.message-activity, .assistant-message [data-message-content] { position: relative; }
+.assistant-message[data-response-status="streaming"] > .message-actions { opacity: 0; visibility: hidden; pointer-events: none; }
+.message-activity:empty, .message-elapsed:empty { display: none; }
+.thinking-header .reply-phase-exit {
+  position: absolute;
+  inset-inline-start: 8px;
+  max-width: calc(100% - 16px);
+  pointer-events: none;
+}
+.thinking-header:has(.thinking-toggle:not([hidden])) .reply-phase-exit { max-width: calc(100% - 34px); }
+.reply-cursor-exit {
+  position: absolute;
+  inset-block-start: 100%;
+  inset-inline-start: 2px;
+  width: 6px;
+  height: 14px;
+  border-radius: 1px;
+  background: var(--teal);
+  pointer-events: none;
+}
+
+.thinking-body { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; }
+.thinking-block.is-open .thinking-body { grid-template-rows: 1fr; opacity: 1; visibility: visible; }
+.thinking-clip { min-height: 0; overflow: clip; }
+
+.message-agent-dot.is-done { border-color: var(--accent-line); color: var(--teal); }
+.message-agent-dot .icon { width: 10px; height: 10px; }
+.message-agent-step.is-active .message-agent-dot { border: 3px solid var(--teal-soft); background: var(--teal); }
+.message-agent-link {
+  position: absolute;
+  inset-inline-start: 6.5px;
+  inset-block-start: 21px;
+  inset-block-end: -4px;
+  width: 1px;
+  background: var(--accent-line);
+  transform-origin: top;
+}
+.message-agent-step:last-child .message-agent-link { display: none; }
+
+.generated-image-media { position: relative; margin-bottom: 6px; background: var(--surface-card); border-radius: 8px; }
+.generated-image-media.is-decoding img { opacity: 0; }
+.direct-image-placeholder { margin-block: 8px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .assistant-message.is-awaiting-first-token .assistant-avatar { animation: assistant-breathe 2.2s ease-in-out infinite; }
+  .thinking-block.is-working [data-activity-phase] .thinking-phase-icon .icon { animation: assistant-breathe 2.2s ease-in-out infinite; }
+  .thinking-body { transition: grid-template-rows 210ms var(--ease-out), opacity 160ms ease, visibility 0s 210ms; }
+  .thinking-block.is-open .thinking-body { transition-delay: 0s; }
+  .message-agent-step.is-active .message-agent-dot { animation: assistant-breathe 1.85s ease-in-out infinite; }
+  .message-sources.is-open .source-popover-item:nth-child(-n+6) { animation: source-item-enter 145ms var(--ease-out) backwards; }
+  .message-sources.is-open .source-popover-item:nth-child(2) { animation-delay: 25ms; }
+  .message-sources.is-open .source-popover-item:nth-child(3) { animation-delay: 50ms; }
+  .message-sources.is-open .source-popover-item:nth-child(4) { animation-delay: 75ms; }
+  .message-sources.is-open .source-popover-item:nth-child(5) { animation-delay: 100ms; }
+  .message-sources.is-open .source-popover-item:nth-child(6) { animation-delay: 125ms; }
+
+  .generated-image-placeholder, .generated-image-media:is(.is-decoding, .is-revealing) { overflow: clip; }
+  .generated-image-placeholder::before, .generated-image-media:is(.is-decoding, .is-revealing)::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(105deg, transparent 27%, color-mix(in srgb, var(--accent-swatch) 10%, transparent) 49%, transparent 72%);
+    animation: image-shimmer 2.4s ease-in-out infinite;
+  }
+  .generated-image-media.is-revealing img { position: relative; }
+}
+
+@keyframes assistant-breathe { 50% { scale: 1.06; opacity: .72; } }
+@keyframes source-item-enter { from { opacity: 0; translate: 0 4px; } }
+@keyframes image-shimmer { from { translate: -95% 0; } to { translate: 95% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-send-controls .send-button { transform: none; }
+  .message .thinking-cursor, .message .streaming-cursor { animation: none; }
+  .message .thinking-chevron, .message .sources-chevron { transition: none; }
+  .conversation-scene-exit, .reply-phase-exit, .reply-cursor-exit, .send-glyph-out, .send-glyph-dot, .send-accepted-ring { display: none !important; }
+}

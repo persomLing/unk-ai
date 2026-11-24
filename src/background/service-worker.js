@@ -22,6 +22,7 @@ import videoFrameDecoderBundle from '../content/video-frame-decoder-entry.js?wor
 import { captureSiteResearchDiscovery } from '../utils/site-research.js';
 import { assertPageTarget, pageTargetFields } from '../utils/page-target.js';
 import { awaitWithAbort } from '../utils/abortable.js';
+import { PAGE_SELECTION_ACTION_KEY, PAGE_SELECTION_ACTION_VERSION } from '../utils/selection.js';
 import {
   mergeDeepReading,
   summarizeAccessibilityTree,
@@ -567,8 +568,15 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId !== 'unk-ai-ask-selection' || !tab?.id) return;
+  void chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+  let identity;
+  try { identity = await documentIdentity(tab, { expectedUrl: tab.url }); }
+  catch { return; }
   let text = String(info.selectionText || '').trim();
   let context = '';
+  let selectedTitle = String(tab.title || '');
+  let selectionDocumentId = identity.documentId;
+  let selectionInvalid = false;
   try {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id, frameIds: info.frameId === undefined ? undefined : [info.frameId] },
@@ -585,27 +593,48 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
         return {
           text: String(selection.toString() || '').trim(),
           context: String(container?.innerText || container?.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 1600),
+          title: String(document.title || ''),
+          url: String(location.href || ''),
         };
       },
     });
-    if (result?.result?.text) {
+    if (result?.result?.text && (result.result.url !== tab.url || result.documentId !== identity.documentId
+      || (info.frameId !== undefined && info.frameId !== 0))) selectionInvalid = true;
+    if (!selectionInvalid && result?.documentId === identity.documentId && result?.result?.text && result.result.url === tab.url
+      && (info.frameId === undefined || info.frameId === 0)) {
       text = result.result.text;
-      context = result.result.context;
+      context = result.result.context || '';
+      selectedTitle = result.result.title || selectedTitle;
+      selectionDocumentId = result.documentId;
     }
   } catch {
     // The context menu still works when the page blocks script injection.
   }
-  if (!text) return;
+  if (selectionInvalid || !text || !selectionDocumentId) return;
+  const selection = {
+    text,
+    context,
+    title: selectedTitle,
+    url: String(tab.url || ''),
+    tabId: tab.id,
+    documentId: selectionDocumentId,
+    captureSource: 'context-menu',
+    selectedAt: new Date().toISOString(),
+  };
   await chrome.storage.session.set({
-    pageSelection: {
-      text,
-      context,
-      title: String(tab.title || ''),
+    pageSelection: selection,
+    [PAGE_SELECTION_ACTION_KEY]: {
+      version: PAGE_SELECTION_ACTION_VERSION,
+      action: 'explain',
+      requestId: crypto.randomUUID(),
+      tabId: tab.id,
+      windowId: tab.windowId,
       url: String(tab.url || ''),
-      selectedAt: new Date().toISOString(),
+      selection,
+      documentId: selectionDocumentId,
+      createdAt: Date.now(),
     },
   });
-  if (Number.isInteger(tab.windowId)) await chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => {});
 });
 
 chrome.runtime.onStartup.addListener(() => {

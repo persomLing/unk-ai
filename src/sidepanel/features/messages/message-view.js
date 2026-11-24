@@ -9,22 +9,26 @@ import { imageAttachmentLoadError, safeAttachmentDataUrl } from '../../../utils/
 import { escapeHtml } from '../../core/dom.js';
 import { formatTime } from '../../core/format.js';
 import { hydrateIcons, icon } from '../../icons.js';
-import { agentPanelMarkup } from './agent-message-view.js';
+import { agentPanelMarkup, syncAgentPanel } from './agent-message-view.js';
 import { captureViewPosition, restoreViewPosition } from './scroll-position.js';
-import { replyElapsedLabel, replyProgress } from './reply-progress.js';
+import { replyElapsedLabel } from './reply-progress.js';
+import { replyActivityMarkup, updateReplyActivity } from './reply-activity-view.js';
+import { finishReplyMotion, revealGeneratedImage, revealSuggestions } from './reply-motion.js';
+import { allowsMotion, reveal } from '../../core/motion.js';
 import { messageErrorMarkup, messageModeBadgeMarkup, syncMessageDecorations } from './message-decorations.js';
 import { syncChildren } from './dom-reconcile.js';
-import { thinkingPresentation } from './thinking-view.js';
 import { parseSuggestionResponse, suggestedReadingQuestions, suggestedVideoQuestions } from './model-suggestions.js';
 import { articleQuotes } from './article-quote-draft.js';
 import { shouldCollapseMessageText } from './text-preview.js';
 import { videoAttachmentName } from '../video-notes/video-notes-presentation.js';
+import { videoNotesDetailsMarkup } from '../video-notes/transcript-context.js';
 import { directImageForMessage } from '../../../utils/image-generation-command.js';
 import { decorateCodeBlocks } from './code-blocks.js';
-import { detachMessageIllustrations, generatedImagesMarkup, illustrationNote, restoreMessageIllustrations, videoIllustrationNote } from '../illustration/illustration-view.js';
+import { detachMessageIllustrations, generatedImagesMarkup, illustrationNote, imageReplyPlaceholder, replaceMessageIllustrations, restoreMessageIllustrations, videoIllustrationNote } from '../illustration/illustration-view.js';
 import '../illustration/illustration-inline.css';
 
 export { normalizeMessageError, syncMessageErrorToggle } from './message-decorations.js';
+export { setThinkingExpanded } from './reply-activity-view.js';
 
 const SAFE_MARKDOWN = {
   USE_PROFILES: { html: true },
@@ -218,11 +222,7 @@ function tryNextMarkup(message, { showSuggestions = false } = {}) {
   </div>`;
 }
 
-function requestProgressMarkup(progress, phase) {
-  return `<div class="message-state request-progress" data-message-progress data-request-phase="${escapeHtml(phase || '')}">${icon(phase === 'reading' ? 'article' : 'history')}<span data-progress-text><span role="status" data-progress-label>${escapeHtml(progress.label)}</span><span data-progress-detail>${escapeHtml(progress.details)}</span></span></div>`;
-}
-
-function assistantMessageMarkup(message, { showSuggestions = false, frameActions, allowImageReference = false, textOnly = false } = {}) {
+function assistantParts(message, { showSuggestions = false, frameActions, allowImageReference = false, textOnly = false, live = false } = {}) {
   const status = message.status || 'complete';
   const stopped = status === 'stopped'
     ? `<div class="message-state">${icon('stop')}已停止，已保留当前回答</div>`
@@ -231,27 +231,8 @@ function assistantMessageMarkup(message, { showSuggestions = false, frameActions
   const retry = !message.agent && !frameActions?.hideRetry && ['stopped', 'error'].includes(status)
     ? `<button class="action-text" data-action="retry" type="button">${icon('regenerate')}重试</button>`
     : '';
-  const thinking = thinkingPresentation(message);
-  const brainIcon = `<span class="thinking-brain-icon${thinking.active ? ' is-shaking' : ' is-settled'}" aria-hidden="true">${icon('brain')}</span>`;
-
-  const streamingCursor = thinking.active
-    ? '<span class="thinking-cursor" aria-hidden="true"></span>'
-    : '';
-
-  const thought = thinking.visible
-    ? `<div class="thinking-block${thinking.active ? ' is-streaming' : ''}" data-thinking-for="${message.id}" data-message-thought>
-        <button type="button" class="thinking-toggle${thinking.expanded ? ' is-open' : ''}" data-action="toggle-thinking" aria-expanded="${thinking.expanded ? 'true' : 'false'}">
-          ${brainIcon}
-          <span class="thinking-text" data-thinking-label>${thinking.label}</span>
-          <i class="thinking-chevron" data-icon="chevron-down"></i>
-        </button>
-        <div class="thinking-content"${thinking.expanded ? '' : ' hidden'}><span class="thinking-reason-text" data-thinking-text>${escapeHtml(message.reasoning || '')}</span>${streamingCursor}</div>
-      </div>`
-    : '';
-
-  const progress = replyProgress(message);
-  const progressState = progress ? requestProgressMarkup(progress, message.requestPhase) : '';
-  const elapsed = replyElapsedLabel(message);
+  const activity = `<div class="message-activity">${live ? '' : replyActivityMarkup(message)}</div>`;
+  const elapsed = live ? '' : replyElapsedLabel(message);
   const elapsedTitle = message.agent ? '从任务开始到结束，含暂停和人工处理时间'
     : '从本轮开始执行到回复结束，不含排队与回复后配图';
   const model = message.model
@@ -260,94 +241,29 @@ function assistantMessageMarkup(message, { showSuggestions = false, frameActions
   const agent = message.agent
     ? agentPanelMarkup(message.agent)
     : '';
-  const agentState = message.agent && message.status === 'streaming'
-    ? `<div class="message-state">${icon('globe')}正在执行浏览器任务，进度会实时更新</div>`
-    : '';
   const sources = textOnly ? '' : sourcesMarkup(message);
   const tryNext = textOnly ? '' : tryNextMarkup(message, { showSuggestions });
+  const details = textOnly ? '' : videoNotesDetailsMarkup(message.videoNotesScope);
   const frameButtons = frameActions?.buttons?.length ? `<div class="video-frame-actions" role="group" aria-label="视频画面识别">${frameActions.buttons.map(button =>
     `<button class="action-text" data-action="${escapeHtml(button.action)}" type="button" aria-haspopup="dialog">${icon('article')}${escapeHtml(button.label)}</button>`).join('')}</div>` : '';
-  return `<article class="message assistant-message" data-message-id="${message.id}">
-    <div class="message-label"><span class="assistant-avatar" aria-hidden="true"></span><span class="assistant-name">UNK AI</span>${model}<span class="message-meta">${elapsed ? `<span class="message-elapsed" data-message-elapsed title="${elapsedTitle}">${escapeHtml(elapsed)}</span>` : ''}<time>${formatTime(message.createdAt)}</time></span></div>
-    ${agent}${agentState}${thought}${progressState}<div class="message-content" data-message-content></div>${frameButtons}${textOnly ? '' : generatedImagesMarkup(message, { allowImageReference }) + illustrationNote(message) + videoIllustrationNote(message)}${sources}${tryNext}${stopped}${error}
-    <div class="message-actions">
+  return {
+    label: `<div class="message-label"><span class="assistant-avatar" aria-hidden="true"></span><span class="assistant-name">UNK AI</span>${model}<span class="message-meta">${live || elapsed ? `<span class="message-elapsed" data-message-elapsed title="${elapsedTitle}">${escapeHtml(elapsed)}</span>` : ''}<time>${formatTime(message.createdAt)}</time></span></div>`,
+    agent, activity, body: '<div class="message-content" data-message-content></div>', videoNotesDetails: details, frameButtons,
+    gallery: textOnly ? '' : generatedImagesMarkup(message, { allowImageReference }),
+    illustration: textOnly ? '' : illustrationNote(message),
+    videoIllustration: textOnly ? '' : videoIllustrationNote(message),
+    sources, tryNext, stopped, error,
+    actions: `<div class="message-actions"${status === 'streaming' ? ' inert' : ''}>
       <button class="icon-button" data-action="copy" type="button" aria-label="复制回答" title="选择复制格式" aria-haspopup="menu" aria-expanded="false">${icon('copy')}</button>
       ${message.agent ? (['failed', 'cancelled'].includes(message.agent.status) ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>` : '') : frameActions?.hideRetry ? '' : `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`}${retry}
-    </div>
-  </article>`;
+    </div>`,
+  };
 }
 
 function nodeFromMarkup(ownerDocument, markup) {
   const template = ownerDocument.createElement('template');
   template.innerHTML = markup.trim();
   return template.content.firstElementChild;
-}
-
-function updateThinkingView(article, message) {
-  const presentation = thinkingPresentation(message);
-  let block = article.querySelector('[data-message-thought]');
-  if (!presentation.visible) {
-    block?.remove();
-    return;
-  }
-  if (!block) {
-    block = nodeFromMarkup(article.ownerDocument, messageMarkup(message));
-    const assistant = block?.querySelector?.('[data-message-thought]');
-    const anchor = article.querySelector('[data-message-progress]') || article.querySelector('[data-message-content]');
-    if (!assistant || !anchor) return;
-    anchor.before(assistant);
-    hydrateIcons(assistant);
-    block = assistant;
-  }
-  block.classList.toggle('is-streaming', presentation.active);
-  const button = block.querySelector('[data-action="toggle-thinking"]');
-  const label = block.querySelector('[data-thinking-label]');
-  const content = block.querySelector('.thinking-content');
-  const reason = block.querySelector('[data-thinking-text]');
-  const brain = block.querySelector('.thinking-brain-icon');
-  if (button) {
-    button.classList.toggle('is-open', presentation.expanded);
-    button.setAttribute('aria-expanded', String(presentation.expanded));
-  }
-  if (label) label.textContent = presentation.label;
-  if (content) content.hidden = !presentation.expanded;
-  if (reason && reason.textContent !== String(message.reasoning || '')) reason.textContent = String(message.reasoning || '');
-  if (brain) {
-    brain.classList.toggle('is-shaking', presentation.active);
-    brain.classList.toggle('is-settled', !presentation.active);
-  }
-  const cursor = content?.querySelector('.thinking-cursor');
-  if (presentation.active && content && !cursor) {
-    const span = article.ownerDocument.createElement('span');
-    span.className = 'thinking-cursor';
-    span.setAttribute('aria-hidden', 'true');
-    content.append(span);
-  } else if (!presentation.active) {
-    cursor?.remove();
-  }
-}
-
-function setText(node, value) {
-  if (node && node.textContent !== value) node.textContent = value;
-}
-
-function updateProgressView(article, message, now = Date.now()) {
-  setText(article.querySelector('[data-message-elapsed]'), replyElapsedLabel(message, now));
-  const progress = replyProgress(message, now);
-  const node = article.querySelector('[data-message-progress]');
-  if (!progress) {
-    node?.remove();
-    return;
-  }
-  const phase = String(message.requestPhase || '');
-  if (!node || node.dataset.requestPhase !== phase) {
-    const next = nodeFromMarkup(article.ownerDocument, requestProgressMarkup(progress, phase));
-    if (node) node.replaceWith(next);
-    else article.querySelector('[data-message-content]')?.before(next);
-    return;
-  }
-  setText(node.querySelector('[data-progress-label]'), progress.label);
-  setText(node.querySelector('[data-progress-detail]'), progress.details);
 }
 
 export function createReplyClock({ root, getConversation, getRun, isVisible = () => true }) {
@@ -363,7 +279,7 @@ export function createReplyClock({ root, getConversation, getRun, isVisible = ()
       ? conversation.messages.find(item => item.id === ref.assistantId && item.runId === ref.runId) : null;
     const article = message?.status === 'streaming' && root.querySelector(`[data-message-id="${CSS.escape(message.id)}"]`);
     if (!article) { stop(); return; }
-    updateProgressView(article, message);
+    updateReplyActivity(article, message);
     timer ??= setInterval(sync, 1000);
   }
   return Object.freeze({ sync, stop });
@@ -372,7 +288,108 @@ export function createReplyClock({ root, getConversation, getRun, isVisible = ()
 export function messageMarkup(message, options = {}) {
   return message?.role === 'user'
     ? userMessageMarkup(message)
-    : assistantMessageMarkup(message, options);
+    : `<article class="message assistant-message" data-message-id="${message.id}" data-response-status="${message.status || 'complete'}">${Object.values(assistantParts(message, options)).join('')}</article>`;
+}
+
+const articlePaints = new WeakMap();
+const figureId = node => node.dataset.illustrationId;
+
+function paintParts(article, parts, cache) {
+  let anchor = null;
+  for (const [key, markup] of Object.entries(parts).reverse()) {
+    const previous = cache.get(key);
+    let node = previous?.node;
+    if (markup !== previous?.markup) {
+      const next = markup ? nodeFromMarkup(article.ownerDocument, markup) : null;
+      if (key === 'agent' && node && next && node.dataset.agentTask === next.dataset.agentTask) syncAgentPanel(node, next);
+      else {
+        node?.remove();
+        node = next;
+        if (node) hydrateIcons(node);
+      }
+      if (node) cache.set(key, { node, markup });
+      else cache.delete(key);
+    }
+    if (!node) continue;
+    if (node.parentElement !== article || node.nextElementSibling !== anchor) article.insertBefore(node, anchor);
+    anchor = node;
+  }
+}
+
+function updateLiveReply(article, message, imageLayout) {
+  const status = message.status || 'complete';
+  article.dataset.responseStatus = status;
+  article.classList.toggle('is-awaiting-first-token', status === 'streaming' && !message.agent && !message.content);
+  updateReplyActivity(article, message);
+  const activity = article.querySelector('.message-activity');
+  const pending = activity.querySelector('[data-image-reply-placeholder]');
+  if (message.status === 'streaming' && message.requestPhase === 'generating-image') {
+    if (!pending) activity.append(nodeFromMarkup(article.ownerDocument, imageReplyPlaceholder(imageLayout)));
+  } else pending?.remove();
+}
+
+export function paintConversationMessage(article, message, options = {}) {
+  const previous = articlePaints.get(article);
+  article.dataset.messageId = message.id;
+  if (message.role === 'user') {
+    const markup = userMessageMarkup(message);
+    if (markup !== previous?.markup) {
+      const next = nodeFromMarkup(article.ownerDocument, markup);
+      article.className = next.className;
+      article.replaceChildren(...next.childNodes);
+    }
+    articlePaints.set(article, { markup });
+    return;
+  }
+
+  const { gallery, ...parts } = assistantParts(message, { ...options, live: true });
+  const cache = previous?.parts || new Map();
+  const galleryChanged = previous?.gallery !== gallery;
+  const status = message.status || 'complete';
+  const finished = previous?.status === 'streaming' && status === 'complete';
+  const hadCursor = finished && Boolean(article.querySelector('.streaming-cursor'));
+  const newSources = Boolean(parts.sources && !cache.has('sources'));
+  const newSuggestions = Boolean(parts.tryNext && parts.tryNext !== cache.get('tryNext')?.markup);
+  const reserve = new Map();
+  const ready = new Set();
+  let directHeight = 0;
+  if (gallery && galleryChanged && previous && allowsMotion(article)) {
+    for (const figure of article.querySelectorAll('figure.generated-image[data-illustration-id]')) {
+      const pending = figure.querySelector('.generated-image-placeholder');
+      if (pending) reserve.set(figureId(figure), pending.offsetHeight);
+      else if (figure.querySelector('.generated-image-media')) ready.add(figureId(figure));
+    }
+    directHeight = article.querySelector('[data-image-reply-placeholder]')?.offsetHeight || 0;
+  }
+  if (!previous) article.className = 'message assistant-message';
+  paintParts(article, parts, cache);
+  updateLiveReply(article, message, options.imageLayout);
+  const content = cache.get('body').node;
+  if (galleryChanged) replaceMessageIllustrations(content, gallery ? nodeFromMarkup(article.ownerDocument, gallery) : null);
+  if (galleryChanged || previous?.content !== message.content || previous?.status !== status) {
+    renderMessageContent(content, message.content, status === 'streaming');
+  } else syncMessageDecorations(article);
+  articlePaints.set(article, { parts: cache, gallery, status, content: message.content });
+  if (finished) finishReplyMotion(article, hadCursor);
+  if (!previous || status !== 'complete') return;
+
+  if (newSources) {
+    const sources = cache.get('sources').node;
+    reveal(sources.querySelector('.sources-pill'), 'sources-enter', { distance: 4, delay: finished ? 90 : 0 });
+    sources.querySelectorAll('.source-icon-mini').forEach((item, index) => {
+      reveal(item, 'source-icon-enter', { distance: 3, delay: (finished ? 104 : 14) + index * 28 });
+    });
+  }
+  if (gallery && galleryChanged) {
+    const images = [...content.querySelectorAll('.generated-image-media > img')];
+    images.forEach((image, index) => {
+      const id = figureId(image.closest('figure'));
+      if (!ready.has(id)) revealGeneratedImage(image, { delay: (finished ? 80 : 0) + index * 30, reservedHeight: reserve.get(id) || directHeight });
+    });
+  }
+  if (newSuggestions && article.parentElement.dataset.nextExploration === 'on') {
+    revealSuggestions(cache.get('tryNext').node, finished || newSources ? 150 : 0);
+  }
 }
 
 export function updateStreamingMessage({
@@ -384,10 +401,16 @@ export function updateStreamingMessage({
   conversationView,
   followToPage,
   showSuggestions = false,
+  imageLayout,
 }) {
   if (!message || !article) return false;
   if ((message.status || 'complete') !== 'streaming') {
     const position = captureViewPosition(conversationView, messagesElement);
+    if (articlePaints.has(article)) {
+      paintConversationMessage(article, message, { showSuggestions, frameActions, allowImageReference, imageLayout });
+      restoreViewPosition(conversationView, messagesElement, position, followToPage);
+      return true;
+    }
     article.outerHTML = messageMarkup(message, { showSuggestions, frameActions, allowImageReference });
     const rendered = messagesElement.querySelector(`[data-message-id="${message.id}"]`);
     if (!rendered) return false;
@@ -397,11 +420,12 @@ export function updateStreamingMessage({
     return true;
   }
   const position = captureViewPosition(conversationView, messagesElement);
-  updateThinkingView(article, message);
-  updateProgressView(article, message);
+  updateLiveReply(article, message, imageLayout);
   const contentElement = article.querySelector('[data-message-content]');
   if (!contentElement) return false;
-  renderMessageContent(contentElement, message.content, true);
+  const painted = articlePaints.get(article);
+  if (!painted || painted.content !== message.content) renderMessageContent(contentElement, message.content, true);
+  if (painted) painted.content = message.content;
   restoreViewPosition(conversationView, messagesElement, position, followToPage);
   return true;
 }

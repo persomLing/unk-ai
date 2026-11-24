@@ -36,7 +36,7 @@ import { $, toast } from './core/dom.js';
 import { find, includes, map, trim } from 'lodash-es';
 import { pageControlState, pageFaviconUrl, isReadablePageUrl, pageContextEnabledForNavigation } from './features/page-reading/page-control-state.js';
 import { captureViewPosition, restoreViewPosition } from './features/messages/scroll-position.js';
-import { createMessageArrival } from './features/messages/message-arrival.js';
+import { createConversationMotion } from './features/messages/conversation-motion.js';
 import {
   getProviderConfig,
 } from '../utils/storage.js';
@@ -87,6 +87,8 @@ import { findOpenTabForSource, pageTargetFields } from '../utils/page-target.js'
 import { normalizePageUrl, resolvePageSource } from './features/page-reading/page-source.js';
 import { createComposerAddMenu } from './features/composer/composer-add-menu.js';
 import { createImageDraft } from './features/composer/image-draft.js';
+import { createSendMotion } from './features/composer/send-motion.js';
+import { imageReplyLayout } from './features/illustration/illustration-layout.js';
 import { directImageForMessage, IMAGE_MODEL_REQUIRED, imageReferenceForGeneration } from '../utils/image-generation-command.js';
 import { createVideoNotesEntry } from './features/video-notes/video-notes-entry.js';
 import { createVideoFrameActions, videoFrameActionsFor } from './features/video-notes/video-frame-actions.js';
@@ -97,6 +99,8 @@ import { createNetworkReadingClient } from './features/page-reading/network-read
 import { createSupplementalReader } from './features/page-reading/supplemental-reading.js';
 import { parseRepositoryUrl, readRepository as repositoryReader } from '../utils/repository-reader.js';
 import {
+  PAGE_SELECTION_ACTION_KEY,
+  normalizePageSelectionAction,
   normalizePageSelection,
   shouldReleaseSelection,
 } from '../utils/selection.js';
@@ -135,11 +139,12 @@ import {
 import { showSuggestionsFor } from './features/messages/suggestion-visibility.js';
 import { watchNextExploration } from './features/messages/suggestion-preference.js';
 import {
-  messageMarkup,
-  renderMessageContent,
+  paintConversationMessage,
   createReplyClock,
+  setThinkingExpanded,
   updateStreamingMessage as updateMessageView,
 } from './features/messages/message-view.js';
+import { showCopied } from './features/messages/copy-feedback.js';
 import { createTurnNavigator } from './features/messages/turn-navigator.js';
 import { createImagePreview } from './features/messages/image-preview.js';
 import { createTextPreview } from './features/messages/text-preview.js';
@@ -183,6 +188,7 @@ import './features/skills/skills.css';
 import { createModelGateway } from '../app/model-gateway.js';
 import { capturePageTarget } from './features/page-reading/page-target-capture.js';
 import { createPageReadState } from './features/page-reading/page-read-state.js';
+import { createSelectionExplainAction } from './features/page-reading/selection-explain-action.js';
 import { createPageQuestionChoice, needsPageQuestionChoice } from './features/page-reading/page-question-choice.js';
 import { attachmentInputError, createVisualPreparation } from './features/visual-context/manual-visual-capture.js';
 
@@ -191,6 +197,7 @@ const messagesElement = $('#messages');
 const conversationView = $('#conversation-view');
 const sendButton = $('#send-message');
 const stopButton = $('#stop-generation');
+const sendMotion = createSendMotion({ send: sendButton, stop: stopButton });
 const historyDrawer = $('#history-drawer');
 const conversationStage = $('#conversation-stage');
 const turnNavigatorElement = $('#turn-navigator');
@@ -208,6 +215,7 @@ let configRevision = 0;
 let draftModelSelection = null;
 let modelSelectionSave = null;
 const conversationOrganization = createConversationOrganizationStore();
+let selectionExplainActionReady = false;
 
 const state = {
   conversation: null,
@@ -290,6 +298,44 @@ const pageQuestionChoice = createPageQuestionChoice({
     return application.conversations.sendMessage(text, options);
   },
 });
+
+const selectionExplainAction = typeof createSelectionExplainAction === 'function'
+  ? createSelectionExplainAction({
+  storage: chrome.storage.session,
+  isReady: () => selectionExplainActionReady,
+  getTab: tabId => chrome.tabs.get(tabId),
+  captureTarget: async (action, tab) => {
+    return capturePageTarget({ queryActiveTab: async () => tab,
+      sendMessage: message => chrome.runtime.sendMessage(message), expectedTarget: action });
+  },
+  send: async ({ action, selection, target }) => {
+    if (agentSlot?.isBusy()) throw new Error('浏览器任务仍在运行，请停止后重新选择并发送。');
+    const question = '请结合当前网页内容，解释这段选中的内容，说明关键概念、逻辑和它与页面主题的关系。';
+    syncActivePageSignal({ ...target, id: target.tabId ?? target.id });
+    pageQuestionChoice.clear();
+    state.pageContextPreference = true;
+    state.disablePageContext = false;
+    composerPageToggle.checked = true;
+    setPageSelection(selection);
+    updateComposer();
+    renderQueueBar();
+    await sendMessage(question, {
+      id: action.requestId,
+      commandId: action.requestId,
+      fromQueue: true,
+      preserveComposerDraft: true,
+      attachments: [],
+      selection,
+      pageContextEnabled: true,
+      requirePage: true,
+      directModelRequest: false,
+      agentTask: false,
+      pageTargetPromise: Promise.resolve(target),
+    });
+  },
+  notify: toast,
+  })
+  : { receive() {}, retry() {}, dispose() {} };
 
 function setPageMode(enabled) {
   state.pageContextPreference = enabled;
@@ -1043,7 +1089,14 @@ function renderLocalPrompt() {
   setup.querySelector('button').textContent = storageState.action === 'reauthorize' ? '恢复权限' : '去设置';
 }
 
-const markMessageArrival = createMessageArrival();
+const welcome = $('#welcome');
+const conversationMotion = createConversationMotion({ view: conversationView, messages: messagesElement, welcome });
+
+function imageLayoutForReply(message, previousMessage) {
+  if (message?.requestPhase !== 'generating-image') return undefined;
+  return imageReplyLayout(previousMessage?.role === 'user' ? directImageForMessage(previousMessage)?.prompt : '');
+}
+
 function renderConversation({ scroll = false } = {}) {
   if (state.rewoundCommand?.conversationId !== state.conversation?.id) state.rewoundCommand = null;
   videoTimestampNavigation?.sync();
@@ -1063,9 +1116,10 @@ function renderConversation({ scroll = false } = {}) {
   imagePreview.sync(conversation?.id);
   textPreview.sync(conversation?.id);
   const viewPosition = captureViewPosition(conversationView, messagesElement);
+  const motion = conversationMotion.begin(conversation);
   const hasMessages = Boolean(conversation?.messages.length);
   const enteringWelcome = !hasMessages && !messagesElement.hidden;
-  $('#welcome').hidden = hasMessages;
+  welcome.hidden = hasMessages;
   messagesElement.hidden = !hasMessages;
   welcomeView.setActive(!hasMessages);
   const heading = $('#conversation-title');
@@ -1078,24 +1132,26 @@ function renderConversation({ scroll = false } = {}) {
     .reverse()
     .find((message) => message.role === 'assistant');
   const latestMessageRole = conversation?.messages.at(-1)?.role || '';
-  messagesElement.innerHTML = hasMessages
-    ? conversation.messages.map((message) => messageMarkup(presentVideoNotesMessage(message, conversation.messages), {
+  if (motion.scene === 'history') messagesElement.replaceChildren();
+  const existing = new Map([...messagesElement.children].map(article => [article.dataset.messageId, article]));
+  let cursor = messagesElement.firstElementChild;
+  for (const [index, message] of (conversation?.messages || []).entries()) {
+    const article = existing.get(message.id) || document.createElement('article');
+    if (article !== cursor) messagesElement.insertBefore(article, cursor);
+    cursor = article.nextElementSibling;
+    paintConversationMessage(article, presentVideoNotesMessage(message, conversation.messages), {
       showSuggestions: showSuggestionsFor(message, latestAssistant?.id, latestMessageRole),
       frameActions: videoFrameActionsFor(message, conversation, application.videoFrameRecovery),
       allowImageReference: true,
-    })).join('')
-    : '';
-  for (const message of conversation?.messages || []) {
-    if (message.role === 'assistant') {
-      renderMessageContent(
-        messagesElement.querySelector(`[data-message-id="${message.id}"] [data-message-content]`),
-        presentVideoNotesMessage(message, conversation.messages).content,
-        message.status === 'streaming',
-      );
-    }
+      imageLayout: imageLayoutForReply(message, conversation.messages[index - 1]),
+    });
+  }
+  while (cursor) {
+    const discarded = cursor;
+    cursor = discarded.nextElementSibling;
+    discarded.remove();
   }
   replyClock.sync();
-  markMessageArrival(messagesElement, conversation);
   renderContextChip();
   textPreview.refresh(messagesElement);
   renderModelSwitcher();
@@ -1116,6 +1172,7 @@ function renderConversation({ scroll = false } = {}) {
   updateComposer();
   if (scroll && hasMessages) scrollToLatest(false);
   updateLatestVisibility();
+  if (conversationMotion.finish(motion)) sendMotion.accepted();
 }
 
 function openSourcePage(options = {}) {
@@ -1352,6 +1409,7 @@ function updateComposer() {
   stopButton.hidden = !busy;
   sendButton.disabled = (agentMode ? !draftText : !hasDraft)
     || !state.ready || state.preparingAttachments || historyMutationBusy || (busy && !canQueue);
+  sendMotion.sync(busy);
   const composerPageToggle = $('#composer-page-toggle');
   const composerPagePill = $('#composer-page-pill');
   if (composerPageToggle && composerPagePill) {
@@ -2047,7 +2105,7 @@ application.subscribe(event => {
     });
   } else if (event.type === 'reply-started') scrollToLatest(false);
   else if (event.type === 'reply-ended') {
-    if (state.pageSelection && shouldReleaseSelection(state.pageSelection, event.selectionUsed)) clearPageSelection();
+    if (state.pageSelection?.source !== 'conversation' && shouldReleaseSelection(state.pageSelection, event.selectionUsed)) clearPageSelection();
     renderConversation(); refreshContextUsage(); void refreshHistory().catch(() => {});
   } else if (event.type === 'run:terminal') {
     if (state.conversation?.id === event.conversationId) { renderConversation(); refreshContextUsage(); }
@@ -2063,7 +2121,9 @@ application.subscribe(event => {
 
 function updateStreamingMessage(id) {
   videoTimestampNavigation?.sync();
-  const message = find(state.conversation?.messages, (item) => item.id === id);
+  const messages = state.conversation?.messages || [];
+  const index = messages.findIndex(item => item.id === id);
+  const message = messages[index];
   const article = messagesElement.querySelector(`[data-message-id="${id}"]`);
   const latestAssistant = [...(state.conversation?.messages || [])]
     .reverse()
@@ -2078,6 +2138,7 @@ function updateStreamingMessage(id) {
     conversationView,
     followToPage: state.followToPage,
     showSuggestions: showSuggestionsFor(message, latestAssistant?.id, latestMessageRole),
+    imageLayout: imageLayoutForReply(message, messages[index - 1]),
   });
   updateLatestVisibility();
 }
@@ -2651,30 +2712,26 @@ messagesElement.addEventListener('click', async (event) => {
     return;
   }
   if (button.dataset.action === 'toggle-thinking') {
-    const block = button.closest('.thinking-block');
-    const thoughtContent = block?.querySelector('.thinking-content');
-    if (!thoughtContent) return;
-    const willOpen = thoughtContent.hidden;
-    thoughtContent.hidden = !willOpen;
+    const willOpen = button.getAttribute('aria-expanded') !== 'true';
     message.userToggledThinking = true;
     message.thinkingExpanded = willOpen;
     if (willOpen) state.followToPage = false;
+    setThinkingExpanded(button, willOpen);
     updateLatestVisibility();
-    button.setAttribute('aria-expanded', String(willOpen));
-    button.classList.toggle('is-open', willOpen);
     return;
   }
   if (button.dataset.action === 'copy-user') {
     const textToCopy = message.displayContent || message.content || '';
+    const isCurrent = () => messagesElement.contains(button);
     try {
-      await navigator.clipboard.writeText(textToCopy);
-    } catch {
-      toast('复制失败，请手动选择文字。', 'error');
+      await awaitWithTimeout(navigator.clipboard.writeText(textToCopy), { timeoutMs: 3000, message: '复制等待超时，请检查剪贴板。' });
+    } catch (error) {
+      if (isCurrent()) toast(error?.name === 'TimeoutError' ? error.message : '复制失败，请手动选择文字。', 'error');
       return;
     }
-    button.innerHTML = icon('check');
+    if (!isCurrent()) return;
+    showCopied(button);
     toast('提问内容已复制');
-    setTimeout(() => { button.innerHTML = icon('copy'); }, 1600);
     return;
   }
   if (button.dataset.action === 'rewind') {
@@ -2700,7 +2757,7 @@ messagesElement.addEventListener('click', async (event) => {
     return;
   }
   if (button.dataset.action === 'copy') {
-    messageCopy.open({ button, message: presentVideoNotesMessage(message, state.conversation?.messages), conversationId: state.conversation?.id });
+    messageCopy.open({ button, message: presentVideoNotesMessage(message, state.conversation?.messages, { includeScope: true }), conversationId: state.conversation?.id });
     return;
   } else if (button.dataset.action.startsWith('video-frame-')) {
     await videoFrameActions.activate(id, button.dataset.action.slice('video-frame-'.length));
@@ -2761,6 +2818,9 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
   if (area === 'session' && Object.prototype.hasOwnProperty.call(changes, 'pageSelection')) {
     setPageSelection(changes.pageSelection.newValue);
   }
+  if (area === 'session' && Object.prototype.hasOwnProperty.call(changes, PAGE_SELECTION_ACTION_KEY)) {
+    selectionExplainAction.receive(changes[PAGE_SELECTION_ACTION_KEY].newValue);
+  }
   if (area === 'session' && Object.prototype.hasOwnProperty.call(changes, 'pageFigurePick')) {
     if (changes.pageFigurePick.newValue) {
       const pick = changes.pageFigurePick.newValue;
@@ -2772,8 +2832,11 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
 const startupController = new AbortController();
 window.addEventListener('pagehide', () => {
   disposeNextExploration();
+  conversationMotion.dispose();
+  sendMotion.dispose();
   clearTimeout(contextUsageRefreshTimer);
   if (typeof welcomeView !== 'undefined') welcomeView.dispose();
+  selectionExplainAction.dispose();
   contextUsageTracker.dispose();
   composerAddMenu?.dispose();
   videoNotesEntry?.dispose();
@@ -2841,7 +2904,7 @@ async function initialize() {
     state.disablePageContext = true;
     if (composerPageToggle) composerPageToggle.checked = false;
     await waitStartup(initializeConversationSync(), '初始化会话同步');
-    const session = await waitStartup(chrome.storage.session.get('pageSelection'), '读取选区');
+    const session = await waitStartup(chrome.storage.session.get(['pageSelection', PAGE_SELECTION_ACTION_KEY]), '读取选区');
     setPageSelection(session?.pageSelection);
     state.storageInfo = await waitStartup(getDirectoryInfo(), '读取文件夹状态');
     if (state.storageInfo.granted) await waitStartup(migrateLegacyConversations(), '兼容旧会话');
@@ -2869,8 +2932,11 @@ async function initialize() {
     application.reconcileIllustrations(state.conversation);
     await initTheme(startupController.signal);
     state.ready = true;
+    selectionExplainActionReady = true;
     renderWelcomePrompts();
     renderConversation();
+    selectionExplainAction.receive(session?.[PAGE_SELECTION_ACTION_KEY]);
+    selectionExplainAction.retry();
     startSelectionSync();
     watchSelectionInteractions();
     await waitStartup(refreshHistory(), '刷新会话目录');

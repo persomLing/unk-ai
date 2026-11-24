@@ -1,6 +1,7 @@
 @import "../styles/scrollbars.css";
 @import "../styles/interface.css";
 @import "./features/welcome/welcome.css";
+@import "./features/messages/conversation-motion.css";
 
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; overflow: hidden; background: var(--surface-alt); color: var(--ink); }
@@ -1187,7 +1188,7 @@ img[data-image-preview]:focus-visible {
 
 .message-illustrations { display: flex; flex-direction: column; gap: 10px; margin: 4px 0 10px; }
 .generated-image { margin: 0; width: 100%; }
-.generated-image .message-image { width: 100%; max-width: 100%; height: auto; max-height: none; margin-bottom: 6px; }
+.generated-image .message-image { width: 100%; max-width: 100%; height: auto; max-height: none; margin: 0; aspect-ratio: auto var(--illustration-aspect); }
 .generated-image figcaption { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 11px; color: var(--muted); }
 .generated-image-badge {
   flex: 0 0 auto;
@@ -1331,16 +1332,35 @@ img[data-image-preview]:focus-visible {
   color: var(--ink);
 }
 
+.video-notes-source-details {
+  margin: 14px 0 4px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-card);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+.video-notes-source-details > summary { width: fit-content; cursor: pointer; color: var(--ink-secondary); font-weight: 600; }
+.video-notes-source-details[open] > summary { margin-bottom: 6px; color: var(--teal); }
+.video-notes-source-details p { margin: 4px 0; overflow-wrap: anywhere; }
+.video-notes-source-details a { color: var(--teal); }
+.video-notes-source-details a:hover { text-decoration: underline; }
+.dropdown-model-empty { margin: 8px 10px; color: var(--muted); font-size: 12px; }
+
 /* ============================================================
    Thinking 思维链质感、展开折叠与过度动效 (DeepSeek 风格)
    ============================================================ */
 .thinking-block {
   margin: 3px 0 10px;
-  position: relative;
 }
 
-.thinking-toggle {
-  display: inline-flex;
+.thinking-header {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  display: flex;
   align-items: center;
   gap: 6px;
   min-height: 30px;
@@ -1351,79 +1371,68 @@ img[data-image-preview]:focus-visible {
   color: var(--ink-secondary);
   font-size: 12px;
   font-weight: 550;
-  cursor: pointer;
   transition: var(--control-transition);
-  user-select: none;
 }
 
-.thinking-toggle:hover {
+.thinking-header:has(.thinking-toggle:not([hidden])):hover {
   background: var(--teal-soft);
   color: var(--teal);
 }
 
-.thinking-brain-icon,
-.thinking-radar-icon {
+.thinking-phase {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  color: var(--teal, #5a8a72);
-  flex-shrink: 0;
-  transform-origin: center center;
+  gap: 6px;
+  min-width: 0;
 }
 
-.thinking-brain-icon .icon,
-.thinking-radar-icon .icon {
+.thinking-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-progress-detail] { font-variant-numeric: tabular-nums; }
+
+.thinking-phase-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 14px;
+  color: var(--teal);
+}
+
+.thinking-phase-icon .icon {
   width: 13px;
   height: 13px;
 }
 
-/* 正在深度思考：经典大脑高频微震动呼吸动效 */
-.thinking-brain-icon.is-shaking,
-.thinking-radar-icon.is-spinning {
-  animation: reply-breathe 2.2s ease-in-out infinite;
-  color: var(--teal, #5a8a72);
-}
-
-.thinking-brain-icon.is-settled,
-.thinking-radar-icon.is-settled {
-  animation: none;
-}
-
-.thinking-brain-icon.is-settled .icon,
-.thinking-radar-icon.is-settled .icon {
-  opacity: 0.85;
-}
-
-@keyframes reply-breathe {
-  50% { transform: scale(1.16); opacity: .68; }
-}
-
-.thinking-block.is-streaming .thinking-text {
-  background: linear-gradient(90deg, var(--ink-secondary), var(--teal), var(--ink-secondary));
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: thinkingShimmer 2.4s ease-in-out infinite;
-}
-
-@keyframes thinkingShimmer {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
-}
-
-.thinking-chevron {
-  width: 12px;
-  height: 12px;
+.thinking-toggle {
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
   color: var(--muted);
-  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
 }
 
-.thinking-toggle.is-open .thinking-chevron {
+.thinking-toggle::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-sm);
+}
+
+.thinking-toggle:focus-visible { outline: none; }
+.thinking-header:has(.thinking-toggle:focus-visible) {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.thinking-chevron .icon { width: 12px; height: 12px; }
+.thinking-chevron { transition: transform 0.22s var(--ease-out); }
+.thinking-block.is-open .thinking-chevron {
   transform: rotate(180deg);
 }
 
@@ -1442,18 +1451,6 @@ img[data-image-preview]:focus-visible {
   line-height: 1.72;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  animation: thinkingFadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-@keyframes thinkingFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .thinking-cursor {
@@ -1617,7 +1614,7 @@ img[data-image-preview]:focus-visible {
 }
 
 /* Try-next 下一步探索 (DeepSeek 风格灵动胶囊) */
-#messages[data-next-exploration="off"] .try-next-container { display: none; }
+.messages[data-next-exploration="off"] .try-next-container { display: none; }
 .try-next-container {
   margin-top: 14px;
   display: flex;
@@ -1941,21 +1938,6 @@ img[data-image-preview]:focus-visible {
   height: 12px;
 }
 
-.request-progress {
-  align-items: flex-start;
-  margin-block: 9px 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-card);
-  color: var(--ink-secondary);
-  overflow-wrap: anywhere;
-}
-
-.request-progress .icon {
-  flex: 0 0 auto;
-  margin-top: 1px;
-}
-
 .message-state.error {
   color: var(--danger);
 }
@@ -2258,24 +2240,28 @@ img[data-image-preview]:focus-visible {
 
 .message-agent-steps {
   display: grid;
-  gap: 1px;
   border-top: 1px solid var(--line);
   padding: 7px 12px;
 }
 
 .message-agent-step {
+  position: relative;
   display: flex;
-  gap: 7px;
-  padding: 4px 0;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
 }
 
 .message-agent-dot {
-  width: 5px;
-  height: 5px;
-  flex: 0 0 auto;
-  margin-top: 6px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  margin-top: 1px;
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
-  background: var(--teal);
+  background: var(--surface-card);
 }
 
 .message-agent-step strong,
@@ -3438,8 +3424,6 @@ img[data-image-preview]:focus-visible {
   height: 13px;
 }
 
-.dropdown-model-empty { margin: 8px 10px; color: var(--muted); font-size: 12px; }
-
 .dropdown-model-list {
   display: flex;
   flex-direction: column;
@@ -3586,6 +3570,7 @@ img[data-image-preview]:focus-visible {
 
 /* 发送与停止按钮 */
 .send-button {
+  position: relative;
   display: grid;
   place-items: center;
   width: 37px;
@@ -3612,7 +3597,7 @@ img[data-image-preview]:focus-visible {
 }
 
 .send-button:active:not(:disabled) {
-  transform: translateY(0) scale(0.96);
+  transform: scale(0.94);
 }
 
 .send-button:disabled {
@@ -4619,7 +4604,7 @@ img[data-image-preview]:focus-visible {
   dialog:is(.app-dialog, .skills-dialog, .export-dialog, .text-preview-dialog)[open] {
     animation: ui-arrive var(--motion-panel) var(--ease-out);
   }
-  #messages:not([hidden]), .message-arriving, dialog[open]::backdrop {
+  dialog[open]::backdrop {
     animation: ui-fade var(--motion-panel) var(--ease-out);
   }
 }

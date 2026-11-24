@@ -1,7 +1,7 @@
 import { escapeHtml } from '../../core/dom.js';
 import { imageAttachmentLoadError, safeAttachmentDataUrl } from '../../../utils/attachments.js';
 import { copyIllustrationPlacement, placeIllustrationNodes } from './illustration-placement.js';
-import { illustrationLayoutStyle } from './illustration-layout.js';
+import { illustrationDimensions, illustrationLayoutStyle } from './illustration-layout.js';
 import { icon } from '../../icons.js';
 
 const ownedIllustrations = new WeakMap();
@@ -41,15 +41,21 @@ function locationAttributes(item, index, total) {
 
 function readyFigure(item, index, total, allowImageReference) {
   const src = safeAttachmentDataUrl(item.dataUrl), caption = escapeHtml(item.name || '生成图片');
-  const attributes = `${locationAttributes(item, index, total)} style="${illustrationLayoutStyle(item.illustrationLayout, item)}"`;
+  const dimensions = illustrationDimensions(item);
+  const intrinsicSize = dimensions.width ? ` width="${dimensions.width}" height="${dimensions.height}"` : '';
+  const attributes = `${locationAttributes(item, index, total)} style="${illustrationLayoutStyle(item.illustrationLayout, item, dimensions)}"`;
   if (!src) {
     const error = imageAttachmentLoadError(item) || '图片暂不可用。';
     return `<figure class="generated-image is-unavailable" ${attributes}><figcaption>${caption}</figcaption><small class="message-file-error">${escapeHtml(error)}</small></figure>`;
   }
   return `<figure class="generated-image${item.videoFrame ? ' is-frame' : ''}" ${attributes}>
-    <img class="message-image" data-image-preview tabindex="0" role="button" aria-haspopup="dialog" aria-label="查看图片 ${caption}" title="点击放大" src="${src}" alt="${caption}" />
+    <div class="generated-image-media"><img class="message-image" data-image-preview tabindex="0" role="button" aria-haspopup="dialog" aria-label="查看图片 ${caption}" title="点击放大" src="${src}" alt="${caption}"${intrinsicSize} /></div>
     <figcaption><span class="generated-image-badge">${escapeHtml(badge(item))}</span><span class="generated-image-caption">${caption}</span>${allowImageReference ? `<button class="generated-image-reference" type="button" data-action="reference-image" data-image-id="${escapeHtml(item.id || '')}" title="把这张图片加入输入框作为参考图">${icon('sparkles')}引用生图</button>` : ''}</figcaption>
   </figure>`;
+}
+
+export function imageReplyPlaceholder(layout) {
+  return `<div class="generated-image-placeholder direct-image-placeholder" data-image-reply-placeholder style="${illustrationLayoutStyle(layout)}" aria-hidden="true"></div>`;
 }
 
 function pendingFigure(item, index, total) {
@@ -106,6 +112,12 @@ export function detachMessageIllustrations(container) {
 export function restoreMessageIllustrations(container) {
   const owned = ownedIllustrations.get(container);
   if (owned) owned.groups = placeIllustrationNodes(container, owned.entries);
+}
+
+export function replaceMessageIllustrations(container, gallery) {
+  detachMessageIllustrations(container);
+  ownedIllustrations.delete(container);
+  if (gallery) container.parentElement.append(gallery);
 }
 
 function generationFailureText(failure) {

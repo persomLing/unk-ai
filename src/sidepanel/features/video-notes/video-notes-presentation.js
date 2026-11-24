@@ -1,6 +1,6 @@
 import { assertPageTarget } from '../../../utils/page-target.js';
 import { captureVideoRequest, selectedVideoTranscript, videoCaptionTitle, validateVideoResult } from './video-request.js';
-import { upgradeVideoAnswer } from './transcript-context.js';
+import { appendVideoNotesScope, upgradeVideoAnswer, videoNotesScope } from './transcript-context.js';
 
 export function videoTranscriptForMessage(message, messages) {
   if (message?.role !== 'assistant' || message.videoNotesVersion !== 1) return null;
@@ -27,10 +27,15 @@ export function videoAttachmentName(attachment) {
 }
 
 /** Project saved metadata into the view/copy/export without rewriting history. */
-export function presentVideoNotesMessage(message, messages) {
+export function presentVideoNotesMessage(message, messages, { includeScope = false } = {}) {
   const transcript = videoTranscriptForMessage(message, messages);
   if (!transcript) return message;
-  return { ...message, content: upgradeVideoAnswer(transcript, message.content),
+  const { videoNotesContext: info } = message;
+  const scope = message.videoNotesOutcome === 'notes' && info?.version === 1 && info.structured === true
+    ? videoNotesScope(transcript, info) : null;
+  const content = upgradeVideoAnswer(transcript, message.content);
+  return { ...message, content: scope && includeScope ? appendVideoNotesScope(content, scope) : content,
+    ...(scope && !includeScope ? { videoNotesScope: scope } : {}),
     ...(Array.isArray(message.sources) ? { sources: message.sources.map(source =>
       source.kind === 'video-transcript' && source.url === transcript.target.url
         ? { ...source, title: videoCaptionTitle(transcript.video, transcript.track.kind) } : source) } : {}) };

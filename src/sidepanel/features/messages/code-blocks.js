@@ -1,5 +1,6 @@
 import { awaitWithTimeout } from '../../../utils/abortable.js';
 import { icon } from '../../icons.js';
+import { showCopied } from './copy-feedback.js';
 
 const pending = new WeakSet();
 
@@ -29,11 +30,10 @@ export async function copyCodeBlock(button, { writeText, notify }) {
   pending.add(button);
   try {
     await awaitWithTimeout(writeText(text), { timeoutMs: 3000, message: '复制等待超时，请检查剪贴板。' });
-    if (!button.isConnected || code.textContent !== text) return;
-    button.innerHTML = icon('check');
+    if (!button.isConnected || button.closest('[inert]') || code.textContent !== text) return;
+    showCopied(button);
     notify('已复制代码');
-    setTimeout(() => { if (button.isConnected) button.innerHTML = icon('copy'); }, 1500);
   } catch (error) {
-    if (button.isConnected) notify(error?.name === 'TimeoutError' ? error.message : '复制失败，请手动选择代码。', 'error');
+    if (button.isConnected && !button.closest('[inert]')) notify(error?.name === 'TimeoutError' ? error.message : '复制失败，请手动选择代码。', 'error');
   } finally { pending.delete(button); }
 }

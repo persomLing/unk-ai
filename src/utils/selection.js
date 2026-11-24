@@ -1,5 +1,35 @@
 const MAX_SELECTION = 12000;
 
+export const PAGE_SELECTION_ACTION_KEY = 'pageSelectionAction';
+export const PAGE_SELECTION_ACTION_VERSION = 1;
+
+export function normalizePageSelectionAction(value) {
+  if (!value || typeof value !== 'object'
+    || value.version !== PAGE_SELECTION_ACTION_VERSION
+    || value.action !== 'explain'
+    || typeof value.requestId !== 'string' || !value.requestId
+    || !Number.isInteger(value.tabId)
+    || !Number.isInteger(value.windowId)
+    || typeof value.url !== 'string' || !value.url
+    || !value.selection || typeof value.selection !== 'object') return null;
+  const createdAt = Number.isFinite(value.createdAt) ? value.createdAt : 0;
+  if (createdAt && Math.abs(Date.now() - createdAt) > 5 * 60 * 1000) return null;
+  const selection = normalizePageSelection(value.selection);
+  if (!selection?.text || selection.url !== value.url || selection.tabId !== value.tabId
+    || (value.documentId && selection.documentId !== value.documentId)) return null;
+  return {
+    version: PAGE_SELECTION_ACTION_VERSION,
+    action: 'explain',
+    requestId: value.requestId.slice(0, 120),
+    tabId: value.tabId,
+    windowId: value.windowId,
+    url: value.url.slice(0, 4000),
+    selection,
+    ...(value.documentId ? { documentId: String(value.documentId).slice(0, 200) } : {}),
+    ...(createdAt ? { createdAt } : {}),
+  };
+}
+
 export const CONVERSATION_SELECTION_LIMITS = Object.freeze({
   text: 6000, context: 5000, nearby: 2400, question: 1200, title: 200, heading: 200,
 });
@@ -159,6 +189,7 @@ export function normalizePageSelection(value) {
     selectedAt: String(value.selectedAt || ""),
     ...(Number.isInteger(value.tabId) ? { tabId: value.tabId } : {}),
     ...(value.documentId ? { documentId: String(value.documentId).slice(0, 100) } : {}),
+    ...(value.captureSource === 'context-menu' ? { captureSource: 'context-menu' } : {}),
     ...(visuals.length ? { visualVersion: 1, visuals, visualCount,
       visualsTruncated: value.visualsTruncated === true || visualCount > visuals.length,
       imageOnly: !text || value.imageOnly === true } : {}),

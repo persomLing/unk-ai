@@ -6,7 +6,7 @@ const MUTABLE_FIELDS = new Set([
   'requestPhase', 'requestPhaseDetail', 'phaseStartedAt', 'replyTiming', 'model', 'modelId', 'reasoningEffort',
   'sources', 'pageSource', 'suggestions', 'selectionUsed', 'includeVisual',
   'errorMessage', 'errorDetail', 'errorCode', 'contextIssues',
-  'videoNotesVersion', 'videoNotesOutcome', 'videoFrameOffer', 'attachments', 'illustration', 'videoIllustration',
+  'videoNotesVersion', 'videoNotesOutcome', 'videoNotesContext', 'videoFrameOffer', 'attachments', 'illustration', 'videoIllustration',
 ]);
 const keyFor = (conversationId, assistantId) => JSON.stringify([conversationId, assistantId]);
 const clone = value => structuredClone(value);

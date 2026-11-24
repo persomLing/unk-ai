@@ -74,3 +74,22 @@ export function replyProgress(message, now = Date.now()) {
     ? (hasOutput ? ' 尚未收到新内容。' : ' 尚未收到正文或思考内容。') : '';
   return { label, details: `${detail}${elapsed ? ` · 本阶段 ${formatElapsedSeconds(elapsed)}` : ''}…${note}` };
 }
+
+const PHASE_ICONS = {
+  reading: 'article', 'checking-evidence': 'article', 'reading-deep': 'article',
+  'reading-network': 'article', 'reading-index': 'article', 'reading-related': 'article',
+  researching: 'search', 'checking-research': 'search', 'web-research': 'search',
+  'collecting-context': 'file', compressing: 'file', saving: 'folder',
+  'scanning-video': 'scan', 'recognizing-video': 'scan', 'generating-image': 'image',
+  'waiting-model': 'brain', reasoning: 'brain', answering: 'message',
+};
+
+export function replyActivity(message, now = Date.now()) {
+  if (message?.status !== 'streaming' || message.agent) return null;
+  const phase = message.requestPhase || (message.content ? 'answering' : message.reasoning ? 'reasoning' : 'waiting-model');
+  const progress = replyProgress(message, now);
+  const activity = progress || (phase === 'reasoning'
+    ? { label: '正在深度思考', details: '…' }
+    : { label: '正在生成回答', details: '…' });
+  return { ...activity, phase, iconName: PHASE_ICONS[phase] || 'history' };
+}

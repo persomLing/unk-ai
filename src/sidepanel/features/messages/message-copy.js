@@ -1,5 +1,6 @@
 import { awaitWithTimeout } from '../../../utils/abortable.js';
 import { messageCopyContent } from './copy-text.js';
+import { showCopied } from './copy-feedback.js';
 
 let nextMenuId = 0;
 
@@ -61,6 +62,7 @@ export function createMessageCopy({ document = globalThis.document, writeText,
       if (!isCurrent(entry)) { if (current === entry) close(); return; }
       const subject = entry.content.reasoningOnly ? '思考过程' : '回答';
       close({ restoreFocus: true });
+      showCopied(entry.button);
       notify(`已复制${subject}（${format === 'markdown' ? 'Markdown' : '纯文本'}）`);
     } catch (error) {
       if (!isCurrent(entry)) { if (current === entry) close(); return; }

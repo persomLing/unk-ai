@@ -1,5 +1,7 @@
 import { escapeHtml } from '../../core/dom.js';
 import { icon } from '../../icons.js';
+import { playMotion } from '../../core/motion.js';
+import { syncNode } from './dom-reconcile.js';
 
 /**
  * Render the persisted Agent timeline as part of an assistant message.
@@ -20,16 +22,22 @@ export function agentPanelMarkup(agent) {
         : status === 'paused'
           ? '已暂停'
         : '正在执行';
-  const rows = steps.map((step) => `
-    <div class="message-agent-step ${escapeHtml(step.kind || 'info')}">
-      <span class="message-agent-dot"></span>
+  const rows = steps.map((step) => {
+    const completed = !['warning', 'error'].includes(step.kind) && step.title !== '任务已停止'
+      && (!step.status || step.status === 'done');
+    return `
+    <div class="message-agent-step ${escapeHtml(step.kind || 'info')}" data-agent-step="${escapeHtml(`${step.at || ''}:${step.title || ''}`)}">
+      <span class="message-agent-dot${completed ? ' is-done' : ''}" aria-hidden="true">${completed ? icon('check') : ''}</span>
+      <span class="message-agent-link" aria-hidden="true"></span>
       <div>
         <strong>${escapeHtml(step.title || '')}</strong>
         ${step.detail ? `<small>${escapeHtml(step.detail)}</small>` : ''}
       </div>
-    </div>
-  `).join('');
-  return `<section class="message-agent ${collapsed ? 'is-collapsed' : 'is-running'}" data-agent-task="${escapeHtml(agent.taskId || '')}">
+    </div>`;
+  }).join('');
+  const running = ['preparing', 'running'].includes(status)
+    ? '<div class="message-agent-step is-active" aria-current="step"><span class="message-agent-dot" aria-hidden="true"></span><strong>正在执行任务</strong></div>' : '';
+  return `<section class="message-agent ${collapsed ? 'is-collapsed' : 'is-running'}" data-agent-task="${escapeHtml(agent.taskId || '')}" data-agent-status="${escapeHtml(status)}">
     <details class="message-agent-details"${collapsed ? '' : ' open'}>
     <summary class="message-agent-head">
       <span class="message-agent-icon">${icon('globe')}</span>
@@ -41,7 +49,7 @@ export function agentPanelMarkup(agent) {
       <span class="message-agent-chevron" aria-hidden="true">${icon('chevron-down')}</span>
     </summary>
     <div class="message-agent-body">
-    ${rows ? `<div class="message-agent-steps">${rows}</div>` : ''}
+    ${rows || running ? `<div class="message-agent-steps">${rows}${running}</div>` : ''}
     ${status === 'paused'
       ? `<div class="message-agent-actions">
           <button type="button" class="action-text" data-agent-action="resume">${icon('play')}继续任务</button>
@@ -54,4 +62,22 @@ export function agentPanelMarkup(agent) {
     </div>
     </details>
   </section>`;
+}
+
+export function syncAgentPanel(current, next) {
+  const done = '[data-agent-step]';
+  const previousStep = [...current.querySelectorAll(done)].at(-1)?.dataset.agentStep;
+  if (current.dataset.agentStatus === next.dataset.agentStatus) {
+    next.querySelector('details').open = current.querySelector('details').open;
+  }
+  syncNode(current, next);
+  const step = [...current.querySelectorAll(done)].at(-1);
+  if (step?.dataset.agentStep && previousStep !== step.dataset.agentStep) {
+    playMotion(step.querySelector('.message-agent-link'), 'agent-step-link', [{ scale: '1 0' }, { scale: '1 1' }], { duration: 175 });
+    revealAgentStep(step.querySelector('.message-agent-dot.is-done svg'));
+  }
+}
+
+function revealAgentStep(check) {
+  playMotion(check, 'agent-step-check', [{ opacity: 0, scale: 0.65 }, { opacity: 1, scale: 1 }], { duration: 150 });
 }

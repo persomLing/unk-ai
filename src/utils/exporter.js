@@ -76,7 +76,7 @@ export function exportConversationMarkdown(conversation) {
 
   const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
   for (const storedMessage of messages) {
-    const message = presentVideoNotesMessage(storedMessage, messages);
+    const message = presentVideoNotesMessage(storedMessage, messages, { includeScope: true });
     if (!message || typeof message !== 'object') continue;
     const role = message.role === 'assistant' ? 'Assistant' : 'User';
     lines.push(`## ${role}`, '');

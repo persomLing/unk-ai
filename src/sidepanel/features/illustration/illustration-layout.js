@@ -14,6 +14,12 @@ export function copyIllustrationLayout(value) {
   return value?.version === 1 && typeof value === 'object' && !Array.isArray(value) ? createIllustrationLayout(value) : null;
 }
 
+export function imageReplyLayout(prompt) {
+  const aspectRatio = String(prompt || '').match(/(?<!\d)(16\s*[:：]\s*9|1\s*[:：]\s*1)(?!\d)/u)?.[1]
+    .replace(/\s/g, '').replace('：', ':');
+  return createIllustrationLayout({ aspectRatio });
+}
+
 function dimensions(width, height) {
   return Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0
     && width <= 32768 && height <= 32768 ? { width, height } : {};
@@ -56,9 +62,8 @@ export function illustrationDimensions(image) {
   return dimensions(image?.width, image?.height);
 }
 
-export function illustrationLayoutStyle(value, image) {
+export function illustrationLayoutStyle(value, image, actual = illustrationDimensions(image)) {
   const layout = copyIllustrationLayout(value) || createIllustrationLayout(null, { frame: Boolean(image?.videoFrame) });
-  const actual = illustrationDimensions(image);
   const aspect = actual.width ? `${actual.width} / ${actual.height}` : (layout.aspectRatio === 'auto' ? '4:3' : layout.aspectRatio).replace(':', ' / ');
   return `--illustration-aspect:${aspect}`;
 }

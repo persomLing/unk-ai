@@ -16,6 +16,10 @@
   --forest-swatch: #83a99b;
   --ocean-swatch: #87aec3;
   --amber-swatch: #c5a47a;
+  --tiffany-swatch: #77d7d7;
+  --tiffany-surface: #fff8e7;
+  --wine-swatch: #610202;
+  --wine-surface: #e9c5a5;
   --accent-swatch: var(--forest-swatch);
   --line: color-mix(in srgb, var(--accent-swatch) 15%, #e6e9ec);
   --line-strong: color-mix(in srgb, var(--accent-swatch) 24%, #d3d9de);
@@ -137,6 +141,81 @@
   --teal-dark: #dbc9ac;
   --teal-light: #ddc8a2;
 }
+:root[data-accent="tiffany"] {
+  --accent-swatch: var(--tiffany-swatch);
+  --ink: #254345;
+  --ink-secondary: #3b5d5f;
+  --muted: #5c7779;
+  --subtle: #789294;
+  --surface: var(--tiffany-surface);
+  --surface-alt: color-mix(in srgb, var(--tiffany-swatch) 6%, var(--tiffany-surface));
+  --surface-card: color-mix(in srgb, var(--tiffany-swatch) 11%, var(--tiffany-surface));
+  --rail: color-mix(in srgb, var(--tiffany-swatch) 14%, var(--tiffany-surface));
+  --teal: #2a8f91;
+  --teal-dark: #1f7073;
+  --teal-light: #56bfc1;
+  --on-teal: #f9fffa;
+}
+:root[data-theme="dark"][data-accent="tiffany"] {
+  --accent-swatch: var(--tiffany-swatch);
+  --ink: #e8fbf7;
+  --ink-secondary: #c0e1df;
+  --muted: #9abdbc;
+  --subtle: #7c9e9f;
+  --surface: #1d3133;
+  --surface-alt: #152628;
+  --surface-card: #234144;
+  --rail: #1a2e30;
+  --teal: #a1e9e5;
+  --teal-dark: #c8fff8;
+  --teal-light: #83d9d7;
+  --on-teal: #133031;
+}
+:root[data-accent="wine"] {
+  --accent-swatch: var(--wine-swatch);
+  --ink: #3d1c19;
+  --ink-secondary: #5d332d;
+  --muted: #79544a;
+  --subtle: #987269;
+  --surface: var(--wine-surface);
+  --surface-alt: color-mix(in srgb, var(--wine-swatch) 5%, var(--wine-surface));
+  --surface-card: color-mix(in srgb, var(--wine-swatch) 9%, var(--wine-surface));
+  --rail: color-mix(in srgb, var(--wine-swatch) 13%, var(--wine-surface));
+  --teal: #610202;
+  --teal-dark: #470101;
+  --teal-light: #842a23;
+  --on-teal: #fff4e8;
+}
+:root[data-theme="dark"][data-accent="wine"] {
+  --accent-swatch: #ae5d53;
+  --ink: #f9e9df;
+  --ink-secondary: #e3c1b4;
+  --muted: #c49b8d;
+  --subtle: #a7786c;
+  --surface: #2b1717;
+  --surface-alt: #211111;
+  --surface-card: #381d1d;
+  --rail: #2d1718;
+  --teal: #e3a08e;
+  --teal-dark: #f3c0a7;
+  --teal-light: #d27d70;
+  --on-teal: #351313;
+}
+
+.atlas-cover::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180' viewBox='0 0 180 180'%3E%3Cfilter id='grain'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.72' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23grain)' opacity='.38'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  mix-blend-mode: soft-light;
+  transition: opacity var(--motion-panel);
+}
+:root[data-texture="grain"] .atlas-cover::after { opacity: .26; }
+.atlas-cover > * { position: relative; z-index: 1; }
 
 .atlas-cover {
   position: relative;
@@ -217,4 +296,5 @@
   .ui-switch input { opacity: 1; appearance: auto; }
   .ui-switch input + * { visibility: hidden; }
   .atlas-cover::before { display: none; }
+  .atlas-cover::after { display: none; }
 }

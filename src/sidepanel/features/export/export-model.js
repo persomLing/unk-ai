@@ -56,7 +56,7 @@ export function createExportSnapshot(conversation) {
   let turn;
   const messages = Array.isArray(conversation.messages) ? conversation.messages : [];
   for (const storedMessage of messages) {
-    const message = presentVideoNotesMessage(storedMessage, messages);
+    const message = presentVideoNotesMessage(storedMessage, messages, { includeScope: true });
     if (message?.role === 'user') {
       const index = turns.length + 1;
       turn = { id: `turn-${index}`, index,

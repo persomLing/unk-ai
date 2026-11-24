@@ -20,7 +20,7 @@ export function createVideoTimestampNavigation({ root, getConversation, getPlayb
   async function click(event) {
     if (disposed || event.defaultPrevented || event.button > 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return false;
     const link = event.target.closest('a');
-    if (!link || !root.contains(link) || !link.closest('[data-message-content]')) return false;
+    if (!link || !root.contains(link) || !link.closest('[data-message-content], .video-notes-source-details')) return false;
     const conversation = getConversation();
     const id = link.closest('[data-message-id]')?.dataset.messageId;
     const message = conversation?.messages.find(item => item.id === id);

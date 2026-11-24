@@ -34,9 +34,6 @@ export function createSelectionChatRuntime({ selection, getConfig = () => null, 
   let closed = false;
   let transferring = false;
   let commandPending = false;
-  // The service projects its submitted quote back into pageSelection after
-  // preparation waits. Keep the next quote separately so that old preparation
-  // and terminal callbacks cannot overwrite a later explicit selection.
   let pendingSelection = copy(fixedSelection);
   let selectionRevision = 0;
   let activeCommand = null;

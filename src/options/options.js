@@ -153,6 +153,7 @@ let appearancePreferences = normalizeAppearance({
   bodyFontSize: Number(document.documentElement.dataset.bodyFontSize),
   density: document.documentElement.dataset.density,
   accent: document.documentElement.dataset.accent,
+  texture: document.documentElement.dataset.texture || (document.documentElement.dataset.grain === 'on' ? 'grain' : 'none'),
 });
 let appearanceSaveQueue = Promise.resolve();
 let appearanceRevision = 0;
@@ -162,6 +163,7 @@ function applySettingsAppearance(value) {
   document.querySelector('#appearance-font').value = appearancePreferences.font;
   document.querySelector('#appearance-body-font-size').value = String(appearancePreferences.bodyFontSize);
   document.querySelector('#appearance-density').value = appearancePreferences.density;
+  document.querySelector('#appearance-texture').value = appearancePreferences.texture;
   document.querySelectorAll('[data-appearance-accent]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.appearanceAccent === appearancePreferences.accent));
   });
@@ -184,6 +186,7 @@ function updateAppearance(update) {
 document.querySelector('#appearance-font')?.addEventListener('change', event => { void updateAppearance({ font: event.target.value }); });
 document.querySelector('#appearance-body-font-size')?.addEventListener('change', event => { void updateAppearance({ bodyFontSize: Number(event.target.value) }); });
 document.querySelector('#appearance-density')?.addEventListener('change', event => { void updateAppearance({ density: event.target.value }); });
+document.querySelector('#appearance-texture')?.addEventListener('change', event => { void updateAppearance({ texture: event.target.value }); });
 document.querySelector('.accent-options')?.addEventListener('click', event => {
   const button = event.target.closest('[data-appearance-accent]');
   if (button) void updateAppearance({ accent: button.dataset.appearanceAccent });

@@ -26,7 +26,7 @@ const MODEL_FIELDS = ['model', 'temperature', 'contextLength', 'maxTokens',
   'webSearchEndpoint', 'webFetchEndpoint', 'webSearchEnabled', 'webFetchEnabled'];
 // Structured classifiers output tiny JSON and must not spend the chat model's
 // reasoning budget thinking, which can leave the answer body empty.
-const NON_REASONING_PURPOSES = new Set(['illustration-plan', 'visual-decision', 'video-frame-transcript', 'suggestions']);
+const NON_REASONING_PURPOSES = new Set(['illustration-plan', 'visual-decision', 'video-frame-transcript', 'video-summary', 'suggestions']);
 const PROFILE_FIELDS = ['endpointUrl', 'apiKey', 'imageProfile', ...MODEL_FIELDS];
 const TRANSPORT_EVENTS = new Set(['started', 'headers', 'first-byte', 'progress', 'first-reasoning', 'first-content',
   'fallback', 'body-started', 'body-completed', 'completed', 'failed', 'cancelled'].map(value => `transport.${value}`));

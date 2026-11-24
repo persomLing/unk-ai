@@ -4,7 +4,7 @@
 export function thinkingPresentation(message, now = Date.now()) {
   const isStreaming = message?.status === 'streaming';
   const hasReasoning = Boolean(message?.reasoning);
-  const active = isStreaming && hasReasoning && (message.requestPhase
+  const active = isStreaming && hasReasoning && !message.content && (message.requestPhase
     ? message.requestPhase === 'reasoning' : !message.content && !message.reasoningFinishedAt);
   const expanded = message?.userToggledThinking !== undefined
     ? Boolean(message.thinkingExpanded)

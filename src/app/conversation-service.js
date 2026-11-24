@@ -171,7 +171,7 @@ export function createConversationService(deps) {
     }
     // Menu commands preserve concurrent drafts; a restored command belongs to
     // the question being edited and consumes that draft through the same run.
-    const preserveDraft = Boolean(command && !restoredCommand);
+    const preserveDraft = Boolean((command && !restoredCommand) || options.preserveComposerDraft === true);
     let content = command?.promptFor?.(submittedText, commandRequest) || command?.prompt || submittedText;
     const displayContent = command ? submittedText || command.label : content;
     const requestSource = command ? null : normalizeDraftSource(options.fromQueue || Object.hasOwn(options, 'requestSource')
@@ -179,8 +179,14 @@ export function createConversationService(deps) {
     const independent = requestSource?.scope === 'independent';
     let directModelRequest = !command && (independent || (options.directModelRequest ?? (state.directModelRequest === content)));
     let attachments = preserveDraft ? [] : structuredClone(options.fromQueue ? options.attachments || [] : state.attachments);
-    const capturedSelection = command || independent || imageCommand ? null : options.fromQueue ? options.selection : state.pageSelection;
+    const capturedSelection = command || independent || imageCommand ? null
+      : Object.hasOwn(options, 'selection') ? options.selection : options.fromQueue ? options.selection : state.pageSelection;
     const selection = capturedSelection ? structuredClone(capturedSelection) : null;
+    const clearSubmittedQuote = () => {
+      if (!options.fromQueue && capturedSelection?.source === 'conversation' && state.pageSelection === capturedSelection) {
+        setPageSelection(null);
+      }
+    };
     const agentTask = !command && !independent && Boolean(options.agentTask ?? agentSlot?.isMode());
     const pageContextEnabled = !command && !imageCommand && !agentTask && (options.pageContextEnabled ?? !state.disablePageContext) && !directModelRequest;
     let readingPolicy = (!independent && options.readingPolicy) || readingPolicyForTurn({ question: submittedText, pageContextEnabled,
@@ -225,6 +231,7 @@ export function createConversationService(deps) {
       if (!options.fromQueue) state.draftSource = null;
       if (!options.fromQueue) state.rewoundCommand = null;
       state.draft = draft.value;
+      clearSubmittedQuote();
       resizeInput();
       await regenerate(stoppedReply.id);
       return;
@@ -267,20 +274,23 @@ export function createConversationService(deps) {
         readingHistory,
         agentTask,
         pageTargetPromise,
+        preserveComposerDraft: options.preserveComposerDraft === true,
         deep: options.deep === true,
         createdAt: now(),
       };
       conversationQueue.enqueue(queueItem);
       state.lastSentFingerprint = fingerprint;
       state.lastSentAt = Date.now();
-      if (directModelRequest) state.directModelRequest = '';
+      if (directModelRequest && !preserveDraft) state.directModelRequest = '';
       directModelRequest = false;
-      draft.value = '';
-      state.draft = '';
-      state.draftSource = null;
-      state.rewoundCommand = null;
-      state.attachments = [];
-      state.pageSelection = null;
+      if (!preserveDraft) {
+        draft.value = '';
+        state.draft = '';
+        state.draftSource = null;
+        state.rewoundCommand = null;
+        state.attachments = [];
+        state.pageSelection = null;
+      }
       resizeInput();
       renderAttachments();
       renderPageSelection();
@@ -347,6 +357,7 @@ export function createConversationService(deps) {
       state.draftSource = null;
       state.rewoundCommand = null;
       state.attachments = [];
+      clearSubmittedQuote();
     }
     resizeInput();
     renderAttachments();
@@ -504,7 +515,7 @@ export function createConversationService(deps) {
           renderPageSelection();
         }
       }
-      if (selection?.url && !savedSelectedImages.length) {
+      if (selection?.url && !savedSelectedImages.length && selection.captureSource !== 'context-menu') {
         try {
           const tab = await waitForPreparation(pageTargetPromise, '获取选区页面超时，请重试。');
           if (tab?.id && /^https?:/i.test(tab.url || '')) {
@@ -668,9 +679,8 @@ export function createConversationService(deps) {
         submissionOwner.bind({ conversation, user: earlyUserMessage, assistant: earlyAssistantMessage });
       }
       if (firstMessage) conversation.title = conversationTitle(command?.label || content || selectionForMessage?.text || '', attachments);
-      if (selectionForMessage && !options.fromQueue) {
-        state.pageSelection = selectionForMessage;
-        renderPageSelection();
+      if (selectionForMessage && selectionForMessage.source !== 'conversation' && !options.fromQueue) {
+        setPageSelection(selectionForMessage);
       }
       if (!options.fromQueue && !preserveDraft) state.attachments = [];
       renderAttachments();

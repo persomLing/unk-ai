@@ -1,6 +1,6 @@
 import { escapeHtml } from '../../core/dom.js';
 import { icon, hydrateIcons } from '../../icons.js';
-import { createReplyClock, messageMarkup, renderMessageContent } from './message-view.js';
+import { createReplyClock, messageMarkup, renderMessageContent, setThinkingExpanded } from './message-view.js';
 import { createFloatingWindow } from './floating-window.js';
 import { createFloatingChatDock } from './floating-chat-dock.js';
 import { createFloatingChatActivity } from './floating-chat-activity.js';
@@ -260,14 +260,9 @@ export function createSelectionChatView({ document = globalThis.document, runtim
     } else if (action === 'copy-code') {
       void copyCodeBlock(button, { writeText: text => view.navigator.clipboard.writeText(text), notify: notice });
     } else if (action === 'toggle-thinking') {
-      const content = button.closest('.thinking-block')?.querySelector('.thinking-content');
-      if (content) {
-        content.hidden = !content.hidden;
-        message.userToggledThinking = true;
-        message.thinkingExpanded = !content.hidden;
-        button.setAttribute('aria-expanded', String(!content.hidden));
-        button.classList.toggle('is-open', !content.hidden);
-      }
+      message.userToggledThinking = true;
+      message.thinkingExpanded = button.getAttribute('aria-expanded') !== 'true';
+      setThinkingExpanded(button, message.thinkingExpanded);
     } else if (action === 'toggle-error') {
       message.errorExpanded = !message.errorExpanded;
       paint();
