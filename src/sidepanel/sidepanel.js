@@ -88,6 +88,7 @@ import { normalizePageUrl, resolvePageSource } from './features/page-reading/pag
 import { createComposerAddMenu } from './features/composer/composer-add-menu.js';
 import { createImageDraft } from './features/composer/image-draft.js';
 import { createSendMotion } from './features/composer/send-motion.js';
+import { createReadingCompanion } from './features/composer/reading-companion.js';
 import { imageReplyLayout } from './features/illustration/illustration-layout.js';
 import { directImageForMessage, IMAGE_MODEL_REQUIRED, imageReferenceForGeneration } from '../utils/image-generation-command.js';
 import { createVideoNotesEntry } from './features/video-notes/video-notes-entry.js';
@@ -198,6 +199,10 @@ const conversationView = $('#conversation-view');
 const sendButton = $('#send-message');
 const stopButton = $('#stop-generation');
 const sendMotion = createSendMotion({ send: sendButton, stop: stopButton });
+const readingCompanion = createReadingCompanion({
+  button: $('#reading-companion'), panel: $('#app'), input, messages: messagesElement,
+  occluders: [$('#agent-panel'), $('#queue-bar'), $('#attach-menu'), $('#context-popover')],
+});
 const historyDrawer = $('#history-drawer');
 const conversationStage = $('#conversation-stage');
 const turnNavigatorElement = $('#turn-navigator');
@@ -1172,7 +1177,10 @@ function renderConversation({ scroll = false } = {}) {
   updateComposer();
   if (scroll && hasMessages) scrollToLatest(false);
   updateLatestVisibility();
-  if (conversationMotion.finish(motion)) sendMotion.accepted();
+  if (conversationMotion.finish(motion)) {
+    sendMotion.accepted();
+    readingCompanion.accepted();
+  }
 }
 
 function openSourcePage(options = {}) {
@@ -1263,6 +1271,7 @@ function updatePageToolbar() {
   const status = $('#composer-page-status');
   if (status) {
     status.hidden = !control.available || !pageEnabled || Boolean(agentSlot?.isMode());
+    status.classList.toggle('sr-only', !control.showStatus);
     status.textContent = control.status;
     status.classList.toggle('is-error', pageEnabled && activity?.status === 'failed'
       && activity?.target?.url === active?.url);
@@ -1281,7 +1290,7 @@ function updatePageToolbar() {
   if (input && state.ready) input.placeholder = imageMode ? (state.attachments.some(item => item.type === 'image') ? '描述想怎样修改参考图…' : '描述要生成的图片…')
     : draftSource ? '编辑独立话题…（本轮不携带当前网页）'
     : restoredCommand ? '编辑原视频的笔记要求…'
-    : agentSlot?.isMode() ? '描述要在当前页面完成的任务…' : !active || state.disablePageContext ? '输入问题…' : '问问这个页面，例如：这些配置怎么选？';
+    : agentSlot?.isMode() ? '描述要在当前页面完成的任务…' : !active || state.disablePageContext ? '输入问题…' : '针对当前页提问…';
 
 }
 
@@ -1410,16 +1419,6 @@ function updateComposer() {
   sendButton.disabled = (agentMode ? !draftText : !hasDraft)
     || !state.ready || state.preparingAttachments || historyMutationBusy || (busy && !canQueue);
   sendMotion.sync(busy);
-  const composerPageToggle = $('#composer-page-toggle');
-  const composerPagePill = $('#composer-page-pill');
-  if (composerPageToggle && composerPagePill) {
-    composerPagePill.classList.toggle('is-off', !composerPageToggle.checked);
-    if (!composerPageToggle.checked) {
-      input.placeholder = '输入消息…（不携带当前网页）';
-    } else {
-      input.placeholder = (state.conversation?.pageContext || state.pendingPage) ? '针对当前网页提问…' : '输入消息…';
-    }
-  }
   renderModelSwitcher();
   $('#new-chat').disabled = busy || historyMutationBusy;
   $('#history-new-chat').disabled = busy || historyMutationBusy;
@@ -1438,7 +1437,6 @@ function updateComposer() {
   const skillsButton = $('#skills-button');
   if (skillsButton) skillsButton.disabled = !state.ready || state.preparingAttachments;
   input.readOnly = !state.ready || agentBusy || historyMutationBusy || restartPending;
-  input.placeholder = agentMode ? '描述要在当前页面完成的任务…' : state.disablePageContext ? '输入消息…（本轮不读取网页）' : state.activePageSignal ? '针对当前网页提问…' : '输入消息…';
   $('#composer').classList.toggle('is-generating', busy);
   updatePageToolbar();
 }
@@ -2268,8 +2266,12 @@ input.addEventListener('paste', (event) => {
   addAttachments(images, 'image');
 });
 function resizeInput() {
+  const previousHeight = input.style.height;
+  const pinned = !messagesElement.hidden && state.followToPage
+    && conversationView.scrollHeight - conversationView.scrollTop - conversationView.clientHeight <= 1;
   input.style.height = 'auto';
   input.style.height = `${Math.min(input.scrollHeight, 150)}px`;
+  if (pinned && input.style.height !== previousHeight) scrollToLatest();
 }
 
 sendButton.addEventListener('click', () => sendMessage());
@@ -2834,6 +2836,7 @@ window.addEventListener('pagehide', () => {
   disposeNextExploration();
   conversationMotion.dispose();
   sendMotion.dispose();
+  readingCompanion.dispose();
   clearTimeout(contextUsageRefreshTimer);
   if (typeof welcomeView !== 'undefined') welcomeView.dispose();
   selectionExplainAction.dispose();

@@ -25,6 +25,7 @@
     root.dataset.accent = ['forest', 'ocean', 'amber', 'tiffany', 'wine'].includes(preferences?.accent) ? preferences.accent : 'forest';
     const texture = ['none', 'grain'].includes(preferences?.texture) ? preferences.texture : preferences?.grain === true ? 'grain' : 'none';
     root.dataset.texture = texture;
+    root.dataset.companion = ['off', 'static'].includes(preferences?.companion) ? preferences.companion : 'dynamic';
     root.dataset.grain = texture === 'grain' ? 'on' : 'off';
   } catch {
     document.documentElement.dataset.font = 'system';
@@ -32,6 +33,7 @@
     document.documentElement.dataset.density = 'comfortable';
     document.documentElement.dataset.accent = 'forest';
     document.documentElement.dataset.texture = 'none';
+    document.documentElement.dataset.companion = 'dynamic';
     document.documentElement.dataset.grain = 'off';
   }
 })();

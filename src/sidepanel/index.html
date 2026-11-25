@@ -152,6 +152,12 @@
             <span>撤回</span>
           </button>
         </div>
+        <div class="companion-perch">
+          <button id="reading-companion" class="reading-companion" type="button" aria-label="轻点阅读搭子小笺">
+            <canvas width="336" height="232" aria-hidden="true"></canvas>
+            <svg class="companion-hit" aria-hidden="true" focusable="false"></svg>
+          </button>
+        </div>
         <div id="composer" class="composer">
           <div class="composer-draft">
           <div id="selection-chip" class="selection-chip" hidden>
@@ -165,17 +171,6 @@
           <div id="context-chip" class="context-chip" hidden></div>
           <div id="article-quote-draft" hidden></div>
           <div id="attachment-list" class="attachment-list" aria-label="待发送附件" hidden></div>
-          <div id="composer-page-control" class="composer-page-control" hidden>
-            <div class="composer-page-source-row">
-            <label id="composer-page-pill" class="composer-page-pill" title="开启后，每次提问都会读取当前页并结合页面回答；关闭后普通提问">
-              <span id="composer-page-icon" class="page-pill-icon" aria-hidden="true"><i data-icon="globe"></i></span>
-              <span id="composer-page-mode" class="page-pill-mode">基于当前页</span>
-              <span id="composer-page-name" class="page-pill-name">当前网页</span>
-              <span class="ui-switch page-pill-toggle"><input id="composer-page-toggle" type="checkbox" role="switch" aria-label="基于当前页回答" aria-describedby="composer-page-status" checked /><span aria-hidden="true"></span></span>
-            </label>
-            </div>
-            <span id="composer-page-status" class="composer-page-status" role="status" hidden></span>
-          </div>
           <div id="pasted-text-list" class="pasted-text-list" hidden></div>
           <div id="composer-image-mode" class="composer-image-mode" hidden>
             <span class="composer-image-chip"><i data-icon="sparkles"></i><strong>生成图片</strong><button id="clear-image-mode" type="button" aria-label="退出生图模式" title="退出生图模式，保留提示词"><i data-icon="close"></i></button></span>
@@ -212,6 +207,14 @@
                 </div>
                 <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden />
                 <input id="document-input" type="file" accept=".txt,.md,.markdown,.csv,.json,.html,.htm,.xml,.yaml,.yml,.log,.docx,.pdf" multiple hidden />
+              </div>
+              <div id="composer-page-control" class="composer-page-control" hidden>
+                <label id="composer-page-pill" class="composer-page-pill">
+                  <span id="composer-page-icon" class="page-pill-icon" aria-hidden="true"><i data-icon="globe"></i></span>
+                  <span id="composer-page-mode" class="page-pill-mode">基于当前页</span>
+                  <span id="composer-page-name" class="page-pill-name">当前网页</span>
+                  <span class="ui-switch page-pill-toggle"><input id="composer-page-toggle" type="checkbox" role="switch" aria-label="基于当前页回答" aria-describedby="composer-page-name composer-page-status" checked /><span aria-hidden="true"></span></span>
+                </label>
               </div>
             </div>
             <div class="composer-trailing">
@@ -263,6 +266,7 @@
               </div>
             </div>
           </div>
+          <div id="composer-page-status" class="composer-page-status" role="status" hidden></div>
         </div>
         <div class="conversation-status">
           <span id="storage-badge" class="storage-badge" role="status"><i data-storage-symbol aria-hidden="true"></i><span data-storage-label>临时对话 · 浏览器</span></span>

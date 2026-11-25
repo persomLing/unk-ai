@@ -40,6 +40,7 @@ export function pageControlState({ active, page, enabled = true, reading = false
   try { domain = new URL(url).hostname || '本地文件'; } catch {}
   return {
     available, changed, url,
+    showStatus: changed || readingOther || reading || ['reading', 'failed', 'stopped'].includes(readStatus),
     title: active?.title || domain || '当前没有可读取的页面',
     domain: domain || '当前网页',
     label: enabled && available ? '基于当前页' : '普通提问',

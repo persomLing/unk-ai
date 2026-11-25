@@ -7,6 +7,7 @@ export const DEFAULT_APPEARANCE = Object.freeze({
   density: 'comfortable',
   accent: 'forest',
   texture: 'none',
+  companion: 'dynamic',
 });
 
 const FONTS = new Set(['system', 'humanist', 'serif', 'rounded']);
@@ -24,6 +25,7 @@ export function normalizeAppearance(value) {
     density: DENSITIES.has(value.density) ? value.density : DEFAULT_APPEARANCE.density,
     accent: ACCENTS.has(value.accent) ? value.accent : DEFAULT_APPEARANCE.accent,
     texture: TEXTURES.has(value.texture) ? value.texture : value.grain === true ? 'grain' : DEFAULT_APPEARANCE.texture,
+    companion: ['dynamic', 'static', 'off'].includes(value.companion) ? value.companion : DEFAULT_APPEARANCE.companion,
   };
 }
 
@@ -35,6 +37,7 @@ export function applyAppearance(document, value) {
   root.dataset.density = appearance.density;
   root.dataset.accent = appearance.accent;
   root.dataset.texture = appearance.texture;
+  root.dataset.companion = appearance.companion;
   root.dataset.grain = appearance.texture === 'grain' ? 'on' : 'off';
   try { document.defaultView.localStorage.setItem(APPEARANCE_STORAGE_KEY, JSON.stringify(appearance)); } catch {}
   return appearance;

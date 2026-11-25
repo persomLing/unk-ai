@@ -2,7 +2,7 @@
 
 UNK AI 是一个 Chrome 侧栏 AI 助手，用于边看网页边提问、整理资料和管理对话。支持连接自选的 OpenAI 兼容模型服务，会话可保存到本地文件夹。
 
-当前源码版本：**0.19.2**。已发布版本见 [GitHub Releases](https://github.com/persomLing/unk-ai/releases)。
+当前源码版本：**0.19.3**。已发布版本见 [GitHub Releases](https://github.com/persomLing/unk-ai/releases)。
 
 ## 主要功能
 
@@ -13,12 +13,12 @@ UNK AI 是一个 Chrome 侧栏 AI 助手，用于边看网页边提问、整理�
 - **Skill 指南**：导入单文件 SKILL.md，检查兼容性后用于本次提问。
 - **联网与页面操作**：按需搜索、核对来源；在授权范围内辅助点击、输入和导航。
 - **会话管理**：分组、搜索历史，为每段对话记住模型，导出 Markdown、图片或 PDF。
-- **界面外观**：调整聊天正文字号、字体、间距和主题色。
+- **界面外观**：调整聊天正文字号、字体、间距和主题色；输入框的阅读搭子小笺支持动态、静态或关闭。
 - **容量提示**：查看下一次提问预估和最近请求的 Token 分类，按输入预算自动整理较早记录。
 
 ## 开始使用
 
-需要支持侧栏的 Chrome。下载 [已发布版本的安装包](https://github.com/persomLing/unk-ai/releases/latest)，或使用本地打包生成的 `unk-ai-v0.19.2.zip`。解压后在 `chrome://extensions` 开启开发者模式，点击“加载已解压的扩展程序”，选择直接包含 `manifest.json` 的文件夹。包内附更新说明和离线操作手册。
+需要支持侧栏的 Chrome。下载 [已发布版本的安装包](https://github.com/persomLing/unk-ai/releases/latest)，或使用本地打包生成的 `unk-ai-v0.19.3.zip`。解压后在 `chrome://extensions` 开启开发者模式，点击“加载已解压的扩展程序”，选择直接包含 `manifest.json` 的文件夹。包内附更新说明和离线操作手册。
 
 从源码构建需要 Node.js 22.12+：
 
