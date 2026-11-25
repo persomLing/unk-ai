@@ -27,7 +27,8 @@
 .export-selection-toolbar label, .export-include { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
 .export-dialog input[type="checkbox"], .export-dialog input[type="radio"] { accent-color: var(--teal); flex: 0 0 auto; width: 15px; height: 15px; margin: 0; }
 .export-turn-list { display: flex; flex-direction: column; gap: 8px; }
-.export-turn-option { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; cursor: pointer; transition: border-color .15s, background .15s; }
+.export-turn-option { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; cursor: pointer; transition: border-color .15s, background .15s, transform 160ms var(--ease-tactile); }
+.export-turn-option:active { transform: scale(.985); }
 .export-turn-option:has(input:checked) { border-color: color-mix(in srgb, var(--teal) 40%, var(--line)); background: var(--teal-soft); }
 .export-turn-option input { margin-top: 2px !important; }
 .export-turn-option > span { min-width: 0; }
@@ -48,10 +49,20 @@
 .export-format input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
 .export-format-note { color: var(--muted); font-size: 10px; line-height: 1.6; margin: 0; min-height: 16px; }
 .export-feedback { color: var(--teal); font-size: 11px; line-height: 1.65; margin: 8px 0 0; overflow-wrap: anywhere; }
-.export-feedback.is-error { color: #b04c35; }
+.export-feedback.is-error { color: var(--danger); }
 .export-dialog-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 16px 22px 20px; flex: 0 0 auto; }
 .export-dialog-footer .button { min-height: 36px; font-size: 12px; }
 .export-dialog-footer .button-primary { min-width: 112px; }
+.export-dialog-footer .button-primary.is-exporting::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  animation: export-ring-spin 720ms linear infinite;
+}
+@keyframes export-ring-spin { to { transform: rotate(360deg); } }
 .export-dialog button:disabled { opacity: .5; }
 .export-preview-viewport { padding: 12px 0; background: var(--surface-alt); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; min-height: 160px; }
 .export-preview-canvas { margin: 0 auto; position: relative; }

@@ -6,24 +6,26 @@
   max-width: calc(100vw - 16px);
   padding: 4px;
   gap: 2px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 4px 18px #0002;
+  box-shadow: var(--shadow-md);
 }
 .article-selection-menu[hidden] { display: none; }
 .article-selection-menu button {
   padding: 7px 9px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: inherit;
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  transition: var(--control-transition), transform 160ms var(--ease-tactile);
 }
-.article-selection-menu button:hover { background: var(--surface-alt); }
+.article-selection-menu button:hover { background: var(--teal-soft); color: var(--teal); }
+.article-selection-menu button:active { transform: scale(.93); }
 .article-quote-editor {
   position: fixed;
   z-index: 2501;
@@ -35,11 +37,11 @@
   display: grid;
   gap: 10px;
   margin: 0;
-  border: 1px solid var(--line-strong, var(--line));
-  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
   background: var(--surface);
   color: var(--ink);
-  box-shadow: 0 10px 32px #0002;
+  box-shadow: var(--shadow-lg);
 }
 .article-quote-editor[hidden], .article-quote-draft[hidden], .article-quote-list[hidden] { display: none; }
 .article-quote-editor-preview { margin: 0; padding-left: 9px; border-left: 2px solid var(--teal); max-height: 58px; overflow: auto; font-size: 11px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; }

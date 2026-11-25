@@ -30,7 +30,7 @@
  */
 
 import { awaitWithAbort, awaitWithTimeout } from '../utils/abortable.js';
-import { paintTheme } from '../ui/theme-control.js';
+import { paintTheme, transitionTheme } from '../ui/theme-control.js';
 import { applyAppearance } from '../ui/appearance-control.js';
 import { $, toast } from './core/dom.js';
 import { find, includes, map, trim } from 'lodash-es';
@@ -89,6 +89,10 @@ import { createComposerAddMenu } from './features/composer/composer-add-menu.js'
 import { createImageDraft } from './features/composer/image-draft.js';
 import { createSendMotion } from './features/composer/send-motion.js';
 import { createReadingCompanion } from './features/composer/reading-companion.js';
+import { createSlashCommandPalette } from './features/composer/slash-commands.js';
+import './features/composer/slash-commands.css';
+import { createMultiTabCompare } from './features/page-reading/multi-tab-compare.js';
+import './features/page-reading/multi-tab-compare.css';
 import { imageReplyLayout } from './features/illustration/illustration-layout.js';
 import { directImageForMessage, IMAGE_MODEL_REQUIRED, imageReferenceForGeneration } from '../utils/image-generation-command.js';
 import { createVideoNotesEntry } from './features/video-notes/video-notes-entry.js';
@@ -315,7 +319,12 @@ const selectionExplainAction = typeof createSelectionExplainAction === 'function
   },
   send: async ({ action, selection, target }) => {
     if (agentSlot?.isBusy()) throw new Error('浏览器任务仍在运行，请停止后重新选择并发送。');
-    const question = '请结合当前网页内容，解释这段选中的内容，说明关键概念、逻辑和它与页面主题的关系。';
+    const questionByAction = {
+      explain: '请结合当前网页内容，解释这段选中的内容，说明关键概念、逻辑和它与页面主题的关系。',
+      translate: '请将这段选中的内容自然准确地进行中英互译（中文译为地道英文，英文或其他外语译为流畅中文），保留关键术语并简要说明难点。',
+      summarize: '请提炼这段选中内容的核心要点与结论，用简洁的条理列出。',
+    };
+    const question = questionByAction[action?.action] || questionByAction.explain;
     syncActivePageSignal({ ...target, id: target.tabId ?? target.id });
     pageQuestionChoice.clear();
     state.pageContextPreference = true;
@@ -572,7 +581,7 @@ async function toggleTheme() {
   if (globalThis.chrome?.storage?.local) {
     await chrome.storage.local.set({ theme: nextTheme });
   }
-  applyTheme(nextTheme);
+  transitionTheme(document, $('#theme-toggle'), nextTheme);
 }
 
 function activeChatProfile() {
@@ -2254,6 +2263,7 @@ input.addEventListener('input', () => {
   pastedText.handleInput();
 });
 input.addEventListener('keydown', (event) => {
+  if (slashCommands?.handleKeydown(event)) return;
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing && event.keyCode !== 229) {
     event.preventDefault();
     sendMessage();
@@ -2315,6 +2325,64 @@ function activateImageDraft(reference) {
 $('#generate-image-button').addEventListener('click', () => {
   toggleAttachMenu(false);
   activateImageDraft();
+});
+const multiTabCompare = createMultiTabCompare({
+  document,
+  sendMessage: message => chrome.runtime.sendMessage(message),
+  notify: (msg, kind) => toast(msg, kind),
+  onApply: async formatted => {
+    const file = new File([formatted.text], formatted.name, { type: 'text/markdown' });
+    await addAttachments([file], 'document');
+    state.pageContextPreference = false;
+    state.disablePageContext = true;
+    if (!String(input.value || '').trim()) {
+      pastedText.setValue(formatted.prompt);
+      state.draft = pastedText.getValue();
+      resizeInput();
+    }
+    updateComposer();
+    input.focus();
+  },
+});
+$('#multi-tab-compare-button')?.addEventListener('click', () => {
+  toggleAttachMenu(false);
+  if (state.generatingId || state.preparingAttachments || agentSlot?.isBusy()) return;
+  void multiTabCompare.open();
+});
+const slashCommands = createSlashCommandPalette({
+  input,
+  container: $('#composer'),
+  getCommands: () => [
+    { id: 'compare', command: '/compare', label: '多页对比', description: '勾选 2–4 个标签页联合阅读并对比', icon: 'layers', keywords: ['duoye', 'duibi', '多页', '对比', 'tab'] },
+    { id: 'sum', command: '/sum', label: '总结当前页', description: '快速总结当前打开的网页内容', icon: 'article', keywords: ['summary', 'zongjie', '总结', '当前页'] },
+    { id: 'video', command: '/video', label: '视频笔记', description: '为当前 B 站视频生成中文笔记', icon: 'video', disabled: Boolean($('#video-notes-button')?.disabled), keywords: ['shipin', 'bili', '视频', '笔记'] },
+    { id: 'img', command: '/img', label: '生成图片', description: '进入图片生成模式', icon: 'sparkles', keywords: ['image', 'shengtu', '生图', '画图'] },
+    { id: 'new', command: '/new', label: '新建对话', description: '开启一段新的空白对话', icon: 'edit', keywords: ['chat', 'xin', '新对话'] },
+  ],
+  onExecute: item => {
+    pastedText.setValue('');
+    state.draft = '';
+    resizeInput();
+    updateComposer();
+    if (item.id === 'compare') { void multiTabCompare.open(); return; }
+    if (item.id === 'img') { activateImageDraft(); return; }
+    if (item.id === 'video') { $('#video-notes-button')?.click(); return; }
+    if (item.id === 'new') { $('#new-chat')?.click(); return; }
+    if (item.id === 'sum') {
+      const summarizeBtn = $('#summarize-page');
+      if (summarizeBtn && !summarizeBtn.hidden && !summarizeBtn.disabled) {
+        summarizeBtn.click();
+      } else {
+        pastedText.setValue('请总结当前网页的核心内容与关键要点。');
+        state.draft = pastedText.getValue();
+        state.pageContextPreference = true;
+        state.disablePageContext = false;
+        resizeInput();
+        updateComposer();
+        sendMessage();
+      }
+    }
+  },
 });
 $('#clear-image-mode').addEventListener('click', () => {
   pastedText.setImageMode(false);
@@ -2842,6 +2910,8 @@ window.addEventListener('pagehide', () => {
   selectionExplainAction.dispose();
   contextUsageTracker.dispose();
   composerAddMenu?.dispose();
+  if (typeof slashCommands !== 'undefined') slashCommands.dispose();
+  if (typeof multiTabCompare !== 'undefined') multiTabCompare.dispose();
   videoNotesEntry?.dispose();
   videoFrameActions.dispose();
   videoTimestampNavigation?.dispose();

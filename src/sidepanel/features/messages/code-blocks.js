@@ -26,13 +26,12 @@ export function decorateCodeBlocks(fragment) {
 export async function copyCodeBlock(button, { writeText, notify }) {
   const code = button.parentElement?.querySelector(':scope > pre > code');
   const text = code?.textContent;
-  if (!text || pending.has(button)) return;
+  if (!text || pending.has(button) || button.disabled || button.dataset?.copied === 'true') return;
   pending.add(button);
   try {
     await awaitWithTimeout(writeText(text), { timeoutMs: 3000, message: '复制等待超时，请检查剪贴板。' });
     if (!button.isConnected || button.closest('[inert]') || code.textContent !== text) return;
-    showCopied(button);
-    notify('已复制代码');
+    showCopied(button, { lock: true });
   } catch (error) {
     if (button.isConnected && !button.closest('[inert]')) notify(error?.name === 'TimeoutError' ? error.message : '复制失败，请手动选择代码。', 'error');
   } finally { pending.delete(button); }

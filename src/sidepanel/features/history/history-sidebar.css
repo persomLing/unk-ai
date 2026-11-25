@@ -104,16 +104,17 @@
 #history-drawer .ho-toolbar .history-new-chat {
   min-height: 30px;
   margin-left: 0;
-  padding: 3px 9px;
+  padding: 3px 10px;
   gap: 4px;
-  color: var(--teal-dark);
-  background: var(--accent-fill);
-  box-shadow: inset 0 0 0 1px var(--accent-line);
-  font-weight: 650;
+  border-radius: var(--radius-xs);
+  color: var(--on-teal);
+  background: var(--teal);
+  box-shadow: var(--shadow-xs);
+  font-weight: 600;
 }
 
 #history-drawer .ho-toolbar .history-new-chat:hover:not(:disabled) {
-  background: var(--accent-fill-hover);
+  background: var(--teal-dark);
 }
 
 #history-drawer .ho-toolbar .history-new-chat .icon {
@@ -830,4 +831,16 @@
   #history-drawer .ho-menu button,
   #history-drawer .ho-feedback button,
   #history-drawer .ho-batch button { transition: none; }
+}
+
+@keyframes ho-bookmark-pop {
+  0% { transform: scale(.75); }
+  55% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  #history-drawer .ho-pin-mark,
+  #history-drawer [data-action="pin"][aria-pressed="true"] .icon {
+    animation: ho-bookmark-pop 280ms var(--ease-tactile);
+  }
 }

@@ -1,11 +1,11 @@
 /* Shared by extension pages only. Keep native scroll geometry and input behavior. */
 :root {
-  --scrollbar-thumb-color: color-mix(in srgb, var(--accent-swatch, #97a6ae) 41%, var(--line-strong, #c5ced3));
+  --scrollbar-thumb-color: rgba(29, 35, 40, 0.22);
   --scrollbar-width: 5px;
   --scrollbar-height: 5px;
 }
 
-[data-theme="dark"] { --scrollbar-thumb-color: color-mix(in srgb, var(--accent-swatch, #97a6ae) 24%, var(--line-strong, #505963)); }
+[data-theme="dark"] { --scrollbar-thumb-color: rgba(255, 255, 255, 0.22); }
 
 /* Reset on each element to keep a hovered parent from lighting nested scrollers.
    Resolve interaction on the element: scrollbar pseudo-elements do not reliably

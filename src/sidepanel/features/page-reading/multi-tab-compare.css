@@ -1,0 +1,155 @@
+.multi-tab-dialog {
+  width: min(500px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.multi-tab-dialog[open] { display: flex; flex-direction: column; }
+.multi-tab-dialog::backdrop { background: var(--scrim); }
+
+.multi-tab-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 8px 20px;
+}
+.multi-tab-eyebrow {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--teal);
+}
+.multi-tab-header h2 {
+  margin: 4px 0 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+.multi-tab-hint {
+  margin: 0;
+  padding: 0 20px 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.multi-tab-list {
+  flex: 1 1 auto;
+  min-height: 80px;
+  max-height: min(360px, 46dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.multi-tab-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 150ms var(--ease-tactile);
+}
+.multi-tab-item:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-alt);
+}
+.multi-tab-item:active { transform: scale(.99); }
+.multi-tab-item:has(input:checked) {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+}
+.multi-tab-item input[type="checkbox"] {
+  accent-color: var(--teal);
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  margin: 0;
+}
+.multi-tab-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.multi-tab-copy strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multi-tab-copy small {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.multi-tab-badge {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-card);
+  color: var(--teal);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.multi-tab-status {
+  margin: 0 20px 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-alt);
+  color: var(--ink-secondary);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.multi-tab-status.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.multi-tab-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line);
+}
+.multi-tab-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.multi-tab-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.multi-tab-actions .button-primary.is-exporting::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-top-color: currentColor;
+  animation: export-ring-spin 720ms linear infinite;
+}

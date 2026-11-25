@@ -18,3 +18,16 @@ export function reveal(node, name, { distance = 0, scale = 1, delay = 0, duratio
     { opacity: 1, translate: '0 0', scale: 1 },
   ], { duration, delay, fill: 'backwards' });
 }
+
+export function tickNumber(node, value) {
+  if (!node) return;
+  const next = String(value ?? '');
+  const changed = node.textContent !== '' && node.textContent !== next;
+  node.textContent = next;
+  if (changed) {
+    playMotion(node, 'odometer-tick', [
+      { opacity: 0.35, transform: 'translateY(5px)' },
+      { opacity: 1, transform: 'translateY(0)' },
+    ], { duration: 170 });
+  }
+}

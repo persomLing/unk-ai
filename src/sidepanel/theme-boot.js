@@ -19,11 +19,16 @@
     const cached = JSON.parse(localStorage.getItem('interfacePreferences') || 'null');
     const preferences = cached?.version === 1 ? cached : null;
     const root = document.documentElement;
+    const legacyAccent = { amber: 'parchment', tiffany: 'ocean', sage: 'matcha' };
+    const rawAccent = preferences?.accent;
+    const accent = ['forest', 'matcha', 'parchment', 'ocean', 'dusk', 'wine'].includes(rawAccent)
+      ? rawAccent
+      : (legacyAccent[rawAccent] || 'forest');
     root.dataset.font = ['system', 'humanist', 'serif', 'rounded'].includes(preferences?.font) ? preferences.font : 'system';
     root.dataset.bodyFontSize = [12, 13, 14, 16, 18, 20].includes(preferences?.bodyFontSize) ? String(preferences.bodyFontSize) : '13';
     root.dataset.density = ['compact', 'comfortable', 'spacious'].includes(preferences?.density) ? preferences.density : 'comfortable';
-    root.dataset.accent = ['forest', 'ocean', 'amber', 'tiffany', 'wine'].includes(preferences?.accent) ? preferences.accent : 'forest';
-    const texture = ['none', 'grain'].includes(preferences?.texture) ? preferences.texture : preferences?.grain === true ? 'grain' : 'none';
+    root.dataset.accent = accent;
+    const texture = ['none', 'grain', 'dots', 'grid', 'linen', 'lines'].includes(preferences?.texture) ? preferences.texture : preferences?.grain === true ? 'grain' : 'none';
     root.dataset.texture = texture;
     root.dataset.companion = ['off', 'static'].includes(preferences?.companion) ? preferences.companion : 'dynamic';
     root.dataset.grain = texture === 'grain' ? 'on' : 'off';

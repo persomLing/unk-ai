@@ -34,24 +34,22 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   flex-direction: column;
   position: relative;
   background: var(--surface-alt);
-  transition: background-color var(--motion-panel);
 }
 
 .app-header {
-  min-height: 52px;
+  min-height: 50px;
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   padding-inline: var(--workspace-gutter);
   border-bottom: 1px solid var(--line);
   background: var(--surface);
-  transition: background-color var(--motion-panel), border-color var(--motion-panel);
   z-index: 5;
 }
 
 .header-toolbar {
-  height: 51px;
-  flex: 0 0 51px;
+  height: 49px;
+  flex: 0 0 49px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -115,8 +113,15 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   stroke-width: 1.65;
 }
 
-#new-chat:not(:disabled) { background: var(--accent-fill); color: var(--teal-dark); }
-#new-chat:hover:not(:disabled) { background: var(--accent-fill-hover); }
+#new-chat:not(:disabled) {
+  background: var(--teal);
+  color: var(--on-teal);
+  box-shadow: var(--shadow-xs);
+}
+#new-chat:hover:not(:disabled) {
+  background: var(--teal-dark);
+  color: var(--on-teal);
+}
 
 /* ==========================================================================
    Page Toolbar (当前网页感知栏)
@@ -335,6 +340,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .conversation-view {
   flex: 1;
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   isolation: isolate;
   overflow-anchor: none;
@@ -582,18 +588,37 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 }
 
 .context-meter-button {
+  position: relative;
   display: grid;
   place-items: center;
   width: 32px;
   height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: 50%;
   background: transparent;
   color: var(--ink-secondary);
   cursor: pointer;
-  transition: background-color .15s ease, color .15s ease;
+  transition: background-color .15s ease, color .15s ease, transform 160ms var(--ease-tactile);
   user-select: none;
+}
+.context-meter-button:active { transform: scale(.91); }
+.context-meter-button.has-usage::before {
+  content: "";
+  position: absolute;
+  inset: 1px;
+  border-radius: 50%;
+  background: conic-gradient(var(--teal) var(--context-angle, 0deg), var(--line) 0deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  pointer-events: none;
+  opacity: .88;
+}
+.context-meter-button.warning.has-usage::before {
+  background: conic-gradient(var(--warm) var(--context-angle, 0deg), var(--line) 0deg);
+}
+.context-meter-button.danger.has-usage::before {
+  background: conic-gradient(var(--danger) var(--context-angle, 0deg), var(--line) 0deg);
 }
 
 .context-meter-button .icon { width: 18px; height: 18px; stroke-width: 1.65; }
@@ -624,8 +649,8 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 
 /* 危险态 (>= 90%) */
 .context-meter-button.danger {
-  background: rgba(239, 68, 68, .08);
-  color: #ef4444;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 /* 浮动弹层 Popover */
@@ -924,11 +949,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   align-self: flex-end;
   width: fit-content;
   max-width: min(88%, 560px);
-  margin: 5px 0 38px 28px;
-  padding: 11px 14px;
-  border-radius: 16px 5px 16px 16px;
+  margin: 5px 0 36px 28px;
+  padding: 11px 15px;
+  border-radius: var(--radius-md);
   background: var(--teal-soft);
-  border: 1px solid color-mix(in srgb, var(--teal) 19%, var(--line));
+  border: 1px solid var(--accent-line);
   box-shadow: var(--shadow-xs);
   position: relative;
   transition: var(--control-transition);
@@ -1482,13 +1507,13 @@ img[data-image-preview]:focus-visible {
   padding: 4px 10px;
   border-radius: var(--radius-pill);
   background: var(--surface-card);
-  border: 1px solid var(--line-strong);
+  border: 1px solid var(--line);
   color: var(--muted);
   font-size: 11px;
   font-weight: 550;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: var(--control-transition);
   user-select: none;
 }
 
@@ -1645,9 +1670,9 @@ img[data-image-preview]:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 8px 14px 8px 16px;
-  border-radius: 22px;
-  background: var(--surface-card);
+  padding: 9px 14px 9px 15px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
   border: 1px solid var(--line);
   color: var(--ink);
   font-size: 12.5px;
@@ -1655,9 +1680,9 @@ img[data-image-preview]:focus-visible {
   line-height: 1.45;
   text-align: left;
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: var(--control-transition);
   user-select: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-shadow: var(--shadow-xs);
 }
 
 .try-next-chip > span {
@@ -1721,10 +1746,10 @@ img[data-image-preview]:focus-visible {
 
 .message-content blockquote {
   border-left: 3px solid var(--teal);
-  background: var(--teal-soft);
-  border-radius: 0 6px 6px 0;
+  background: var(--surface-card);
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
   margin: 10px 0;
-  padding: 6px 12px;
+  padding: 8px 13px;
   color: var(--ink-secondary);
 }
 
@@ -1768,16 +1793,36 @@ img[data-image-preview]:focus-visible {
 }
 
 .message-code-block { position: relative; min-width: 0; margin: 12px 0; }
-.message-content .message-code-block pre { margin: 0; padding-top: 34px; }
+.message-content .message-code-block pre { margin: 0; padding-top: 38px; }
 .message-code-copy {
-  position: absolute; top: 5px; right: 6px; width: 26px; height: 25px;
-  display: grid; place-items: center; padding: 0;
-  border: 1px solid var(--code-line); border-radius: 6px;
-  background: var(--code-surface); color: var(--code-ink); cursor: pointer;
+  position: absolute; top: 7px; right: 8px;
+  min-width: 28px; height: 26px; padding: 0 7px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.12); border-radius: var(--radius-xs);
+  background: rgba(255, 255, 255, 0.06); color: var(--code-ink); cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 160ms var(--ease-tactile);
 }
-.message-code-copy .icon { width: 14px; height: 14px; }
-.message-code-copy:hover, .message-code-copy:focus-visible { background: var(--code-line); }
+.message-code-copy .icon { width: 13px; height: 13px; }
+.message-code-copy:hover:not(:disabled),
+.message-code-copy:focus-visible:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  border-color: rgba(255, 255, 255, 0.24);
+}
+.message-code-copy:active:not(:disabled) { transform: scale(.92); }
 .message-code-copy:focus-visible { outline: 2px solid var(--accent-swatch); outline-offset: 1px; }
+.message-code-copy.is-copied,
+.message-code-copy:disabled {
+  cursor: default;
+  border-color: color-mix(in srgb, var(--teal) 55%, rgba(255, 255, 255, 0.18));
+  background: color-mix(in srgb, var(--teal) 24%, var(--code-surface)) !important;
+  color: var(--teal-light) !important;
+}
+.message-code-copy.is-copied::after {
+  content: "已复制";
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1;
+}
 @media (pointer: coarse) {
   .message-content .message-code-block pre { padding-top: 43px; }
   .message-code-copy { width: 34px; height: 34px; }
@@ -2000,11 +2045,11 @@ img[data-image-preview]:focus-visible {
   outline-offset: 3px;
 }
 
-/* 思考微光小球 */
+/* 思考微光毛毛虫指示点 (Worm Dots) */
 .thinking-dots {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   height: 20px;
 }
 
@@ -2012,16 +2057,18 @@ img[data-image-preview]:focus-visible {
   width: 5px;
   height: 5px;
   background: var(--teal);
-  border-radius: 50%;
-  animation: thinking 1.2s infinite ease-in-out;
+  border-radius: 999px;
+  transform-origin: center;
+  animation: thinking 1.15s infinite var(--ease-out);
 }
 
-.thinking-dots i:nth-child(2) { animation-delay: 0.18s; }
-.thinking-dots i:nth-child(3) { animation-delay: 0.36s; }
+.thinking-dots i:nth-child(2) { animation-delay: 0.16s; }
+.thinking-dots i:nth-child(3) { animation-delay: 0.32s; }
 
 @keyframes thinking {
-  0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
-  40% { opacity: 1; transform: translateY(-3px); }
+  0%, 75%, 100% { opacity: 0.32; transform: scaleX(1) scaleY(1); }
+  32% { opacity: 1; transform: scaleX(2.1) scaleY(0.88); }
+  52% { opacity: 0.85; transform: scaleX(0.95) scaleY(1.06); }
 }
 
 /* 打字机光标 */
@@ -2234,8 +2281,8 @@ img[data-image-preview]:focus-visible {
 }
 
 .message-agent-state.failed {
-  background: #fcebea;
-  color: var(--danger, #b64238);
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .message-agent-steps {
@@ -2430,11 +2477,11 @@ img[data-image-preview]:focus-visible {
 }
 
 .scroll-latest-dots i {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
+  width: 3.5px;
+  height: 3.5px;
+  border-radius: 999px;
   background: var(--ink);
-  animation: thinking 1.2s infinite ease-in-out;
+  animation: thinking 1.15s infinite var(--ease-out);
 }
 
 .scroll-latest-dots i:nth-child(2) { animation-delay: 0.18s; }
@@ -2458,7 +2505,6 @@ img[data-image-preview]:focus-visible {
   padding: calc(9px * var(--density-factor)) var(--workspace-gutter) calc(8px * var(--density-factor));
   background: var(--surface-alt);
   flex: 0 0 auto;
-  transition: background-color var(--motion-panel);
 }
 
 .composer {
@@ -2468,9 +2514,9 @@ img[data-image-preview]:focus-visible {
   border: 1px solid var(--line-strong);
   background: var(--surface);
   border-radius: var(--radius-lg);
-  padding: calc(9px * var(--density-factor)) calc(10px * var(--density-factor)) calc(6px * var(--density-factor));
+  padding: calc(10px * var(--density-factor)) calc(12px * var(--density-factor)) calc(7px * var(--density-factor));
   box-shadow: var(--shadow-sm);
-  transition: var(--control-transition);
+  transition: border-color var(--motion-panel) var(--ease-out), box-shadow var(--motion-panel) var(--ease-out), background-color var(--motion-panel) var(--ease-out);
   position: relative;
 }
 
@@ -2526,8 +2572,8 @@ img[data-image-preview]:focus-visible {
 }
 
 .composer:focus-within {
-  border-color: color-mix(in srgb, var(--teal) 55%, var(--line));
-  box-shadow: var(--shadow-sm);
+  border-color: color-mix(in srgb, var(--teal) 50%, var(--line-strong));
+  box-shadow: 0 0 0 3px var(--teal-glow), var(--shadow-sm);
 }
 
 .composer.is-dragging {
@@ -2856,12 +2902,12 @@ img[data-image-preview]:focus-visible {
 }
 
 .agent-text-button.danger {
-  color: #a3543f;
+  color: var(--danger);
 }
 
 .agent-text-button.danger:hover {
-  background: #fbefea;
-  color: #8c412f;
+  background: var(--danger-soft);
+  color: var(--danger-dark);
 }
 
 .agent-close {
@@ -2914,7 +2960,7 @@ img[data-image-preview]:focus-visible {
 }
 
 .agent-status-dot.failed {
-  background: #b54737;
+  background: var(--danger);
 }
 
 @keyframes agentPulse {
@@ -3023,18 +3069,18 @@ img[data-image-preview]:focus-visible {
 }
 
 .agent-step.error {
-  background: #fbefea;
+  background: var(--danger-soft);
 }
 
 .agent-step.error .agent-step-icon {
-  color: #b54737;
+  color: var(--danger);
 }
 
 .agent-interaction {
   margin-top: 8px;
   padding: 10px 11px;
-  border: 1px solid #e6d6c2;
-  border-radius: 10px;
+  border: 1px solid var(--warm-line);
+  border-radius: var(--radius-sm);
   background: var(--warm-soft);
 }
 
@@ -3045,8 +3091,8 @@ img[data-image-preview]:focus-visible {
 }
 
 .agent-interaction.error {
-  border-color: #efd2c8;
-  background: #fbefea;
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
 }
 
 .agent-card-head {
@@ -3164,8 +3210,8 @@ img[data-image-preview]:focus-visible {
 }
 
 .agent-button.danger {
-  border-color: #e2c4b9;
-  color: #a3543f;
+  border-color: var(--danger-line);
+  color: var(--danger);
 }
 
 .screenshot-region-dialog {
@@ -3297,7 +3343,7 @@ img[data-image-preview]:focus-visible {
   border-radius: 50%;
   padding: 0;
   background: transparent;
-  color: #9aa298;
+  color: var(--subtle);
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -3520,7 +3566,7 @@ img[data-image-preview]:focus-visible {
 }
 
 .model-tag.reasoning {
-  background: rgba(166, 106, 60, 0.12);
+  background: var(--warm-soft);
   color: var(--warm);
 }
 
@@ -3807,7 +3853,7 @@ img[data-image-preview]:focus-visible {
   height: 12px;
 }
 
-/* 历史会话搜索栏与高亮 (质感胶囊设计) */
+/* 历史会话搜索栏与高亮 (Rubber Search 弹性胶囊) */
 .history-search-bar {
   position: relative;
   display: flex;
@@ -3816,9 +3862,9 @@ img[data-image-preview]:focus-visible {
   margin: 0 0 4px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   padding: 0 10px;
-  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease, box-shadow 0.2s var(--ease-out), transform 200ms var(--ease-tactile);
 }
 
 .history-search-bar:hover {
@@ -3829,6 +3875,7 @@ img[data-image-preview]:focus-visible {
   background: var(--surface);
   border-color: var(--teal);
   box-shadow: 0 0 0 3px var(--teal-glow);
+  transform: scale(1.012);
 }
 
 .history-search-icon {
@@ -3840,11 +3887,12 @@ img[data-image-preview]:focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.18s ease;
+  transition: color 0.18s ease, transform 220ms var(--ease-tactile);
 }
 
 .history-search-bar:focus-within .history-search-icon {
   color: var(--teal);
+  transform: scale(1.12) rotate(-8deg);
 }
 
 .history-search-icon .icon {
@@ -3933,14 +3981,14 @@ img[data-image-preview]:focus-visible {
 }
 
 .button-primary {
-  background: var(--accent-fill);
-  color: var(--teal-dark);
-  border-color: var(--accent-line);
+  background: var(--teal);
+  color: var(--on-teal);
+  border-color: transparent;
   box-shadow: var(--shadow-xs);
 }
 
 .button-primary:hover {
-  background: var(--accent-fill-hover);
+  background: var(--teal-dark);
   transform: translateY(-1px);
 }
 
@@ -3956,12 +4004,12 @@ img[data-image-preview]:focus-visible {
 }
 
 .button-danger {
-  background: #b54737;
-  color: white;
+  background: var(--danger);
+  color: #ffffff;
 }
 
 .button-danger:hover {
-  background: #9b3a2c;
+  background: var(--danger-dark);
 }
 
 .button:disabled {
@@ -4231,11 +4279,11 @@ img[data-image-preview]:focus-visible {
 .dialog-icon {
   width: 36px;
   height: 36px;
-  background: #fbf0ec;
-  color: #aa523c;
+  background: var(--danger-soft);
+  color: var(--danger);
   display: grid;
   place-items: center;
-  border-radius: 9px;
+  border-radius: var(--radius-sm);
   margin-bottom: 14px;
 }
 
@@ -4253,13 +4301,14 @@ img[data-image-preview]:focus-visible {
 
 #rename-input {
   width: 100%;
-  border: 1px solid #d4ddd0;
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   padding: 9px 11px;
-  background: #ffffff;
+  background: var(--surface);
   color: var(--ink);
   font-size: 13px;
   outline: none;
+  transition: border-color var(--motion-tap) ease, box-shadow var(--motion-panel) var(--ease-out);
 }
 
 #rename-input:focus {
@@ -4406,17 +4455,17 @@ img[data-image-preview]:focus-visible {
 }
 
 [data-theme="dark"] .agent-step.error {
-  background: rgba(181, 71, 55, 0.16);
+  background: var(--danger-soft);
 }
 
 [data-theme="dark"] .agent-interaction {
-  background: #201d19;
-  border-color: #3b322a;
+  background: var(--warm-soft);
+  border-color: var(--warm-line);
 }
 
 [data-theme="dark"] .agent-interaction.error {
-  background: rgba(181, 71, 55, 0.16);
-  border-color: #4a2d27;
+  background: var(--danger-soft);
+  border-color: var(--danger-line);
 }
 
 [data-theme="dark"] .agent-button {
@@ -4439,7 +4488,7 @@ img[data-image-preview]:focus-visible {
 }
 
 [data-theme="dark"] .agent-text-button.danger {
-  color: #e09a86;
+  color: var(--danger);
 }
 
 [data-theme="dark"] .attachment-item {
@@ -4505,8 +4554,8 @@ img[data-image-preview]:focus-visible {
 }
 
 [data-theme="dark"] .dialog-icon {
-  background: rgba(170, 82, 60, 0.2);
-  color: #f87171;
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 [data-theme="dark"] .scroll-latest-button {
@@ -4635,3 +4684,86 @@ img[data-image-preview]:focus-visible {
   }
 }
 
+
+/* ==========================================================================
+   Tactile Visual Haptics & Companion Whispers
+   ========================================================================== */
+.companion-whisper {
+  position: absolute;
+  right: 78px;
+  bottom: 14px;
+  max-width: min(210px, calc(100vw - 120px));
+  padding: 5px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md) var(--radius-md) var(--radius-xs) var(--radius-md);
+  background: var(--surface);
+  color: var(--ink-secondary);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(5px) scale(.94);
+  transform-origin: bottom right;
+  transition: opacity 180ms var(--ease-out), transform 220ms var(--ease-tactile);
+}
+.companion-whisper.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@keyframes companion-poke {
+  0% { transform: scale(1) translateY(0); }
+  30% { transform: scale(1.06, .92) translateY(2px); }
+  65% { transform: scale(.97, 1.04) translateY(-3px); }
+  100% { transform: scale(1) translateY(0); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .reading-companion.is-poked {
+    transform-origin: bottom center;
+    animation: companion-poke 340ms var(--ease-tactile);
+  }
+}
+
+.composer.is-dragging {
+  border-style: dashed;
+  transform: scale(1.008);
+}
+
+.model-trigger,
+.composer-page-pill,
+.sources-pill,
+.try-next-chip,
+.button,
+.send-button,
+.drawer-settings,
+.save-conversation,
+.queue-recall-btn {
+  transition:
+    background-color var(--motion-tap) ease,
+    border-color var(--motion-tap) ease,
+    color var(--motion-tap) ease,
+    box-shadow var(--motion-panel) var(--ease-out),
+    transform 160ms var(--ease-tactile);
+}
+
+.model-trigger:active:not(:disabled),
+.composer-page-pill:active,
+.sources-pill:active,
+.button:active:not(:disabled),
+.drawer-settings:active:not(:disabled),
+.save-conversation:active:not(:disabled),
+.queue-recall-btn:active:not(:disabled) {
+  transform: scale(.955);
+}
+
+.send-button:active:not(:disabled) {
+  transform: scale(.91);
+}
+
+.try-next-chip:active {
+  transform: translateX(1px) scale(.98);
+}

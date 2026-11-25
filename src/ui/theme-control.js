@@ -12,3 +12,7 @@ export function paintTheme(document, button, value) {
   button.title = dark ? '切换为亮色模式' : '切换为暗色模式';
   button.setAttribute('aria-label', button.title);
 }
+
+export function transitionTheme(document, button, value) {
+  paintTheme(document, button, value);
+}

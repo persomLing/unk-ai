@@ -566,8 +566,15 @@ chrome.runtime.onInstalled.addListener(() => {
   installSelectionMenu();
 });
 
+const CONTEXT_MENU_ACTIONS = Object.freeze({
+  'unk-ai-ask-selection': 'explain',
+  'unk-ai-translate-selection': 'translate',
+  'unk-ai-summarize-selection': 'summarize',
+});
+
 chrome.contextMenus.onClicked.addListener(async (info, tab) => {
-  if (info.menuItemId !== 'unk-ai-ask-selection' || !tab?.id) return;
+  const actionKind = CONTEXT_MENU_ACTIONS[info.menuItemId];
+  if (!actionKind || !tab?.id) return;
   void chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
   let identity;
   try { identity = await documentIdentity(tab, { expectedUrl: tab.url }); }
@@ -625,7 +632,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     pageSelection: selection,
     [PAGE_SELECTION_ACTION_KEY]: {
       version: PAGE_SELECTION_ACTION_VERSION,
-      action: 'explain',
+      action: actionKind,
       requestId: crypto.randomUUID(),
       tabId: tab.id,
       windowId: tab.windowId,
@@ -648,8 +655,26 @@ chrome.runtime.onStartup.addListener(() => {
 function installSelectionMenu() {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
+      id: 'unk-ai-selection-root',
+      title: 'UNK AI',
+      contexts: ['selection'],
+    });
+    chrome.contextMenus.create({
       id: 'unk-ai-ask-selection',
-      title: '用 UNK AI 解释选中内容',
+      parentId: 'unk-ai-selection-root',
+      title: '解释选中内容',
+      contexts: ['selection'],
+    });
+    chrome.contextMenus.create({
+      id: 'unk-ai-translate-selection',
+      parentId: 'unk-ai-selection-root',
+      title: '翻译选中内容（中英互译）',
+      contexts: ['selection'],
+    });
+    chrome.contextMenus.create({
+      id: 'unk-ai-summarize-selection',
+      parentId: 'unk-ai-selection-root',
+      title: '提炼核心要点',
       contexts: ['selection'],
     });
   });
@@ -1317,6 +1342,64 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (networkMethod && networkReadingService) {
     networkReadingService[networkMethod](message, sender).then(sendResponse)
       .catch(error => sendResponse({ error: error.code || 'NETWORK_READING_FAILED', message: error.message }));
+    return true;
+  }
+  if (message?.type === 'LIST_READABLE_TABS') {
+    if (sender?.id !== chrome.runtime.id || sender?.tab
+      || !String(sender?.url || '').startsWith(chrome.runtime.getURL(''))) {
+      sendResponse({ error: '标签页列表只能由扩展界面读取。' });
+      return false;
+    }
+    chrome.tabs.query({ lastFocusedWindow: true }).then(allTabs => {
+      const readable = (allTabs || [])
+        .filter(tab => Number.isInteger(tab?.id) && /^https?:/i.test(tab.url || '') && !pageAccessError(tab.url))
+        .map(tab => ({
+          id: tab.id,
+          title: String(tab.title || tab.url || '').slice(0, 200),
+          url: String(tab.url || '').slice(0, 2000),
+          active: Boolean(tab.active),
+        }));
+      sendResponse({ tabs: readable });
+    }).catch(error => sendResponse({ error: error?.message || '读取标签页列表失败。' }));
+    return true;
+  }
+  if (message?.type === 'EXTRACT_MULTIPLE_TABS') {
+    if (sender?.id !== chrome.runtime.id || sender?.tab
+      || !String(sender?.url || '').startsWith(chrome.runtime.getURL(''))) {
+      sendResponse({ error: '多页读取只能由扩展界面发起。' });
+      return false;
+    }
+    const targets = Array.isArray(message.tabs) ? message.tabs.slice(0, 4) : [];
+    if (targets.length < 2) {
+      sendResponse({ error: '请至少选择 2 个标签页进行对比。' });
+      return false;
+    }
+    Promise.all(targets.map(async target => {
+      try {
+        const page = await withTimeout(
+          extractActivePage({ tabId: target.tabId, expectedUrl: target.expectedUrl }),
+          8000,
+          '读取该标签页超时。',
+        );
+        return {
+          ok: true,
+          tabId: target.tabId,
+          title: page?.title || target.title || target.expectedUrl,
+          url: page?.url || target.expectedUrl,
+          content: String(page?.content || ''),
+          truncated: Boolean(page?.truncated),
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          tabId: target.tabId,
+          title: target.title || target.expectedUrl,
+          url: target.expectedUrl,
+          error: error?.message || '读取失败',
+        };
+      }
+    })).then(pages => sendResponse({ pages }))
+      .catch(error => sendResponse({ error: error?.message || '多页读取失败。' }));
     return true;
   }
   if (message?.type === 'CAPTURE_PAGE_TARGET') {

@@ -16,8 +16,8 @@
   overflow: clip;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 52% 34% at 68% 28%, color-mix(in srgb, var(--accent-swatch) 14%, transparent), transparent 78%),
-    radial-gradient(ellipse 46% 30% at 28% 72%, color-mix(in srgb, var(--accent-swatch) 8%, transparent), transparent 82%);
+    radial-gradient(ellipse 52% 34% at 68% 28%, color-mix(in srgb, var(--teal) 7%, transparent), transparent 78%),
+    radial-gradient(ellipse 46% 30% at 28% 72%, color-mix(in srgb, var(--teal) 4%, transparent), transparent 82%);
 }
 .welcome-sky:has(~ .welcome[hidden]) { display: none; }
 .welcome, #messages, #setup-required { position: relative; z-index: 1; }
@@ -30,9 +30,6 @@
   border-radius: 50%;
   background: var(--star-color);
   opacity: var(--star-opacity);
-  box-shadow: 0 0 9px color-mix(in srgb, var(--star-color) 74%, transparent);
-  filter: blur(var(--star-blur));
-  will-change: transform, opacity;
 }
 
 .welcome-cover.atlas-cover {
@@ -63,8 +60,12 @@
   right: 0;
   width: min(48%, 260px);
   height: 100%;
-  pointer-events: none;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
 }
+.atlas-planet.is-dragging { cursor: grabbing; }
 .planet-outline, .planet-meridian, .planet-latitudes { stroke: color-mix(in srgb, var(--teal-dark) 72%, var(--ink-secondary)); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .planet-reflection { stop-color: var(--surface); stop-opacity: .86; }
 .planet-shade { stop-color: var(--accent-swatch); stop-opacity: .43; }
@@ -87,7 +88,8 @@
 
 .welcome-start { display: grid; gap: calc(6px * var(--density-factor)); margin-top: calc(12px * var(--density-factor)); }
 .welcome-chip { min-width: 0; text-align: left; }
-.welcome-card { display: grid; align-items: center; color: var(--ink); transition: var(--control-transition); }
+.welcome-card { display: grid; align-items: center; color: var(--ink); transition: var(--control-transition), transform 160ms var(--ease-tactile); }
+.welcome-card:active:not(:disabled) { transform: scale(.975); }
 .welcome-card:disabled { opacity: .58; }
 .welcome-card-icon { display: grid; place-items: center; }
 .welcome-card-icon .icon { width: 17px; height: 17px; }
@@ -175,8 +177,6 @@
   .welcome-start { animation-delay: 55ms; }
   .welcome-topics { animation-delay: 100ms; }
   .welcome-star { animation: welcome-depth var(--star-duration) ease-in-out var(--star-delay) infinite alternate; }
-  .planet-meridian { animation: planet-rotate 24s linear var(--phase) infinite; }
-  .planet-satellite { animation: planet-orbit 19s linear infinite; }
 }
 @keyframes welcome-depth {
   0% { transform: translate3d(0, 0, 0) scale(.72); opacity: calc(var(--star-opacity) * .48); }

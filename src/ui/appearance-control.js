@@ -13,8 +13,15 @@ export const DEFAULT_APPEARANCE = Object.freeze({
 const FONTS = new Set(['system', 'humanist', 'serif', 'rounded']);
 const BODY_FONT_SIZES = new Set([12, 13, 14, 16, 18, 20]);
 const DENSITIES = new Set(['compact', 'comfortable', 'spacious']);
-const ACCENTS = new Set(['forest', 'ocean', 'amber', 'tiffany', 'wine']);
-const TEXTURES = new Set(['none', 'grain']);
+const ACCENTS = new Set(['forest', 'matcha', 'parchment', 'ocean', 'dusk', 'wine']);
+const LEGACY_ACCENT_MAP = Object.freeze({ amber: 'parchment', tiffany: 'ocean', sage: 'matcha' });
+const TEXTURES = new Set(['none', 'grain', 'dots', 'grid', 'linen', 'lines']);
+
+function normalizeAccent(value) {
+  if (ACCENTS.has(value)) return value;
+  if (Object.prototype.hasOwnProperty.call(LEGACY_ACCENT_MAP, value)) return LEGACY_ACCENT_MAP[value];
+  return DEFAULT_APPEARANCE.accent;
+}
 
 export function normalizeAppearance(value) {
   if (!value || typeof value !== 'object' || value.version !== 1) return { ...DEFAULT_APPEARANCE };
@@ -23,7 +30,7 @@ export function normalizeAppearance(value) {
     font: FONTS.has(value.font) ? value.font : DEFAULT_APPEARANCE.font,
     bodyFontSize: BODY_FONT_SIZES.has(value.bodyFontSize) ? value.bodyFontSize : DEFAULT_APPEARANCE.bodyFontSize,
     density: DENSITIES.has(value.density) ? value.density : DEFAULT_APPEARANCE.density,
-    accent: ACCENTS.has(value.accent) ? value.accent : DEFAULT_APPEARANCE.accent,
+    accent: normalizeAccent(value.accent),
     texture: TEXTURES.has(value.texture) ? value.texture : value.grain === true ? 'grain' : DEFAULT_APPEARANCE.texture,
     companion: ['dynamic', 'static', 'off'].includes(value.companion) ? value.companion : DEFAULT_APPEARANCE.companion,
   };

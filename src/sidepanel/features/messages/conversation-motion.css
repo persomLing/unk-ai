@@ -36,8 +36,9 @@
 .thinking-block.is-open .thinking-body { grid-template-rows: 1fr; opacity: 1; visibility: visible; }
 .thinking-clip { min-height: 0; overflow: clip; }
 
-.message-agent-dot.is-done { border-color: var(--accent-line); color: var(--teal); }
+.message-agent-dot.is-done { border-color: var(--accent-line); color: var(--teal); background: var(--teal-soft); }
 .message-agent-dot .icon { width: 10px; height: 10px; }
+.message-agent-step.is-done strong { color: var(--ink-secondary); transition: color var(--motion-panel) ease; }
 .message-agent-step.is-active .message-agent-dot { border: 3px solid var(--teal-soft); background: var(--teal); }
 .message-agent-link {
   position: absolute;
@@ -60,6 +61,11 @@
   .thinking-body { transition: grid-template-rows 210ms var(--ease-out), opacity 160ms ease, visibility 0s 210ms; }
   .thinking-block.is-open .thinking-body { transition-delay: 0s; }
   .message-agent-step.is-active .message-agent-dot { animation: assistant-breathe 1.85s ease-in-out infinite; }
+  .message-agent-dot.is-done { animation: agent-check-pop 280ms var(--ease-tactile); }
+  .message-agent-dot.is-done path, .message-agent-dot.is-done polyline {
+    stroke-dasharray: 24;
+    animation: agent-check-draw 260ms var(--ease-out) both;
+  }
   .message-sources.is-open .source-popover-item:nth-child(-n+6) { animation: source-item-enter 145ms var(--ease-out) backwards; }
   .message-sources.is-open .source-popover-item:nth-child(2) { animation-delay: 25ms; }
   .message-sources.is-open .source-popover-item:nth-child(3) { animation-delay: 50ms; }
@@ -80,6 +86,8 @@
 }
 
 @keyframes assistant-breathe { 50% { scale: 1.06; opacity: .72; } }
+@keyframes agent-check-pop { 0% { scale: .7; } 60% { scale: 1.15; } 100% { scale: 1; } }
+@keyframes agent-check-draw { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
 @keyframes source-item-enter { from { opacity: 0; translate: 0 4px; } }
 @keyframes image-shimmer { from { translate: -95% 0; } to { translate: 95% 0; } }
 

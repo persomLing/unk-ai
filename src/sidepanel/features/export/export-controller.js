@@ -87,6 +87,7 @@ export function createExportController({ document = globalThis.document, downloa
     for (const input of list.querySelectorAll('input')) input.checked = session.selected.has(input.value);
     for (const control of dialog.querySelectorAll('input, [data-export-view]')) control.disabled = session.busy;
     save.disabled = session.busy || Boolean(issue);
+    save.classList?.toggle('is-exporting', Boolean(session.busy));
     save.textContent = session.busy ? '正在生成…' : `导出 ${session.format.toUpperCase()}`;
     dialog.setAttribute('aria-busy', String(session.busy));
     find('.export-format-note').textContent = session.format === 'pdf'

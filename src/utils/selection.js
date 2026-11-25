@@ -3,10 +3,12 @@ const MAX_SELECTION = 12000;
 export const PAGE_SELECTION_ACTION_KEY = 'pageSelectionAction';
 export const PAGE_SELECTION_ACTION_VERSION = 1;
 
+const ALLOWED_SELECTION_ACTIONS = new Set(['explain', 'translate', 'summarize']);
+
 export function normalizePageSelectionAction(value) {
   if (!value || typeof value !== 'object'
     || value.version !== PAGE_SELECTION_ACTION_VERSION
-    || value.action !== 'explain'
+    || !ALLOWED_SELECTION_ACTIONS.has(value.action)
     || typeof value.requestId !== 'string' || !value.requestId
     || !Number.isInteger(value.tabId)
     || !Number.isInteger(value.windowId)
@@ -19,7 +21,7 @@ export function normalizePageSelectionAction(value) {
     || (value.documentId && selection.documentId !== value.documentId)) return null;
   return {
     version: PAGE_SELECTION_ACTION_VERSION,
-    action: 'explain',
+    action: value.action,
     requestId: value.requestId.slice(0, 120),
     tabId: value.tabId,
     windowId: value.windowId,

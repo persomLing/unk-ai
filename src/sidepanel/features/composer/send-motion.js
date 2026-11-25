@@ -19,9 +19,10 @@ export function createSendMotion({ send, stop }) {
     dot.setAttribute('aria-hidden', 'true');
     button.append(previous, dot);
     const press = playMotion(button, 'send-rebound', [{ scale: 0.94 }, { scale: 1.045, offset: 0.6 }, { scale: 1 }], { duration: 210 });
-    const shrink = playMotion(previous, 'send-glyph-shrink', [
-      { opacity: 1, scale: 1 }, { opacity: 0.85, scale: 0.2, offset: 0.75 }, { opacity: 0, scale: 0.12 },
-    ], { duration: 92 });
+    const launch = busy
+      ? [{ opacity: 1, transform: 'translate(0, 0) scale(1)' }, { opacity: 0.9, transform: 'translate(2px, -4px) scale(0.55)', offset: 0.65 }, { opacity: 0, transform: 'translate(4px, -8px) scale(0.2)' }]
+      : [{ opacity: 1, scale: 1 }, { opacity: 0.85, scale: 0.2, offset: 0.75 }, { opacity: 0, scale: 0.12 }];
+    const shrink = playMotion(previous, 'send-glyph-shrink', launch, { duration: 115 });
     const midpoint = playMotion(dot, 'send-glyph-dot', [{ opacity: 0 }, { opacity: 0.9, offset: 0.45 }, { opacity: 0 }],
       { delay: 50, duration: 95, fill: 'backwards' });
     const expand = playMotion(glyph, 'send-glyph-expand', [{ opacity: 0, scale: 0.22 }, { opacity: 1, scale: 1 }],

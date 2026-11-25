@@ -19,8 +19,47 @@ export function createReadingCompanion({ button, panel, input, messages, occlude
   const pose = { x: 0, y: 0, curious: 0 };
   let aim = { x: 0, y: 0 };
   let selectionGaze = { x: 0, y: -1 };
-  let origin, raf, previous, blinkStart, blinkTimer, typingTimer, hoverTimer, selectionTimer;
+  let origin, raf, previous, blinkStart, blinkTimer, typingTimer, hoverTimer, selectionTimer, whisperTimer, pokeResetTimer;
   let composing = false, typing = false, marked = false, inView = false, animated = false;
+  let pokeCount = 0;
+  let lastTheme = root.dataset.theme || 'light';
+  const perch = button.parentElement;
+  const whisper = perch ? document.createElement('span') : null;
+  if (whisper) {
+    whisper.className = 'companion-whisper';
+    whisper.setAttribute('aria-hidden', 'true');
+    whisper.hidden = true;
+    perch.append(whisper);
+  }
+
+  function pickWhisper(pokes) {
+    if (pokes >= 5) return '再点就要躲进书页里了…';
+    if (pokes === 4) return '好啦好啦，我在认真看呢 ✨';
+    const hour = new Date().getHours();
+    const pool = hour < 6 || hour >= 23
+      ? ['夜深了，记得护眼呀', '点灯夜读，陪你再看一篇', '慢慢读，不着急']
+      : hour < 12
+        ? ['早安，今天想翻哪一页？', '刚泡好茶，想了解点什么？', '随时听你差遣']
+        : hour < 18
+          ? ['午后好，顺手整理点资料？', '有意思的段落随时喊我', '正在翻书待命…']
+          : ['傍晚好，今天收获怎么样？', '随时帮你划重点', '我在，直接问就好'];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function showWhisper(text) {
+    if (!whisper || !inView || root.dataset.companion === 'off') return;
+    if (!occluders.every(element => element.hidden)) return;
+    win.clearTimeout(whisperTimer);
+    whisper.textContent = text;
+    whisper.hidden = false;
+    whisper.classList.remove('is-visible');
+    void whisper.offsetWidth;
+    whisper.classList.add('is-visible');
+    whisperTimer = win.setTimeout(() => {
+      whisper.classList.remove('is-visible');
+      whisperTimer = win.setTimeout(() => { whisper.hidden = true; }, 220);
+    }, 2200);
+  }
 
   function draw(now) {
     paint({ now, pose, since, blinkStart, selectionGaze });
@@ -120,7 +159,17 @@ export function createReadingCompanion({ button, panel, input, messages, occlude
   button.addEventListener('pointerdown', event => {
     if (event.button === 0 && document.activeElement === input) event.preventDefault();
   }, listener);
-  button.addEventListener('click', () => { win.clearTimeout(hoverTimer); play('shy'); }, listener);
+  button.addEventListener('click', () => {
+    win.clearTimeout(hoverTimer);
+    play('shy');
+    pokeCount += 1;
+    win.clearTimeout(pokeResetTimer);
+    pokeResetTimer = win.setTimeout(() => { pokeCount = 0; }, 4500);
+    button.classList.remove('is-poked');
+    void button.offsetWidth;
+    button.classList.add('is-poked');
+    showWhisper(pickWhisper(pokeCount));
+  }, listener);
 
   function curious() {
     if (!animated) return;
@@ -163,11 +212,22 @@ export function createReadingCompanion({ button, panel, input, messages, occlude
   const visibility = new win.IntersectionObserver(([entry]) => { inView = entry.isIntersecting; sync(); });
   const invalidateOrigin = () => { origin = null; };
   const layout = new win.ResizeObserver(invalidateOrigin);
-  const prefs = new win.MutationObserver(sync);
+  const prefs = new win.MutationObserver(mutations => {
+    sync();
+    for (const mutation of mutations) {
+      if (mutation.target === root && mutation.attributeName === 'data-theme') {
+        const nextTheme = root.dataset.theme || 'light';
+        if (nextTheme !== lastTheme) {
+          lastTheme = nextTheme;
+          showWhisper(nextTheme === 'dark' ? '点灯夜读 ✨' : '天亮啦，继续阅读');
+        }
+      }
+    }
+  });
   visibility.observe(button);
   layout.observe(button);
   layout.observe(button.closest('.composer-area'));
-  prefs.observe(root, { attributes: true, attributeFilter: ['data-companion'] });
+  prefs.observe(root, { attributes: true, attributeFilter: ['data-companion', 'data-theme'] });
   for (const element of occluders) prefs.observe(element, { attributes: true, attributeFilter: ['hidden'] });
   win.addEventListener('resize', invalidateOrigin, passive);
   document.addEventListener('visibilitychange', sync, listener);
@@ -178,6 +238,9 @@ export function createReadingCompanion({ button, panel, input, messages, occlude
     accepted() { typing = false; win.clearTimeout(typingTimer); play('turnPage'); },
     dispose() {
       animated = false;
+      win.clearTimeout(whisperTimer);
+      win.clearTimeout(pokeResetTimer);
+      whisper?.remove();
       controller.abort();
       visibility.disconnect();
       layout.disconnect();
