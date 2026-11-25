@@ -1,0 +1,1252 @@
+/* ===== Fund Research Mode (盈米 MCP) — Paper & Ink Editorial System ===== */
+
+.fund-mode-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px;
+  background: color-mix(in srgb, var(--teal) 5.5%, var(--surface));
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink);
+  flex-shrink: 0;
+  min-width: 0;
+  z-index: 4;
+}
+
+.fund-mode-bar[hidden] {
+  display: none;
+}
+
+.fund-mode-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fund-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+  color: var(--teal);
+  white-space: nowrap;
+}
+
+.fund-mode-badge .icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* Pulsing radar ripple status dot */
+.fund-mode-dot {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--teal);
+  flex-shrink: 0;
+}
+
+.fund-mode-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: currentColor;
+  color: var(--teal);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fund-mode-dot.is-live::after {
+  animation: fund-dot-pulse 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+.fund-mode-dot.is-unconfigured {
+  background: var(--warning, #94581d);
+}
+
+.fund-mode-dot.is-unconfigured::after {
+  color: var(--warning, #94581d);
+  animation: fund-dot-pulse 2.6s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+@keyframes fund-dot-pulse {
+  0% { transform: scale(1); opacity: 0.55; }
+  75%, 100% { transform: scale(2.7); opacity: 0; }
+}
+
+.fund-mode-usage {
+  font-family: var(--folio-font);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-mode-usage-link {
+  text-decoration: none;
+  border-bottom: 1px dashed transparent;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+
+.fund-mode-usage-link:hover {
+  color: var(--teal);
+  border-bottom-color: currentColor;
+}
+
+.fund-mode-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.fund-mode-bar-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-secondary);
+  border-radius: var(--radius-pill);
+  padding: 2px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.fund-mode-bar-btn:hover {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.fund-mode-quick-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fund-mode-quick-btn .icon {
+  width: 12px;
+  height: 12px;
+  color: var(--teal);
+}
+
+.fund-mode-quick-btn.is-open {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+/* Floating Quickview Popover anchored below top Fund Mode bar */
+.fund-quick-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 12px;
+  left: 12px;
+  max-width: 520px;
+  margin-left: auto;
+  z-index: 50;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fund-pop-temp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.fund-pop-temp-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fund-pop-temp-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-pop-temp-item span { color: var(--muted); }
+.fund-pop-temp-item strong { font-family: var(--folio-font); color: var(--ink); font-weight: 700; }
+.fund-pop-temp-item em { font-style: normal; font-size: 10.5px; color: var(--teal); }
+
+.fund-feed-card.is-compact {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* ===== Dedicated Fund Welcome Stage ===== */
+.fund-welcome {
+  width: min(100%, var(--workspace-measure, 680px));
+  margin: auto;
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.fund-welcome[hidden] {
+  display: none;
+}
+
+/* Unified Editorial Cover Sheet (Paper & Ink Financial Broadsheet) */
+.fund-atlas-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.fund-atlas-sheet.atlas-cover {
+  padding: 0;
+  min-block-size: 0;
+}
+
+.fund-sheet-masthead {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 15px 18px 13px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--teal) 5.5%, var(--surface)) 0%,
+    var(--surface) 100%
+  );
+}
+
+.fund-sheet-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.fund-sheet-kicker {
+  font-family: var(--display-font);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  color: var(--teal);
+  opacity: 0.9;
+}
+
+.fund-sheet-title-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.fund-sheet-title-row h2 {
+  margin: 0;
+  font-family: var(--display-font);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.fund-sheet-time {
+  font-family: var(--folio-font);
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.fund-sheet-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.fund-sheet-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-secondary);
+  font-size: 11.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.fund-sheet-action .icon {
+  width: 12.5px;
+  height: 12.5px;
+}
+
+.fund-sheet-action:hover:not(:disabled) {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.fund-sheet-action.is-accent {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-weight: 600;
+}
+
+.fund-sheet-action.is-accent:hover:not(:disabled) {
+  background: var(--accent-fill);
+}
+
+.fund-sheet-icon-btn,
+.fund-temp-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease, background-color 140ms ease;
+}
+
+.fund-sheet-icon-btn .icon,
+.fund-temp-icon-btn .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.fund-sheet-icon-btn:hover:not(:disabled),
+.fund-temp-icon-btn:hover:not(:disabled) {
+  color: var(--teal);
+  background: var(--teal-soft);
+}
+
+.fund-sheet-icon-btn.is-spinning .icon,
+.fund-temp-icon-btn.is-spinning .icon {
+  animation: fund-spin 0.85s linear infinite;
+}
+
+@keyframes fund-spin {
+  to { transform: rotate(360deg); }
+}
+
+.fund-sheet-action:disabled,
+.fund-sheet-icon-btn:disabled,
+.fund-temp-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* Temperature 3-Column Hairline Ledger (Zero inner boxes!) */
+.fund-sheet-body {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.fund-ledger-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fund-ledger-col {
+  --gauge-color: var(--teal);
+  padding: 13px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.fund-ledger-col + .fund-ledger-col {
+  border-left: 1px solid var(--line);
+}
+
+/* Harmonious Paper & Ink semantic scale (no neon clash!) */
+.fund-ledger-col.tone-cold { --gauge-color: var(--teal); }
+.fund-ledger-col.tone-cool { --gauge-color: var(--information, #3b6f8c); }
+.fund-ledger-col.tone-neutral { --gauge-color: var(--warm, #a36222); }
+.fund-ledger-col.tone-warm { --gauge-color: var(--warning, #94581d); }
+.fund-ledger-col.tone-hot { --gauge-color: var(--danger, #c04338); }
+
+.fund-ledger-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.fund-ledger-name {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-ledger-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--gauge-color);
+  white-space: nowrap;
+}
+
+.fund-ledger-val {
+  font-family: var(--folio-font);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-ledger-val small {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 1px;
+}
+
+.fund-ledger-bar {
+  height: 2.5px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.fund-ledger-bar i {
+  display: block;
+  height: 100%;
+  width: var(--gauge-pct, 10%);
+  border-radius: inherit;
+  background: var(--gauge-color);
+  animation: fund-gauge-grow 520ms var(--ease-out) both;
+}
+
+@keyframes fund-gauge-grow {
+  from { width: 0; }
+  to { width: var(--gauge-pct, 10%); }
+}
+
+/* Quiet inline Market Ticker Strip (no pill borders!) */
+.fund-ticker-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 9px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-alt);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-ticker-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.fund-ticker-name {
+  color: var(--muted);
+}
+
+.fund-ticker-chg {
+  font-family: var(--folio-font);
+  font-weight: 600;
+}
+
+.fund-ticker-chg.is-up,
+.fund-pct-up {
+  color: var(--danger, #c04338);
+  font-weight: 600;
+}
+
+.fund-ticker-chg.is-down,
+.fund-pct-down {
+  color: var(--teal, #2d6a58);
+  font-weight: 600;
+}
+
+:root[data-theme="dark"] .fund-ticker-chg.is-up,
+:root[data-theme="dark"] .fund-pct-up {
+  color: #f87171;
+}
+
+:root[data-theme="dark"] .fund-ticker-chg.is-down,
+:root[data-theme="dark"] .fund-pct-down {
+  color: #4ade80;
+}
+
+.fund-temp-empty {
+  margin: 0;
+  padding: 14px 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.fund-temp-empty.is-error {
+  color: var(--danger);
+}
+
+.fund-temp-skeleton {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 14px 18px;
+}
+
+.fund-temp-skeleton i {
+  display: block;
+  height: 52px;
+  border-radius: var(--radius-xs);
+  background: linear-gradient(90deg, var(--surface-alt) 25%, var(--surface-card) 50%, var(--surface-alt) 75%);
+  background-size: 200% 100%;
+  animation: fund-shimmer 1.4s ease infinite;
+}
+
+@keyframes fund-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.fund-setup-callout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--warning-soft, #fbf2e3);
+  border: 1px solid var(--warm-line, rgba(163, 98, 34, 0.22));
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.fund-setup-callout[hidden] {
+  display: none;
+}
+
+.fund-setup-callout button {
+  flex-shrink: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--teal);
+  color: var(--on-teal, #fff);
+  cursor: pointer;
+}
+
+/* ===== Quiet Editorial Live Feed (Underline Tabs + Hairline List) ===== */
+.fund-feed-card {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 16px 10px;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-xs);
+}
+
+.fund-feed-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 4px;
+}
+
+.fund-feed-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.fund-feed-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  padding: 9px 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition: color 140ms ease;
+}
+
+.fund-feed-tab .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.fund-feed-tab:hover {
+  color: var(--ink);
+}
+
+.fund-feed-tab.is-active {
+  color: var(--teal);
+}
+
+.fund-feed-tab.is-active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--teal);
+}
+
+.fund-feed-cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.fund-feed-load-btn,
+.fund-temp-ask-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  border: 1px solid var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+  border-radius: var(--radius-pill);
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 140ms ease;
+}
+
+.fund-temp-ask-btn .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.fund-feed-load-btn:hover,
+.fund-temp-ask-btn:hover {
+  background: var(--accent-fill);
+}
+
+.fund-feed-placeholder {
+  margin: 0;
+  padding: 8px 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.fund-feed-error-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0 2px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.fund-feed-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.fund-feed-topics {
+  display: flex;
+  flex-direction: column;
+}
+
+.fund-topic-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% + 12px);
+  margin-inline: -6px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 140ms ease;
+}
+
+.fund-topic-row + .fund-topic-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+  background: var(--line);
+  transition: opacity 140ms ease;
+}
+
+.fund-topic-row:hover {
+  background: var(--teal-soft);
+}
+
+.fund-topic-row:hover::before,
+.fund-topic-row:hover + .fund-topic-row::before {
+  opacity: 0;
+}
+
+.fund-topic-rank {
+  font-family: var(--folio-font);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--teal);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+.fund-topic-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.fund-topic-copy strong {
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-topic-copy small {
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-topic-go {
+  color: var(--subtle);
+  flex-shrink: 0;
+  transition: transform 130ms ease, color 130ms ease;
+}
+
+.fund-topic-go .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.fund-topic-row:hover .fund-topic-go {
+  color: var(--teal);
+  transform: translateX(2px);
+}
+
+.fund-feed-popular {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 6px;
+}
+
+.fund-popular-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--surface-alt);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, transform 140ms ease;
+}
+
+.fund-popular-chip:hover {
+  transform: translateY(-1px);
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+}
+
+.fund-popular-code {
+  font-family: var(--folio-font);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--teal);
+}
+
+.fund-popular-name {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.fund-feed-footnote {
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  color: var(--subtle);
+}
+
+/* ===== Workflow Carousel (Mirrors Ordinary Welcome Carousel) ===== */
+.fund-workflows-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fund-workflows-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 3px;
+}
+
+.fund-workflows-header h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 680;
+  color: var(--ink);
+}
+
+.fund-workflows-header span {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.fund-carousel {
+  overflow: hidden;
+  padding: 3px 1px 6px;
+  margin: -3px -1px -6px;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.fund-carousel.is-looping {
+  mask-image: linear-gradient(90deg, transparent, #000 1.5%, #000 98.5%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 1.5%, #000 98.5%, transparent);
+}
+
+.fund-carousel.is-overflowing { cursor: grab; }
+.fund-carousel.is-dragging,
+.fund-carousel.is-dragging .fund-carousel-card { cursor: grabbing; }
+
+.fund-carousel-track {
+  display: flex;
+  gap: 9px;
+  width: max-content;
+}
+
+.fund-carousel.is-overflowing .fund-carousel-track {
+  will-change: transform;
+}
+
+.fund-quick-card {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 9px 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.fund-carousel-card {
+  flex: 0 0 clamp(190px, 43vw, 224px);
+  min-height: 64px;
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.fund-carousel-card strong,
+.fund-carousel-card small {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.fund-quick-card:hover {
+  border-color: color-mix(in srgb, var(--teal) 45%, var(--line));
+  background: var(--surface-card);
+  box-shadow: var(--shadow-sm);
+}
+
+.fund-carousel.is-dragging .fund-carousel-card {
+  box-shadow: none;
+  background: var(--surface);
+  border-color: var(--line);
+  transition: none;
+}
+
+.fund-card-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  flex-shrink: 0;
+}
+
+.fund-card-icon .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.fund-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fund-quick-card strong {
+  font-size: 12.5px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.fund-quick-card small {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* Fund-only section inside + menu */
+.fund-add-section[hidden] {
+  display: none;
+}
+
+/* Composer subtle Fund Mode highlight & Active Skill Chip */
+[data-workspace-mode="fund"] .composer-box {
+  border-color: var(--accent-line);
+}
+
+.fund-skill-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.fund-skill-chip[hidden] {
+  display: none;
+}
+
+.fund-skill-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+  background: var(--teal-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--teal);
+  font-size: 11.5px;
+}
+
+.fund-skill-pill .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.fund-skill-pill button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+  opacity: 0.72;
+}
+
+.fund-skill-pill button:hover {
+  opacity: 1;
+  background: var(--accent-fill);
+}
+
+.fund-skill-pill button .icon {
+  width: 11px;
+  height: 11px;
+}
+
+/* Financial Typography & Full-Width Tables inside Fund Messages */
+.assistant-message[data-fund-mode="true"] .message-content,
+[data-workspace-mode="fund"] .assistant-message .message-content {
+  font-variant-numeric: tabular-nums;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content table {
+  width: 100%;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content thead th {
+  background: var(--teal-soft);
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 7px 10px;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content tbody td {
+  padding: 6px 10px;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content tbody tr:nth-child(even) {
+  background: var(--surface-alt);
+}
+
+/* Controlled ECharts Cards */
+.fund-charts-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.fund-chart-card {
+  margin: 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.fund-chart-card img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 360px;
+  object-fit: contain;
+  background: #fff;
+}
+
+.fund-chart-card figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+.fund-chart-card figcaption a {
+  color: var(--teal);
+  text-decoration: none;
+}
+
+/* Fund Sources & Disclaimer Footer */
+.fund-meta-footer {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fund-sources-details {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-alt);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.fund-sources-details summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-weight: 500;
+  color: var(--ink);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.fund-sources-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.fund-sources-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fund-sources-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-source-tag {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.fund-source-tag.is-error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.fund-disclaimer {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-alt);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+/* Beginner-friendly floating hover guide tooltip */
+.fund-hover-tip {
+  position: fixed;
+  z-index: 90;
+  max-width: 268px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  animation: fund-tip-in 120ms var(--ease-out) both;
+}
+
+.fund-hover-tip[hidden] {
+  display: none;
+}
+
+.fund-hover-tip-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.48;
+  color: var(--ink);
+}
+
+.fund-hover-tip-example {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.fund-hover-tip-example span {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+@keyframes fund-tip-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (max-width: 420px) {
+  .fund-sheet-masthead { flex-direction: column; align-items: flex-start; }
+  .fund-ledger-grid { grid-template-columns: 1fr; }
+  .fund-ledger-col + .fund-ledger-col { border-left: 0; border-top: 1px solid var(--line); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fund-mode-dot.is-live::after,
+  .fund-mode-dot.is-unconfigured::after,
+  .fund-ledger-bar i,
+  .fund-sheet-icon-btn.is-spinning .icon,
+  .fund-temp-icon-btn.is-spinning .icon,
+  .fund-temp-skeleton i {
+    animation: none;
+  }
+}

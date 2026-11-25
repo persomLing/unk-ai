@@ -19,8 +19,8 @@
     radial-gradient(ellipse 52% 34% at 68% 28%, color-mix(in srgb, var(--teal) 7%, transparent), transparent 78%),
     radial-gradient(ellipse 46% 30% at 28% 72%, color-mix(in srgb, var(--teal) 4%, transparent), transparent 82%);
 }
-.welcome-sky:has(~ .welcome[hidden]) { display: none; }
-.welcome, #messages, #setup-required { position: relative; z-index: 1; }
+.welcome-sky:has(~ .welcome[hidden]):has(~ .fund-welcome[hidden]) { display: none; }
+.welcome, .fund-welcome, #messages, #setup-required { position: relative; z-index: 1; }
 .welcome-star {
   position: absolute;
   left: var(--star-x);

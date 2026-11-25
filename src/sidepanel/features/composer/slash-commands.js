@@ -53,13 +53,26 @@ export function createSlashCommandPalette({ input, container, getCommands, onExe
     heading.className = 'slash-menu-heading';
     heading.textContent = '快捷指令 · ↑↓ 选择 · Enter 确认';
     menu.append(heading);
+    const hasGroups = new Set(items.map(item => item.group || '')).size > 1;
+    let lastGroup = null;
     items.forEach((item, index) => {
+      const groupName = item.group || '';
+      if (hasGroups && groupName && groupName !== lastGroup) {
+        lastGroup = groupName;
+        const groupLabel = document.createElement('div');
+        groupLabel.className = 'slash-menu-group';
+        groupLabel.setAttribute('role', 'presentation');
+        groupLabel.textContent = groupName;
+        menu.append(groupLabel);
+      }
       const button = document.createElement('button');
       button.type = 'button';
       button.className = 'slash-menu-item';
       button.setAttribute('role', 'option');
       button.setAttribute('aria-selected', String(index === activeIndex));
       button.dataset.slashIndex = String(index);
+      if (item.tip) button.dataset.fundTip = item.tip;
+      if (item.example) button.dataset.fundExample = item.example;
       if (item.disabled) button.disabled = true;
       button.innerHTML = `<span class="slash-menu-icon">${icon(item.icon || 'sparkles')}</span>
         <span class="slash-menu-cmd"></span>

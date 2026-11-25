@@ -379,6 +379,8 @@ export function createConversationService(deps) {
       if (earlyConversation) {
         conversationQueue.bindConversation(submissionOwner, earlyConversation.id);
       }
+      const fundMode = Boolean(options.fundMode ?? (state.fundMode && !agentTask && !command));
+      const fundSkillId = fundMode ? String(options.fundSkillId ?? state.fundSkillId ?? '').trim() : '';
       if (earlyConversation && content && !agentTask) {
         earlyUserMessage = {
           id: makeId(),
@@ -386,6 +388,7 @@ export function createConversationService(deps) {
           content: messageWithSelection(content, selection),
           displayContent,
           ...(command ? { pageCommand: structuredClone(commandRequest) } : {}),
+          ...(fundMode ? { fundMode: true, ...(fundSkillId ? { fundSkillId } : {}) } : {}),
           pageContextEnabled: pageContextEnabled && readingPolicy.scope !== 'none',
           researchEnabled,
           readingPolicy,
@@ -409,6 +412,7 @@ export function createConversationService(deps) {
           modelId: modelId ?? activeChatProfile()?.id ?? '',
           reasoningEffort: effort,
           optimistic: true,
+          ...(fundMode ? { fundMode: true, ...(fundSkillId ? { fundSkillId } : {}) } : {}),
           ...command?.assistantFields,
         };
         earlyConversation.messages.push(earlyUserMessage, earlyAssistantMessage);
@@ -667,13 +671,14 @@ export function createConversationService(deps) {
             agentTask,
             displayContent,
             ...(command ? { pageCommand: structuredClone(commandRequest) } : {}),
+            ...(fundMode ? { fundMode: true, ...(fundSkillId ? { fundSkillId } : {}) } : {}),
             selection: selectionForMessage,
             status: 'complete',
             createdAt: now(),
             ...(includeVisual ? { includeVisual: true } : {}),
             ...(attachments.length ? { attachments: attachments.slice(0, 6) } : {}),
           };
-        earlyAssistantMessage = { id: makeId(), role: 'assistant', content: '', status: 'streaming', createdAt: now(), model: modelId ?? activeChatProfile()?.id ?? '', modelId: modelId ?? activeChatProfile()?.id ?? '', reasoningEffort: effort, selectionUsed: selectionForMessage };
+        earlyAssistantMessage = { id: makeId(), role: 'assistant', content: '', status: 'streaming', createdAt: now(), model: modelId ?? activeChatProfile()?.id ?? '', modelId: modelId ?? activeChatProfile()?.id ?? '', reasoningEffort: effort, selectionUsed: selectionForMessage, ...(fundMode ? { fundMode: true, ...(fundSkillId ? { fundSkillId } : {}) } : {}) };
         Object.assign(earlyAssistantMessage, command?.assistantFields);
         conversation.messages.push(earlyUserMessage, earlyAssistantMessage);
         submissionOwner.bind({ conversation, user: earlyUserMessage, assistant: earlyAssistantMessage });

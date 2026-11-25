@@ -4,6 +4,7 @@ import { pageForResearchScope, readSourcesForPage } from '../utils/research-cont
 import { suggestionMessages, parseSuggestionResponse } from '../sidepanel/features/messages/model-suggestions.js';
 import { samePrompt } from '../sidepanel/features/messages/retry-flow.js';
 import { runResearchAnswer, researchContextReserve } from '../sidepanel/features/web-research/research-answer-loop.js';
+import { runFundResearchAnswer, fundContextReserve } from '../sidepanel/features/fund-mode/fund-answer-loop.js';
 import { hasSelectedSkill, selectedSkill, SKILL_PROVIDER_ID } from '../sidepanel/features/skills/skill-context.js';
 import { appendProviderContext, requiredContextReserve } from './context-request.js';
 import { awaitWithAbort } from '../utils/abortable.js';
@@ -20,6 +21,7 @@ function friendlyError(error) {
  * this service never reads current UI state or owns an assistant DOM element. */
 export function createChatService({ repository, runner, modelGateway, contextAssembler,
   researchTools = null,
+  fundTools = null,
   replyPolicyFor = () => ({}),
   suggestionsEnabled = () => true,
   compress = async () => {}, now = Date.now, setInterval: every = globalThis.setInterval,
@@ -87,7 +89,8 @@ export function createChatService({ repository, runner, modelGateway, contextAss
       const fixedProfile = structuredClone(profile);
       const outlineEffort = policy.outlineReasoningEffortFor?.(fixedProfile);
       const messageOptions = { imageGenerationAvailable: Boolean(fixedProfile.imageProfile?.model) };
-      const researchEnabled = policy.research !== false && typeof researchTools === 'function' && fixedProfile.webSearchEnabled !== false;
+      const fundModeEnabled = Boolean(submittedUser.fundMode && typeof fundTools === 'function' && policy.fundMode !== false);
+      const researchEnabled = !fundModeEnabled && policy.research !== false && typeof researchTools === 'function' && fixedProfile.webSearchEnabled !== false;
       const requestPage = policy.isolated || user.pageContextEnabled === false
         || (user.pageSource && !sourceMatchesPage(user.pageSource, conversation.pageContext))
         ? null : structuredClone(pageForResearchScope(conversation.pageContext, user.readingPolicy ?? user.researchEnabled));
@@ -109,7 +112,8 @@ export function createChatService({ repository, runner, modelGateway, contextAss
       const result = await run.execute(async () => {
         assertCurrent();
         const requestReserve = Number(fixedProfile.maxTokens || 0)
-          + (researchEnabled ? researchContextReserve({ fetchEnabled: fixedProfile.webFetchEnabled !== false, now: now() }) : 0);
+          + (fundModeEnabled ? fundContextReserve({ now: now() })
+            : researchEnabled ? researchContextReserve({ fetchEnabled: fixedProfile.webFetchEnabled !== false, now: now() }) : 0);
         const requestConversation = policy.isolated ? { messages: [submittedUser, assistant] } : conversation;
         let contextInput = { question, selection: submittedUser.selection || null, attachments: submittedUser.attachments || [] };
         if (policy.prepareContext) {
@@ -190,15 +194,26 @@ export function createChatService({ repository, runner, modelGateway, contextAss
         const pageSources = [...(policy.sources || []), ...readSourcesForPage(requestPage, favicon)];
         assertCurrent();
         const answerStartedAt = now();
-        const result = researchEnabled
-          ? await runResearchAnswer({ connection, run, messages, createTools: researchTools, contextWindow,
-            maxTokens: fixedProfile.maxTokens, fetchEnabled: fixedProfile.webFetchEnabled !== false, now, ...callbacks,
+        const result = fundModeEnabled
+          ? await runFundResearchAnswer({ connection, run, messages, createSession: fundTools,
+            hasPageContext: Boolean(requestPage?.text),
+            skillId: submittedUser.fundSkillId || '',
+            question,
+            contextWindow, maxTokens: fixedProfile.maxTokens, now, ...callbacks,
             onToolStart: () => { pauseReasoning(); run.update({ reasoningFinishedAt: reasoningFinishedAt || undefined, reasoningSeconds: duration() }); },
-            onSources: values => {
+            onFundMeta: ({ fundSources, fundCharts, fundSkillId }) => {
               run.assertCurrent();
-              if (run.update({ sources: [...pageSources, ...values] })) repository.schedule(ref);
+              if (run.update({ fundMode: true, ...(fundSkillId ? { fundSkillId } : {}), fundSources, fundCharts })) repository.schedule(ref);
             } })
-          : { content: await connection.request({ requestId: 'answer', purpose: 'answer', messages, timeoutMs: 120000, ...callbacks }), sources: [] };
+          : researchEnabled
+            ? await runResearchAnswer({ connection, run, messages, createTools: researchTools, contextWindow,
+              maxTokens: fixedProfile.maxTokens, fetchEnabled: fixedProfile.webFetchEnabled !== false, now, ...callbacks,
+              onToolStart: () => { pauseReasoning(); run.update({ reasoningFinishedAt: reasoningFinishedAt || undefined, reasoningSeconds: duration() }); },
+              onSources: values => {
+                run.assertCurrent();
+                if (run.update({ sources: [...pageSources, ...values] })) repository.schedule(ref);
+              } })
+            : { content: await connection.request({ requestId: 'answer', purpose: 'answer', messages, timeoutMs: 120000, ...callbacks }), sources: [] };
         assertCurrent();
         const answerMs = Math.max(0, now() - answerStartedAt);
         pauseReasoning();
@@ -208,7 +223,14 @@ export function createChatService({ repository, runner, modelGateway, contextAss
           sources.push({ title: `${repo.owner}/${repo.name}`, url: repo.url, domain: 'github.com', favicon: 'https://github.githubassets.com/favicons/favicon.svg' });
         }
         return { content: formatContent(result.content), reasoning, reasoningSeconds: duration(), sources,
-          pageSource: pageSourceFor(requestPage), ...policy.assistantFields, ...policy.completionFields?.({ answerMs }) };
+          pageSource: pageSourceFor(requestPage),
+          ...(fundModeEnabled ? {
+            fundMode: true,
+            ...(result.fundSkillId || submittedUser.fundSkillId ? { fundSkillId: result.fundSkillId || submittedUser.fundSkillId } : {}),
+            fundSources: result.fundSources || [],
+            fundCharts: result.fundCharts || [],
+          } : {}),
+          ...policy.assistantFields, ...policy.completionFields?.({ answerMs }) };
       });
       if (policy.suggestions !== false && run.status === 'completed' && result?.content) void suggest(ref, fixedProfile, result.content);
       return result;

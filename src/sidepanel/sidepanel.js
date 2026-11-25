@@ -93,6 +93,8 @@ import { createSlashCommandPalette } from './features/composer/slash-commands.js
 import './features/composer/slash-commands.css';
 import { createMultiTabCompare } from './features/page-reading/multi-tab-compare.js';
 import './features/page-reading/multi-tab-compare.css';
+import { createFundModeController, FUND_WORKFLOW_ITEMS, MARKET_TEMP_PROMPT_SCENARIO } from './features/fund-mode/fund-mode-ui.js';
+import './features/fund-mode/fund-mode.css';
 import { imageReplyLayout } from './features/illustration/illustration-layout.js';
 import { directImageForMessage, IMAGE_MODEL_REQUIRED, imageReferenceForGeneration } from '../utils/image-generation-command.js';
 import { createVideoNotesEntry } from './features/video-notes/video-notes-entry.js';
@@ -230,6 +232,8 @@ const state = {
   conversation: null,
   conversations: [],
   config: null,
+  fundMode: false,
+  fundSkillId: '',
   selectedModelId: '',
   selectedEffort: 'default',
   controller: null,
@@ -1135,7 +1139,8 @@ function renderConversation({ scroll = false } = {}) {
   const enteringWelcome = !hasMessages && !messagesElement.hidden;
   welcome.hidden = hasMessages;
   messagesElement.hidden = !hasMessages;
-  welcomeView.setActive(!hasMessages);
+  welcomeView.setActive(!hasMessages && !state.fundMode);
+  if (typeof fundModeUi !== 'undefined') fundModeUi.syncView({ hasMessages });
   const heading = $('#conversation-title');
   const title = hasMessages ? conversation.title || '新对话' : '';
   heading.hidden = !hasMessages;
@@ -2155,6 +2160,16 @@ async function compressContext(conversation, beforeAssistantId, options) {
 }
 
 async function sendMessage(text = pastedText.getValue(), options = {}) {
+  if (!options.fromQueue && state.fundMode && !options.agentTask && !options.pageCommand) {
+    const configured = await fundModeUi?.ensureConfigured?.();
+    if (!configured) {
+      toast('请先在设置页「基金研究」中填写盈米 MCP API Key。', 'error');
+      return;
+    }
+    const turnSkillId = options.fundSkillId || state.fundSkillId || '';
+    if (turnSkillId) options = { ...options, fundSkillId: turnSkillId };
+    if (state.fundSkillId) fundModeUi?.setSkill?.('');
+  }
   if (!options.fromQueue && state.pageSelection?.source === 'conversation') {
     options = { ...options, directModelRequest: true, pageContextEnabled: false,
       agentTask: false, pageTargetPromise: Promise.resolve(null) };
@@ -2349,21 +2364,110 @@ $('#multi-tab-compare-button')?.addEventListener('click', () => {
   if (state.generatingId || state.preparingAttachments || agentSlot?.isBusy()) return;
   void multiTabCompare.open();
 });
+function applyFundScenario(scenario) {
+  if (!scenario) return;
+  if (scenario.skillId) fundModeUi?.setSkill?.(scenario.skillId);
+  pastedText.setValue(scenario.prompt || '');
+  state.draft = pastedText.getValue();
+  if (scenario.requirePage) {
+    state.pageContextPreference = true;
+    state.disablePageContext = false;
+    syncPageToggleControl();
+  }
+  resizeInput();
+  updateComposer();
+  if (scenario.autoSend) {
+    void sendMessage(scenario.prompt, {
+      ...(scenario.requirePage ? { pageContextEnabled: true } : {}),
+      ...(scenario.skillId ? { fundSkillId: scenario.skillId } : {}),
+    });
+  } else {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+}
+const fundModeUi = createFundModeController({
+  appShell: $('#app'),
+  welcome,
+  fundBar: $('#fund-mode-bar'),
+  fundWelcome: $('#fund-welcome'),
+  input,
+  attachMenuFundBtn: $('#fund-mode-toggle'),
+  fundMenuSection: $('#fund-menu-section'),
+  fundSkillChip: $('#fund-skill-chip'),
+  onSkillChange: (skillId) => {
+    state.fundSkillId = skillId || '';
+  },
+  onOpenSettings: () => {
+    toggleModelDropdown(false);
+    const url = chrome.runtime.getURL?.('src/options/index.html#fund-section');
+    if (url && chrome.tabs?.create) void chrome.tabs.create({ url });
+    else chrome.runtime.openOptionsPage();
+  },
+  onModeChange: (active) => {
+    state.fundMode = active;
+    if (!active) state.fundSkillId = '';
+    if (active && agentSlot?.isMode?.()) {
+      agentSlot.setMode(false);
+    }
+    const hasMessages = Boolean(state.conversation?.messages?.length);
+    welcomeView.setActive(!hasMessages && !active);
+    updateComposer();
+  },
+  onQuickPrompt: applyFundScenario,
+});
+$('#fund-mode-toggle')?.addEventListener('click', () => {
+  toggleAttachMenu(false);
+  if (state.generatingId || state.preparingAttachments || agentSlot?.isBusy()) return;
+  const hasMessages = Boolean(state.conversation?.messages?.length);
+  fundModeUi.toggle({ hasMessages });
+});
+$('#fund-menu-section')?.addEventListener('click', (event) => {
+  const btn = event.target.closest?.('[data-fund-workflow]');
+  if (!btn) return;
+  toggleAttachMenu(false);
+  if (!state.fundMode || state.generatingId || state.preparingAttachments || agentSlot?.isBusy()) return;
+  const id = btn.dataset.fundWorkflow;
+  const scenario = id === MARKET_TEMP_PROMPT_SCENARIO.id
+    ? MARKET_TEMP_PROMPT_SCENARIO
+    : FUND_WORKFLOW_ITEMS.find(item => item.id === id);
+  if (scenario) applyFundScenario(scenario);
+});
 const slashCommands = createSlashCommandPalette({
   input,
   container: $('#composer'),
-  getCommands: () => [
-    { id: 'compare', command: '/compare', label: '多页对比', description: '勾选 2–4 个标签页联合阅读并对比', icon: 'layers', keywords: ['duoye', 'duibi', '多页', '对比', 'tab'] },
-    { id: 'sum', command: '/sum', label: '总结当前页', description: '快速总结当前打开的网页内容', icon: 'article', keywords: ['summary', 'zongjie', '总结', '当前页'] },
-    { id: 'video', command: '/video', label: '视频笔记', description: '为当前 B 站视频生成中文笔记', icon: 'video', disabled: Boolean($('#video-notes-button')?.disabled), keywords: ['shipin', 'bili', '视频', '笔记'] },
-    { id: 'img', command: '/img', label: '生成图片', description: '进入图片生成模式', icon: 'sparkles', keywords: ['image', 'shengtu', '生图', '画图'] },
-    { id: 'new', command: '/new', label: '新建对话', description: '开启一段新的空白对话', icon: 'edit', keywords: ['chat', 'xin', '新对话'] },
-  ],
+  getCommands: () => {
+    const fundOnlyCommands = state.fundMode
+      ? [MARKET_TEMP_PROMPT_SCENARIO, ...FUND_WORKFLOW_ITEMS].map(scenario => ({
+        id: `fund:${scenario.id}`,
+        group: '基金研究 · 盈米 MCP',
+        command: scenario.command,
+        label: scenario.title,
+        description: scenario.menuDesc || scenario.description,
+        tip: scenario.tip || '',
+        example: scenario.example || '',
+        icon: scenario.icon,
+        keywords: scenario.keywords,
+        fundScenario: scenario,
+      }))
+      : [];
+    return [
+      { id: 'fund', group: state.fundMode ? '基金研究 · 盈米 MCP' : '通用指令', command: '/fund', label: state.fundMode ? '退出基金模式' : '基金研究模式', description: state.fundMode ? '返回普通阅读与对话模式' : '开启盈米 MCP 金融基金研究工作台', icon: 'trending-up', keywords: ['jijin', 'fund', '基金', '理财', '盈米', 'mcp'] },
+      ...fundOnlyCommands,
+      { id: 'compare', group: '通用指令', command: '/compare', label: '多页对比', description: '勾选 2–4 个标签页联合阅读并对比', icon: 'layers', keywords: ['duoye', 'duibi', '多页', '对比', 'tab'] },
+      { id: 'sum', group: '通用指令', command: '/sum', label: '总结当前页', description: '快速总结当前打开的网页内容', icon: 'article', keywords: ['summary', 'zongjie', '总结', '当前页'] },
+      { id: 'video', group: '通用指令', command: '/video', label: '视频笔记', description: '为当前 B 站视频生成中文笔记', icon: 'video', disabled: Boolean($('#video-notes-button')?.disabled), keywords: ['shipin', 'bili', '视频', '笔记'] },
+      { id: 'img', group: '通用指令', command: '/img', label: '生成图片', description: '进入图片生成模式', icon: 'sparkles', keywords: ['image', 'shengtu', '生图', '画图'] },
+      { id: 'new', group: '通用指令', command: '/new', label: '新建对话', description: '开启一段新的空白对话', icon: 'edit', keywords: ['chat', 'xin', '新对话'] },
+    ];
+  },
   onExecute: item => {
     pastedText.setValue('');
     state.draft = '';
     resizeInput();
     updateComposer();
+    if (item.fundScenario) { applyFundScenario(item.fundScenario); return; }
+    if (item.id === 'fund') { fundModeUi.toggle({ hasMessages: Boolean(state.conversation?.messages?.length) }); return; }
     if (item.id === 'compare') { void multiTabCompare.open(); return; }
     if (item.id === 'img') { activateImageDraft(); return; }
     if (item.id === 'video') { $('#video-notes-button')?.click(); return; }
@@ -2912,6 +3016,7 @@ window.addEventListener('pagehide', () => {
   composerAddMenu?.dispose();
   if (typeof slashCommands !== 'undefined') slashCommands.dispose();
   if (typeof multiTabCompare !== 'undefined') multiTabCompare.dispose();
+  if (typeof fundModeUi !== 'undefined') fundModeUi.dispose();
   videoNotesEntry?.dispose();
   videoFrameActions.dispose();
   videoTimestampNavigation?.dispose();

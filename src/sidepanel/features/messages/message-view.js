@@ -9,6 +9,8 @@ import { imageAttachmentLoadError, safeAttachmentDataUrl } from '../../../utils/
 import { escapeHtml } from '../../core/dom.js';
 import { formatTime } from '../../core/format.js';
 import { hydrateIcons, icon } from '../../icons.js';
+import { disclaimerForSkill } from '../fund-mode/fund-mode-prompt.js';
+import { getFundSkill } from '../fund-mode/fund-skills.js';
 import { agentPanelMarkup, syncAgentPanel } from './agent-message-view.js';
 import { captureViewPosition, restoreViewPosition } from './scroll-position.js';
 import { replyElapsedLabel } from './reply-progress.js';
@@ -160,6 +162,64 @@ function userMessageMarkup(message) {
   return `<article class="message user-message${operation ? ' user-operation' : ''}" data-message-id="${message.id}">${operationHeader || messageModeBadgeMarkup(message)}${selection}${images}${body}${names ? `<div class="message-files">${names}</div>` : ''}${skills}${imageErrors}${actions}</article>`;
 }
 
+function decorateFundMetrics(container) {
+  if (!container?.querySelectorAll) return;
+  for (const cell of container.querySelectorAll('td')) {
+    const raw = (cell.textContent || '').trim();
+    if (/^\+\d+(?:\.\d+)?%$/.test(raw)) {
+      cell.classList.add('fund-pct-up');
+      cell.classList.remove('fund-pct-down');
+    } else if (/^[-−]\d+(?:\.\d+)?%$/.test(raw)) {
+      cell.classList.add('fund-pct-down');
+      cell.classList.remove('fund-pct-up');
+    }
+  }
+}
+
+function fundChartsMarkup(message) {
+  const charts = Array.isArray(message.fundCharts) ? message.fundCharts : [];
+  const safe = charts.filter(item => typeof item?.url === 'string' && item.url.startsWith('https://')).slice(0, 4);
+  if (!safe.length) return '';
+  const items = safe.map(item => `
+    <figure class="fund-chart-card">
+      <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.label || '盈米研报图表')}" loading="lazy" referrerpolicy="no-referrer" />
+      <figcaption>
+        <span>${escapeHtml(item.label || '盈米研报图表')}</span>
+        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">查看大图</a>
+      </figcaption>
+    </figure>
+  `).join('');
+  return `<div class="fund-charts-grid">${items}</div>`;
+}
+
+function fundMetaMarkup(message) {
+  if (!message.fundMode) return '';
+  const status = message.status || 'complete';
+  const list = Array.isArray(message.fundSources) ? message.fundSources : [];
+  const skill = getFundSkill(message.fundSkillId);
+  const skillBadge = skill ? ` · ${escapeHtml(skill.shortLabel)}` : '';
+  const sourcesHtml = list.length ? `
+    <details class="fund-sources-details">
+      <summary><span>盈米 MCP 数据调用（${list.length} 项）${skillBadge}</span><span>展开</span></summary>
+      <ul class="fund-sources-list">
+        ${list.map(item => {
+          const badge = item.ok === false
+            ? '<span class="fund-source-tag is-error">失败</span>'
+            : item.cached
+              ? '<span class="fund-source-tag">命中缓存</span>'
+              : `<span class="fund-source-tag">${Number(item.durationMs || 0)} ms</span>`;
+          return `<li><span>${escapeHtml(item.label || item.tool || '盈米查询')}</span>${badge}</li>`;
+        }).join('')}
+      </ul>
+    </details>
+  ` : '';
+  const disclaimerHtml = status === 'complete' || status === 'stopped'
+    ? `<p class="fund-disclaimer">${escapeHtml(disclaimerForSkill(message.fundSkillId))}</p>`
+    : '';
+  if (!sourcesHtml && !disclaimerHtml) return '';
+  return `<div class="fund-meta-footer">${sourcesHtml}${disclaimerHtml}</div>`;
+}
+
 function sourcesMarkup(message) {
   const sources = Array.isArray(message.sources) ? message.sources : [];
   if (!sources.length) return '';
@@ -242,6 +302,8 @@ function assistantParts(message, { showSuggestions = false, frameActions, allowI
     ? agentPanelMarkup(message.agent)
     : '';
   const sources = textOnly ? '' : sourcesMarkup(message);
+  const fundCharts = textOnly ? '' : fundChartsMarkup(message);
+  const fundMeta = textOnly ? '' : fundMetaMarkup(message);
   const tryNext = textOnly ? '' : tryNextMarkup(message, { showSuggestions });
   const details = textOnly ? '' : videoNotesDetailsMarkup(message.videoNotesScope);
   const frameButtons = frameActions?.buttons?.length ? `<div class="video-frame-actions" role="group" aria-label="视频画面识别">${frameActions.buttons.map(button =>
@@ -252,7 +314,7 @@ function assistantParts(message, { showSuggestions = false, frameActions, allowI
     gallery: textOnly ? '' : generatedImagesMarkup(message, { allowImageReference }),
     illustration: textOnly ? '' : illustrationNote(message),
     videoIllustration: textOnly ? '' : videoIllustrationNote(message),
-    sources, tryNext, stopped, error,
+    sources, fundCharts, fundMeta, tryNext, stopped, error,
     actions: `<div class="message-actions"${status === 'streaming' ? ' inert' : ''}>
       <button class="icon-button" data-action="copy" type="button" aria-label="复制回答" title="选择复制格式" aria-haspopup="menu" aria-expanded="false">${icon('copy')}</button>
       ${message.agent ? (['failed', 'cancelled'].includes(message.agent.status) ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>` : '') : frameActions?.hideRetry ? '' : `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`}${retry}
@@ -362,12 +424,15 @@ export function paintConversationMessage(article, message, options = {}) {
     directHeight = article.querySelector('[data-image-reply-placeholder]')?.offsetHeight || 0;
   }
   if (!previous) article.className = 'message assistant-message';
+  if (message.fundMode) article.dataset.fundMode = 'true';
+  else delete article.dataset.fundMode;
   paintParts(article, parts, cache);
   updateLiveReply(article, message, options.imageLayout);
   const content = cache.get('body').node;
   if (galleryChanged) replaceMessageIllustrations(content, gallery ? nodeFromMarkup(article.ownerDocument, gallery) : null);
   if (galleryChanged || previous?.content !== message.content || previous?.status !== status) {
     renderMessageContent(content, message.content, status === 'streaming');
+    if (message.fundMode && status !== 'streaming') decorateFundMetrics(content);
   } else syncMessageDecorations(article);
   articlePaints.set(article, { parts: cache, gallery, status, content: message.content });
   if (finished) finishReplyMotion(article, hadCursor);

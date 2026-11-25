@@ -1,9 +1,23 @@
 import { icon } from '../../icons.js';
+import { formatTime } from '../../core/format.js';
 import { renderTurnPreview } from './turn-preview.js';
 import { presentVideoNotesMessage } from '../video-notes/video-notes-presentation.js';
 
 const MAX_PREVIEW = 220;
 const HIDE_DELAY = 120;
+
+export function formatTurnPreviewTime(timestamp, nowMs = Date.now()) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '';
+  const ref = new Date(nowMs);
+  const timeText = formatTime(date);
+  if (date.toDateString() === ref.toDateString()) return timeText;
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  if (date.getFullYear() === ref.getFullYear()) return `${month}-${day} ${timeText}`;
+  return `${date.getFullYear()}-${month}-${day} ${timeText}`;
+}
 
 function compactText(value) {
   return String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -44,6 +58,7 @@ export function turnsForConversation(conversation) {
         assistant: null,
         question: originalQuestionFor(message),
         answer: '',
+        createdAt: message.createdAt || null,
         pageSource: message.pageSource || null,
       };
       continue;
@@ -52,6 +67,7 @@ export function turnsForConversation(conversation) {
       pending.assistant = message;
       pending.assistantId = message.id;
       pending.answer = previewTextFor(message);
+      if (!pending.createdAt && message.createdAt) pending.createdAt = message.createdAt;
       if (!pending.pageSource && message.pageSource) pending.pageSource = message.pageSource;
     }
   }
@@ -153,6 +169,21 @@ export function createTurnNavigator({
 
   function renderPreview(turn, button) {
     preview.replaceChildren();
+    const index = turns.indexOf(turn);
+    const meta = document.createElement('div');
+    meta.className = 'turn-preview-meta';
+    const order = document.createElement('span');
+    order.className = 'turn-preview-index';
+    order.textContent = `${index >= 0 ? index + 1 : 1} / ${turns.length || 1}`;
+    meta.append(order);
+    const timeText = formatTurnPreviewTime(turn.createdAt, now());
+    if (timeText) {
+      const time = document.createElement('time');
+      time.className = 'turn-preview-time';
+      time.textContent = timeText;
+      meta.append(time);
+    }
+
     const title = previewRow('turn-preview-title', turn.question || '未命名提问');
     title.title = turn.question || '';
     const answer = previewRow('turn-preview-answer', turn.answer || previewTextFor(turn.assistant));
@@ -160,7 +191,7 @@ export function createTurnNavigator({
     if (display?.content) renderTurnPreview(answer, display.content);
     answer.setAttribute('role', 'region');
     answer.setAttribute('aria-label', '回答预览');
-    preview.append(title, answer);
+    preview.append(meta, title, answer);
 
     const sourceUrl = String(turn.pageSource?.url || '');
     if (sourceUrl) {

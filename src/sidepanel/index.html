@@ -44,6 +44,7 @@
         </div>
       </header>
 
+      <div id="fund-mode-bar" class="fund-mode-bar" role="region" aria-label="基金研究模式状态" hidden></div>
       <div id="conversation-stage" class="conversation-stage">
       <main id="conversation-view" class="conversation-view">
         <div id="welcome-sky" class="welcome-sky" aria-hidden="true"></div>
@@ -108,6 +109,7 @@
           </template>
         </section>
 
+        <section id="fund-welcome" class="fund-welcome" aria-label="基金研究工作台" hidden></section>
         <div id="messages" class="messages" aria-live="polite" aria-label="对话消息" data-next-exploration="off" hidden></div>
         <div id="scroll-latest" class="scroll-latest" hidden>
           <button class="scroll-latest-button" type="button" aria-label="滚动到最新消息">
@@ -176,6 +178,7 @@
             <span class="composer-image-chip"><i data-icon="sparkles"></i><strong>生成图片</strong><button id="clear-image-mode" type="button" aria-label="退出生图模式" title="退出生图模式，保留提示词"><i data-icon="close"></i></button></span>
             <small id="composer-image-scope">只使用提示词和参考图</small>
           </div>
+          <div id="fund-skill-chip" class="fund-skill-chip" hidden></div>
           <textarea id="message-input" rows="1" maxlength="200000" placeholder="输入消息…" aria-label="输入消息"></textarea>
           <div id="composer-page-choice" class="composer-page-choice" role="group" aria-labelledby="composer-page-choice-text" hidden>
             <span id="composer-page-choice-text"></span>
@@ -196,6 +199,19 @@
                   <button type="button" role="menuitem" data-attach-kind="document"><i data-icon="file"></i><span class="add-menu-name">上传文档</span><span class="add-menu-description">PDF、Word、文本等</span></button>
                   <button id="generate-image-button" type="button" role="menuitem"><i data-icon="sparkles"></i><span class="add-menu-name">生成图片</span><span class="add-menu-description">添加生图指令</span></button>
                   <button id="multi-tab-compare-button" type="button" role="menuitem"><i data-icon="layers"></i><span class="add-menu-name">多页对比</span><span class="add-menu-description">勾选 2–4 个标签联合阅读</span></button>
+                  <button id="fund-mode-toggle" type="button" role="menuitem" aria-pressed="false"><i data-icon="trending-up"></i><span class="add-menu-name">基金研究模式</span><span class="add-menu-description">盈米 MCP 专业基金数据</span><i class="add-menu-check" data-icon="check"></i></button>
+                  <div id="fund-menu-section" class="fund-add-section" role="group" aria-label="基金研究组合" hidden>
+                    <div class="add-menu-heading" role="presentation">盈米投研 SOP 组合</div>
+                    <button type="button" role="menuitem" data-fund-workflow="market-temp"><i data-icon="thermometer"></i><span class="add-menu-name">今日市场温度与复盘</span><span class="add-menu-description">看大盘冷热、宽基估值与行情复盘</span></button>
+                    <button type="button" role="menuitem" data-fund-workflow="single-fund"><i data-icon="stethoscope"></i><span class="add-menu-name">单基深度研报</span><span class="add-menu-description">买前体检：看业绩、估值与最大回撤</span></button>
+                    <button type="button" role="menuitem" data-fund-workflow="fund-screen"><i data-icon="search"></i><span class="add-menu-name">专业选基与债基排雷</span><span class="add-menu-description">按条件筛候选基金，或排查债基跳水</span></button>
+                    <button type="button" role="menuitem" data-fund-workflow="compare-funds"><i data-icon="scale"></i><span class="add-menu-name">多基横向对比</span><span class="add-menu-description">多只基金 PK：看抗跌、费率与重合度</span></button>
+                    <button type="button" role="menuitem" data-fund-workflow="portfolio-diag"><i data-icon="pie-chart"></i><span class="add-menu-name">持仓组合诊断回测</span><span class="add-menu-description">已买多只基金体检：看集中度与回测</span></button>
+                    <button type="button" role="menuitem" data-fund-workflow="strategy-hot"><i data-icon="compass"></i><span class="add-menu-name">投顾策略与调仓追踪</span><span class="add-menu-description">看投顾组合持仓、调仓记录与服务费</span></button>
+                    <button type="button" role="menuitem" data-fund-workflow="wealth-plan"><i data-icon="layers"></i><span class="add-menu-name">家庭财务与配置规划</span><span class="add-menu-description">把闲钱按期限分成活钱/稳钱/长钱</span></button>
+                    <button type="button" role="menuitem" data-fund-workflow="product-rules"><i data-icon="shield-check"></i><span class="add-menu-name">费率规则与交易日历</span><span class="add-menu-description">查手续费、A/C类对比与赎回到账日</span></button>
+                    <button type="button" role="menuitem" data-fund-workflow="verify-page"><i data-icon="file-search"></i><span class="add-menu-name">核验当前网页基金</span><span class="add-menu-description">读取当前页基金，用权威数据验真伪</span></button>
+                  </div>
                   <div id="composer-modes" class="composer-add-section" role="group" aria-label="页面能力" hidden>
                     <button id="agent-toggle" type="button" role="menuitem" aria-label="页面操作" aria-pressed="false" title="在授权后点击、输入和导航"><i data-icon="globe"></i><span class="add-menu-name">页面操作</span><span class="add-menu-description">协助点击与填写</span><i class="add-menu-check" data-icon="check"></i></button>
                     <div class="add-menu-video-row">

@@ -8,6 +8,7 @@ import { createModelGateway } from '../../app/model-gateway.js';
 import { createApplicationDiagnostics } from '../../utils/diagnostic-observer.js';
 import { readSourcesForPage } from '../../utils/research-context.js';
 import { createResearchToolSession } from '../features/web-research/research-tools.js';
+import { createFundToolSession } from '../features/fund-mode/fund-answer-loop.js';
 import { createPublicResearchTransport } from '../features/web-research/public-research-transport.js';
 import { createSkillContextProvider } from '../features/skills/skill-context.js';
 import { createVideoContextProvider } from '../features/video-notes/transcript-context.js';
@@ -33,7 +34,7 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
   textOnly = false, suggestionsEnabled = () => true,
   readVideoTranscript = (target, options) => readTranscriptFromPort(browser?.connect, target, options),
   scanVideo = (offer, options) => scanVideoPage(browser?.connect, offer, options),
-  researchTools = createResearchToolSession, researchOptions = {}, recordDiagnostic = () => {}, nowMs = Date.now, ...ports }) {
+  researchTools = createResearchToolSession, fundTools = createFundToolSession, researchOptions = {}, recordDiagnostic = () => {}, nowMs = Date.now, ...ports }) {
   // Config loads after this composition and may change later. ChatService
   // checks the search setting from each turn's frozen model profile.
   const publicResearch = createPublicResearchTransport(researchOptions);
@@ -68,7 +69,9 @@ export function createSidepanelApplication({ state, conversationSaver, browser, 
   const chatService = createChatService({ repository, runner, modelGateway, contextAssembler, now: nowMs,
     replyPolicyFor: textOnly ? () => ({ suggestions: false }) : videoNotes.replyPolicy,
     suggestionsEnabled,
-    compress: textOnly ? undefined : contextService.compress, researchTools: !textOnly && researchTools ? options => {
+    compress: textOnly ? undefined : contextService.compress,
+    fundTools: !textOnly && fundTools ? fundTools : null,
+    researchTools: !textOnly && researchTools ? options => {
       const session = researchTools({ ...options, fallbackSearch: publicResearch.search, fallbackFetch: publicResearch.fetch });
       return { ...session, execute: diagnostics.wrap(session.execute, { event: 'research', source: 'web-research', stage: 'research',
         summarize: result => ({ resultCount: result?.sources?.length || (result?.source ? 1 : 0) }) }) };

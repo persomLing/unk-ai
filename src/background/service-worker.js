@@ -14,6 +14,7 @@ import {
 } from '../utils/page-capture.js';
 import { mergeFramePages } from '../utils/page-merge.js';
 import { handleAgentMessage, pauseAgentTask } from './agent-service.js';
+import { handleMcpProxyMessage } from './mcp-proxy.js';
 import { createNetworkReadingService, withPageDebugger } from './network-reading-service.js';
 import { createVideoReadingService } from './video-reading-service.js';
 import { createVideoNavigationService } from './video-navigation-service.js';
@@ -1506,6 +1507,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }));
     return true;
   }
+  if (typeof handleMcpProxyMessage === 'function' && handleMcpProxyMessage(message, sender, sendResponse)) return true;
   if (message?.type === 'CANCEL_PAGE_CAPTURE') {
     const cancelled = cancelCapture(String(message.token || ''));
     sendResponse({ ok: cancelled });

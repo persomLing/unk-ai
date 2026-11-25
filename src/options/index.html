@@ -32,6 +32,7 @@
             <a href="#models-section" data-settings-nav="models-section"><i data-icon="cpu"></i><span>模型库</span></a>
             <a href="#parameters-section" data-settings-nav="parameters-section"><i data-icon="settings"></i><span>生成参数</span></a>
             <a href="#research-section" data-settings-nav="research-section"><i data-icon="globe"></i><span>联网检索</span></a>
+            <a href="#fund-section" data-settings-nav="fund-section"><i data-icon="trending-up"></i><span>基金研究</span></a>
             <a href="#storage-section" data-settings-nav="storage-section"><i data-icon="folder"></i><span>本地数据</span></a>
             <a href="#agent-section" data-settings-nav="agent-section"><i data-icon="shield"></i><span>浏览器控制</span></a>
             <a href="#update-section" data-settings-nav="update-section"><i data-icon="history"></i><span>版本更新</span></a>
@@ -302,6 +303,40 @@
               </div>
             </section>
           </form>
+
+          <section id="fund-section" class="form-section" data-settings-section aria-labelledby="fund-settings-title">
+            <div class="section-heading">
+              <span class="section-symbol"><i data-icon="trending-up"></i></span>
+              <div>
+                <h2 id="fund-settings-title">基金研究（盈米 MCP） <span class="section-badge">纯只读</span></h2>
+                <p>接入盈米 AI 开放平台 Streamable HTTP MCP，在侧栏开启专属基金研究工作台。</p>
+              </div>
+            </div>
+            <div class="field">
+              <label for="fund-api-key">盈米 MCP API Key <span>仅保存于本机浏览器</span></label>
+              <div class="input-with-action">
+                <input id="fund-api-key" type="password" placeholder="粘贴你在盈米 AI 开放平台生成的 API Key" autocomplete="off" spellcheck="false" />
+                <button id="fund-toggle-key" class="icon-button" type="button" aria-label="显示盈米 API Key" title="显示盈米 API Key"><i data-icon="eye"></i></button>
+              </div>
+              <p class="hint">前往 <code>qieman.com/mcp/account</code>（接入管理 → API 密钥）获取。API Key 模式支持 71 个公募、投顾策略、组合回测与市场资讯只读工具，不含交易权限。</p>
+            </div>
+            <details class="settings-details">
+              <summary>高级设置（服务端点）<i data-icon="chevron-down"></i></summary>
+              <div class="field" style="margin-top: 10px;">
+                <label for="fund-endpoint">Streamable HTTP 端点</label>
+                <input id="fund-endpoint" type="url" value="https://stargate.yingmi.com/mcp/v2" autocomplete="off" spellcheck="false" />
+              </div>
+            </details>
+            <div class="section-action-row" style="margin-top: 12px;">
+              <span id="fund-connection-summary">正在读取连接状态…</span>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button id="fund-clear-cache" class="inline-action" type="button">清空缓存</button>
+                <button id="fund-save-config" class="inline-action" type="button">保存配置</button>
+                <button id="fund-test-connection" class="inline-action" type="button"><span class="button-spinner" aria-hidden="true"></span><span class="button-label">测试连接</span></button>
+              </div>
+            </div>
+            <p id="fund-feedback" class="inline-feedback" role="status" hidden></p>
+          </section>
 
           <section id="agent-section" class="form-section" data-settings-section aria-labelledby="agent-settings-title">
             <div class="section-heading">
