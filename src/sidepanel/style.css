@@ -359,7 +359,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 /* 1-step Previous Conversation Switch-Back Left-Edge Tab & Hover Preview */
 .previous-chat-wrap {
   position: absolute;
-  top: 14px;
+  top: 12px;
   left: 0;
   z-index: 18;
   display: flex;
@@ -372,27 +372,29 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 }
 
 .previous-chat-btn {
-  width: 34px;
-  height: 32px;
-  padding-left: 6px;
-  border: 1px solid var(--border);
+  width: 31px;
+  height: 28px;
+  padding: 0 4px 0 11px;
+  border: 1px solid color-mix(in srgb, var(--teal) 26%, var(--border));
   border-left: none;
   border-radius: 0 999px 999px 0;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(6px);
   color: var(--ink-secondary);
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transform: translateX(-16px);
-  opacity: 0.72;
-  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease, background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.2s ease;
+  transform: translateX(-10px);
+  opacity: 0.86;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), padding 0.2s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease, background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.2s ease;
 }
 
 .previous-chat-wrap:hover .previous-chat-btn,
 .previous-chat-wrap:focus-within .previous-chat-btn {
   transform: translateX(0);
+  padding: 0 6px 0 4px;
   opacity: 1;
   background: var(--surface);
   border-color: var(--teal);
@@ -406,15 +408,16 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 }
 
 .previous-chat-btn .icon {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
 }
 
 .previous-chat-tip {
   position: absolute;
   top: 0;
   left: calc(100% + 2px);
-  z-index: 20;
+  z-index: 32;
   width: 248px;
   max-width: calc(100vw - 64px);
   padding: 9px 11px;
@@ -510,6 +513,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   position: absolute;
   top: -4px;
   right: 24px;
+  z-index: 30;
   width: min(332px, calc(100vw - 38px));
   border-radius: 12px;
   overflow: hidden;
@@ -518,6 +522,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 }
 
 .turn-directory-header {
+  flex: 0 0 auto;
   padding: 11px 14px 9px;
   border-bottom: 1px solid var(--line);
   background: var(--surface-alt);
@@ -540,10 +545,11 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 }
 
 .turn-directory-list {
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 6px;
-  max-height: min(360px, 54vh);
   overflow-y: auto;
   gap: 1px;
 }

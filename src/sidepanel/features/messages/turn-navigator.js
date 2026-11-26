@@ -275,6 +275,16 @@ export function createTurnNavigator({
     if (!stageRect.height || !itemRect.height) return;
     const top = Math.max(12, Math.round(itemRect.top - stageRect.top - 16));
     directory.style.top = `${top}px`;
+    const panel = directory.querySelector('.turn-directory-panel');
+    if (panel) {
+      const marginTop = 12;
+      const marginBottom = 44;
+      const maxPanelHeight = Math.max(160, Math.min(340, Math.floor(stageRect.height - marginTop - marginBottom)));
+      panel.style.maxHeight = `${maxPanelHeight}px`;
+      const panelHeight = Math.min(panel.offsetHeight || maxPanelHeight, maxPanelHeight);
+      const clampedStageTop = Math.max(marginTop, Math.min(top - 4, stageRect.height - marginBottom - panelHeight));
+      panel.style.top = `${Math.round(clampedStageTop - top)}px`;
+    }
   }
 
   function renderDirectory() {
