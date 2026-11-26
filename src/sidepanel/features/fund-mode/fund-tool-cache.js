@@ -2,6 +2,7 @@ export const FUND_USAGE_STORAGE_KEY = 'fundModeDailyUsage';
 export const FUND_REMOTE_QUOTA_STORAGE_KEY = 'fundModeRemoteQuota';
 export const FUND_MARKET_TEMP_STORAGE_KEY = 'fundModeDailyMarketTemp';
 export const FUND_DAILY_FEED_STORAGE_KEY = 'fundModeDailyFeed';
+export const FUND_FEED_MORNING_HOUR_CST = 9;
 const DEFAULT_MAX_ENTRIES = 120;
 
 /** Return current Beijing date key (YYYY-MM-DD), aligned with Yingmi 00:00 CST quota reset. */
@@ -11,6 +12,18 @@ export function beijingDateKey(timestampMs = Date.now()) {
   const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
   const day = String(shifted.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+/**
+ * Return the daily auto-refresh cycle key anchored at a fixed Beijing morning hour (default 09:00 CST).
+ * Before 09:00 CST, belongs to the previous day's cycle; at/after 09:00 CST, advances to today's cycle.
+ */
+export function beijingMorningCycleKey(timestampMs = Date.now(), anchorHour = FUND_FEED_MORNING_HOUR_CST) {
+  const shifted = new Date(Number(timestampMs) + (8 - anchorHour) * 60 * 60 * 1000);
+  const year = shifted.getUTCFullYear();
+  const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}@${String(anchorHour).padStart(2, '0')}:00`;
 }
 
 function stableSortValue(value) {
@@ -199,37 +212,51 @@ export async function clearDailyMarketTemperature({ storage = defaultStorage() }
 }
 
 export async function loadDailyFundFeed({ storage = defaultStorage(), now = Date.now } = {}) {
+  const currentCycle = beijingMorningCycleKey(now());
   const today = beijingDateKey(now());
   if (!storage?.get) return null;
   try {
     const data = await storage.get(FUND_DAILY_FEED_STORAGE_KEY);
     const saved = data?.[FUND_DAILY_FEED_STORAGE_KEY];
-    if (saved && saved.date === today && saved.feed && typeof saved.feed === 'object') {
-      return saved.feed;
+    if (!saved || !saved.feed || typeof saved.feed !== 'object') return null;
+    if (saved.cycleKey) {
+      if (saved.cycleKey !== currentCycle) return null;
+    } else if (saved.date !== today) {
+      return null;
     }
-    return null;
+    return {
+      ...saved.feed,
+      meta: saved.meta && typeof saved.meta === 'object' ? saved.meta : {},
+      cycleKey: saved.cycleKey || currentCycle,
+    };
   } catch {
     return null;
   }
 }
 
 export async function saveDailyFundFeed(patch, { storage = defaultStorage(), now = Date.now } = {}) {
+  const currentCycle = beijingMorningCycleKey(now());
   const today = beijingDateKey(now());
   const current = (await loadDailyFundFeed({ storage, now })) || {};
-  const next = { ...current, ...patch };
+  const { meta: patchMeta, cycleKey: _ignoredCycle, ...feedPatch } = patch || {};
+  const { meta: currentMeta, cycleKey: _currentCycle, ...currentFeed } = current;
+  const nextFeed = { ...currentFeed, ...feedPatch };
+  const nextMeta = { ...(currentMeta || {}), ...(patchMeta || {}) };
   if (storage?.set) {
     try {
       await storage.set({
         [FUND_DAILY_FEED_STORAGE_KEY]: {
-          version: 1,
+          version: 2,
           date: today,
+          cycleKey: currentCycle,
           savedAt: now(),
-          feed: next,
+          feed: nextFeed,
+          meta: nextMeta,
         },
       });
     } catch {
       // Non-fatal feed cache write failure.
     }
   }
-  return next;
+  return { ...nextFeed, meta: nextMeta, cycleKey: currentCycle };
 }

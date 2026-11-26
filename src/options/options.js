@@ -406,13 +406,36 @@ function applyProfileSettings(profile, { preserve = false } = {}) {
   applyModelKindVisibility();
   renderParametersModelName(profile);
 }
+function moveLibraryModel(fromIndex, toIndex) {
+  if (!Number.isInteger(fromIndex) || !Number.isInteger(toIndex)) return false;
+  if (fromIndex < 0 || fromIndex >= profileLibrary.length || toIndex < 0 || toIndex >= profileLibrary.length || fromIndex === toIndex) {
+    return false;
+  }
+  modelSelection.remember();
+  const [moved] = profileLibrary.splice(fromIndex, 1);
+  profileLibrary.splice(toIndex, 0, moved);
+  renderLibrary();
+  markDirty();
+  setStatus('已调整模型顺序（首个对话模型为新对话默认模型）；保存后生效。', 'success');
+  return true;
+}
+
 function renderLibrary() {
   const selectedProfile = activeProfile();
   const selectedId = selectedProfile?.id;
-  modelLibrary.innerHTML = profileLibrary.map((profile) => `
-    <article class="library-item ${profile.id === selectedId ? 'is-selected' : ''}" data-library-model-id="${escapeHtml(profile.id)}" tabindex="0" role="button" aria-label="编辑模型 ${escapeHtml(profile.name)}">
-      <div><strong>${escapeHtml(profile.name)}</strong><span class="library-kind${profile.kind === 'image' ? ' is-image' : ''}">${profile.kind === 'image' ? '生图' : '对话'}</span><small>${escapeHtml(profile.id)} · ${profile.kind === 'image' ? '生图模型，不参与对话' : profile.contextLength ? `${Number(profile.contextLength).toLocaleString('zh-CN')} 上下文` : '上下文跟随服务商'}</small></div>
-      <div class="library-actions"><span class="library-current">${profile.id === selectedId ? '编辑中' : '编辑'}</span><button class="library-remove" type="button" data-model-id="${escapeHtml(profile.id)}" aria-label="移除 ${escapeHtml(profile.name)}">${icon('trash')}</button></div>
+  const total = profileLibrary.length;
+  modelLibrary.innerHTML = profileLibrary.map((profile, index) => `
+    <article class="library-item ${profile.id === selectedId ? 'is-selected' : ''}" data-library-model-id="${escapeHtml(profile.id)}" data-library-index="${index}" draggable="${total > 1 ? 'true' : 'false'}" tabindex="0" role="button" aria-label="编辑模型 ${escapeHtml(profile.name)}">
+      ${total > 1 ? '<span class="library-drag-handle" aria-hidden="true" title="拖动调整顺序">⋮⋮</span>' : ''}
+      <div class="library-item-body"><strong>${escapeHtml(profile.name)}</strong><span class="library-kind${profile.kind === 'image' ? ' is-image' : ''}">${profile.kind === 'image' ? '生图' : '对话'}</span><small>${escapeHtml(profile.id)} · ${profile.kind === 'image' ? '生图模型，不参与对话' : profile.contextLength ? `${Number(profile.contextLength).toLocaleString('zh-CN')} 上下文` : '上下文跟随服务商'}</small></div>
+      <div class="library-actions">
+        ${total > 1 ? `<div class="library-order-group" role="group" aria-label="调整顺序">
+          <button class="library-move" type="button" data-move-model="${escapeHtml(profile.id)}" data-move-dir="-1" aria-label="上移 ${escapeHtml(profile.name)}" title="上移"${index === 0 ? ' disabled' : ''}>${icon('chevron-up')}</button>
+          <button class="library-move" type="button" data-move-model="${escapeHtml(profile.id)}" data-move-dir="1" aria-label="下移 ${escapeHtml(profile.name)}" title="下移"${index === total - 1 ? ' disabled' : ''}>${icon('chevron-down')}</button>
+        </div>` : ''}
+        <span class="library-current">${profile.id === selectedId ? '编辑中' : '编辑'}</span>
+        <button class="library-remove" type="button" data-model-id="${escapeHtml(profile.id)}" aria-label="移除 ${escapeHtml(profile.name)}">${icon('trash')}</button>
+      </div>
     </article>`).join('') || emptyState({ symbol: 'layers', title: '还没有添加模型', hint: '填写服务连接，获取列表后即可添加。' });
   renderParametersModelName(selectedProfile);
   renderImageModelSelect();
@@ -722,6 +745,17 @@ chooseDirectoryButton.addEventListener('click', async () => {
 });
 
 modelLibrary.addEventListener('click', (event) => {
+  const moveBtn = event.target.closest('[data-move-model]');
+  if (moveBtn) {
+    event.stopPropagation();
+    const id = moveBtn.dataset.moveModel;
+    const dir = Number(moveBtn.dataset.moveDir);
+    const fromIndex = profileLibrary.findIndex((profile) => profile.id === id);
+    if (fromIndex >= 0 && (dir === -1 || dir === 1)) {
+      moveLibraryModel(fromIndex, fromIndex + dir);
+    }
+    return;
+  }
   const button = event.target.closest('[data-model-id]');
   if (button) {
     const id = button.dataset.modelId;
@@ -759,6 +793,70 @@ modelLibrary.addEventListener('keydown', (event) => {
   if (!card || event.target.closest('button')) return;
   event.preventDefault();
   card.click();
+});
+
+let draggingModelIndex = -1;
+
+function clearLibraryDropHints() {
+  modelLibrary.querySelectorAll('.is-dragging, .is-drop-before, .is-drop-after').forEach((el) => {
+    el.classList.remove('is-dragging', 'is-drop-before', 'is-drop-after');
+  });
+}
+
+modelLibrary.addEventListener('dragstart', (event) => {
+  const card = event.target.closest('[data-library-model-id]');
+  if (!card || profileLibrary.length <= 1) {
+    event.preventDefault();
+    return;
+  }
+  draggingModelIndex = Number(card.dataset.libraryIndex);
+  card.classList.add('is-dragging');
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', card.dataset.libraryModelId || '');
+  }
+});
+
+modelLibrary.addEventListener('dragover', (event) => {
+  if (draggingModelIndex < 0) return;
+  const card = event.target.closest('[data-library-model-id]');
+  if (!card) return;
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  const targetIndex = Number(card.dataset.libraryIndex);
+  if (targetIndex === draggingModelIndex) {
+    modelLibrary.querySelectorAll('.is-drop-before, .is-drop-after').forEach((el) => el.classList.remove('is-drop-before', 'is-drop-after'));
+    return;
+  }
+  const rect = card.getBoundingClientRect();
+  const after = event.clientY > rect.top + rect.height / 2;
+  modelLibrary.querySelectorAll('.is-drop-before, .is-drop-after').forEach((el) => el.classList.remove('is-drop-before', 'is-drop-after'));
+  card.classList.add(after ? 'is-drop-after' : 'is-drop-before');
+});
+
+modelLibrary.addEventListener('drop', (event) => {
+  if (draggingModelIndex < 0) return;
+  const card = event.target.closest('[data-library-model-id]');
+  if (!card) {
+    clearLibraryDropHints();
+    draggingModelIndex = -1;
+    return;
+  }
+  event.preventDefault();
+  const rect = card.getBoundingClientRect();
+  const after = event.clientY > rect.top + rect.height / 2;
+  let targetIndex = Number(card.dataset.libraryIndex);
+  if (after) targetIndex += 1;
+  if (draggingModelIndex < targetIndex) targetIndex -= 1;
+  const from = draggingModelIndex;
+  clearLibraryDropHints();
+  draggingModelIndex = -1;
+  moveLibraryModel(from, Math.max(0, Math.min(profileLibrary.length - 1, targetIndex)));
+});
+
+modelLibrary.addEventListener('dragend', () => {
+  clearLibraryDropHints();
+  draggingModelIndex = -1;
 });
 
 testButton.addEventListener('click', async () => {

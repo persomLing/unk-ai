@@ -75,3 +75,113 @@
 .export-paper .export-illustration { margin: 0; width: 100%; }
 .export-paper .export-illustration img { margin: 0 0 6px; width: 100%; height: auto; max-height: none; }
 .export-paper .export-illustration figcaption { color: #6b776f; font-size: 11px; overflow-wrap: anywhere; }
+
+/* Fund Mode print-paper report styling */
+.export-paper .export-fund-markdown {
+  --fund-up: #c43b31;
+  --fund-up-soft: #fdf0ee;
+  --fund-up-line: #e9c2be;
+  --fund-down: #1e7a52;
+  --fund-down-soft: #ecf7f1;
+  --fund-down-line: #b7decb;
+  --fund-flat: #69766e;
+  --fund-flat-soft: #f0f3f1;
+  --fund-cold: #1e7a52;
+  --fund-cool: #2f6f8f;
+  --fund-mid: #9c6621;
+  --fund-warm: #b85c22;
+  --fund-hot: #c43b31;
+  --fund-chart-grid: #e3e9e4;
+  --fund-chart-axis: #69766e;
+  --fund-chart-1: #20685d;
+  --fund-chart-2: #c46d2d;
+  --fund-chart-3: #3b6f9c;
+  --fund-chart-4: #8b5a96;
+  --fund-chart-5: #b84552;
+  --fund-chart-6: #5d8736;
+  --folio-font: Consolas, "Cascadia Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+.export-paper .export-fund-markdown .fund-metric { font-family: var(--folio-font); font-weight: 650; padding: 0 3px; border-radius: 3px; }
+.export-paper .export-fund-markdown .fund-metric.is-up,
+.export-paper .export-fund-markdown td.fund-pct-up { color: var(--fund-up); }
+.export-paper .export-fund-markdown .fund-metric.is-up { background: var(--fund-up-soft); }
+.export-paper .export-fund-markdown .fund-metric.is-down,
+.export-paper .export-fund-markdown td.fund-pct-down { color: var(--fund-down); }
+.export-paper .export-fund-markdown .fund-metric.is-down { background: var(--fund-down-soft); }
+.export-paper .export-fund-markdown td .fund-metric { padding: 0; background: transparent; }
+.export-paper .export-fund-markdown .fund-num-col { text-align: right; font-family: var(--folio-font); }
+.export-paper .export-fund-markdown .fund-code-pill { display: inline-block; padding: 1px 6px; border-radius: 4px; background: #edf3ec; color: #20685d; font-family: var(--folio-font); font-size: 11px; font-weight: 600; }
+.export-paper .export-fund-markdown .fund-badge,
+.export-paper .export-fund-markdown .fund-risk-badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 650; border: 1px solid #d5dfd7; }
+.export-paper .export-fund-markdown .fund-badge.tone-cold,
+.export-paper .export-fund-markdown .fund-risk-badge.level-r1 { color: var(--fund-cold); background: var(--fund-down-soft); border-color: var(--fund-down-line); }
+.export-paper .export-fund-markdown .fund-badge.tone-cool,
+.export-paper .export-fund-markdown .fund-risk-badge.level-r2 { color: var(--fund-cool); background: #edf5f9; border-color: #c2dce9; }
+.export-paper .export-fund-markdown .fund-badge.tone-mid,
+.export-paper .export-fund-markdown .fund-risk-badge.level-r3 { color: var(--fund-mid); background: #fbf4e6; border-color: #e6d1a8; }
+.export-paper .export-fund-markdown .fund-badge.tone-warm,
+.export-paper .export-fund-markdown .fund-risk-badge.level-r4 { color: var(--fund-warm); background: #fdf1e8; border-color: #ebc6ad; }
+.export-paper .export-fund-markdown .fund-badge.tone-hot,
+.export-paper .export-fund-markdown .fund-risk-badge.level-r5 { color: var(--fund-hot); background: var(--fund-up-soft); border-color: var(--fund-up-line); }
+.export-paper .export-fund-markdown blockquote.fund-callout { padding: 10px 14px; border: 1px solid #dce4dd; border-left: 3.5px solid #20685d; border-radius: 0 8px 8px 0; background: #f4f8f5; color: #24332c; }
+.export-paper .export-fund-markdown blockquote.fund-callout.tone-risk { border-color: #e9c2be; border-left-color: #c43b31; background: #fdf4f3; }
+.export-paper .export-fund-markdown .fund-kpi-card,
+.export-paper .export-fund-markdown .fund-vis-card { margin: 14px 0; border: 1px solid #d8e2da; border-radius: 10px; background: #fff; overflow: hidden; }
+.export-paper .export-fund-markdown .fund-kpi-head,
+.export-paper .export-fund-markdown .fund-vis-header { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 14px; background: #f2f6f3; border-bottom: 1px solid #dfe6df; }
+.export-paper .export-fund-markdown .fund-kpi-title,
+.export-paper .export-fund-markdown .fund-vis-title { font-size: 13px; font-weight: 700; color: #1d2d24; }
+.export-paper .export-fund-markdown .fund-kpi-asof,
+.export-paper .export-fund-markdown .fund-vis-subtitle { font-size: 11px; color: #69766e; }
+.export-paper .export-fund-markdown .fund-kpi-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.export-paper .export-fund-markdown .fund-kpi-grid.cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.export-paper .export-fund-markdown .fund-kpi-grid.cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.export-paper .export-fund-markdown .fund-kpi-cell { padding: 10px 14px; border-right: 1px solid #e5ebe5; display: flex; flex-direction: column; gap: 3px; }
+.export-paper .export-fund-markdown .fund-kpi-cell:last-child { border-right: 0; }
+.export-paper .export-fund-markdown .fund-kpi-label { font-size: 11px; color: #69766e; }
+.export-paper .export-fund-markdown .fund-kpi-value { font-family: var(--folio-font); font-size: 17px; font-weight: 700; color: #1d2d24; }
+.export-paper .export-fund-markdown .fund-kpi-cell.trend-up .fund-kpi-value { color: var(--fund-up); }
+.export-paper .export-fund-markdown .fund-kpi-cell.trend-down .fund-kpi-value { color: var(--fund-down); }
+.export-paper .export-fund-markdown .fund-kpi-sub { font-size: 11px; color: #69766e; }
+.export-paper .export-fund-markdown .fund-vis-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 8px 14px 2px; font-size: 11px; }
+.export-paper .export-fund-markdown .fund-vis-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.export-paper .export-fund-markdown .fund-vis-swatch { display: inline-block; width: 10px; height: 3px; background: var(--swatch-color, #20685d); }
+.export-paper .export-fund-markdown .fund-vis-legend-val.is-up { color: var(--fund-up); }
+.export-paper .export-fund-markdown .fund-vis-legend-val.is-down { color: var(--fund-down); }
+.export-paper .export-fund-markdown .fund-vis-stage { padding: 6px 12px 10px; }
+.export-paper .export-fund-markdown .fund-vis-svg { display: block; width: 100%; height: auto; }
+.export-paper .export-fund-markdown .fund-svg-grid { stroke: var(--fund-chart-grid); stroke-width: 1; }
+.export-paper .export-fund-markdown .fund-svg-zero { stroke: #b8c4bc; stroke-width: 1.1; stroke-dasharray: 4 3; }
+.export-paper .export-fund-markdown .fund-svg-axis-label { fill: #69766e; font-family: var(--folio-font); font-size: 10px; }
+.export-paper .export-fund-markdown .fund-svg-bar-val { fill: #44534a; font-family: var(--folio-font); font-size: 10px; font-weight: 600; }
+.export-paper .export-fund-markdown .fund-svg-bar-val.is-up { fill: var(--fund-up); }
+.export-paper .export-fund-markdown .fund-svg-bar-val.is-down { fill: var(--fund-down); }
+.export-paper .export-fund-markdown .fund-vis-tooltip { display: none !important; }
+.export-paper .export-fund-markdown .fund-hbar-list { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; }
+.export-paper .export-fund-markdown .fund-hbar-row { display: grid; grid-template-columns: 32% 1fr auto; align-items: center; gap: 10px; }
+.export-paper .export-fund-markdown .fund-hbar-label { font-size: 12px; color: #24332c; }
+.export-paper .export-fund-markdown .fund-hbar-note { font-size: 10px; color: #69766e; display: block; }
+.export-paper .export-fund-markdown .fund-hbar-track { position: relative; height: 9px; border-radius: 999px; background: #e8eee9; overflow: hidden; }
+.export-paper .export-fund-markdown .fund-hbar-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 999px; background: var(--hbar-color, #20685d); }
+.export-paper .export-fund-markdown .fund-hbar-fill.is-pos { background: var(--fund-up); border-radius: 0 999px 999px 0; }
+.export-paper .export-fund-markdown .fund-hbar-fill.is-neg { background: var(--fund-down); border-radius: 999px 0 0 999px; }
+.export-paper .export-fund-markdown .fund-hbar-val { font-family: var(--folio-font); font-size: 12px; font-weight: 650; text-align: right; }
+.export-paper .export-fund-markdown .fund-hbar-val.is-up { color: var(--fund-up); }
+.export-paper .export-fund-markdown .fund-hbar-val.is-down { color: var(--fund-down); }
+.export-paper .export-fund-markdown .fund-donut-body { display: grid; grid-template-columns: 152px 1fr; align-items: center; gap: 16px; padding: 12px 16px; }
+.export-paper .export-fund-markdown .fund-donut-ring { position: relative; width: 152px; height: 152px; }
+.export-paper .export-fund-markdown .fund-donut-center { position: absolute; inset: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+.export-paper .export-fund-markdown .fund-donut-center strong { font-family: var(--folio-font); font-size: 16px; }
+.export-paper .export-fund-markdown .fund-donut-center span { font-size: 10px; color: #69766e; }
+.export-paper .export-fund-markdown .fund-donut-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.export-paper .export-fund-markdown .fund-donut-legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.export-paper .export-fund-markdown .fund-donut-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; }
+.export-paper .export-fund-markdown .fund-donut-name { flex: 1; }
+.export-paper .export-fund-markdown .fund-donut-val { font-family: var(--folio-font); font-weight: 650; }
+.export-paper .export-fund-markdown .fund-gauge-list { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; }
+.export-paper .export-fund-markdown .fund-gauge-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; font-size: 12px; }
+.export-paper .export-fund-markdown .fund-gauge-readout { display: inline-flex; align-items: center; gap: 6px; font-family: var(--folio-font); }
+.export-paper .export-fund-markdown .fund-gauge-track { position: relative; height: 7px; border-radius: 999px; background: linear-gradient(90deg, #1e7a52, #2f6f8f 26%, #9c6621 52%, #b85c22 76%, #c43b31); }
+.export-paper .export-fund-markdown .fund-gauge-pin { position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 999px; background: #fff; border: 2px solid #1d2d24; transform: translate(-50%, -50%); }
+.export-paper .export-fund-markdown .fund-vis-footer { padding: 6px 14px; border-top: 1px solid #dfe6df; background: #f5f8f5; font-size: 10.5px; color: #69766e; }

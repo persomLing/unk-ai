@@ -11,6 +11,7 @@ import { formatTime } from '../../core/format.js';
 import { hydrateIcons, icon } from '../../icons.js';
 import { disclaimerForSkill } from '../fund-mode/fund-mode-prompt.js';
 import { getFundSkill } from '../fund-mode/fund-skills.js';
+import { bindFundMarkdownInteractions, enhanceFundMarkdown } from '../fund-mode/fund-markdown-view.js';
 import { agentPanelMarkup, syncAgentPanel } from './agent-message-view.js';
 import { captureViewPosition, restoreViewPosition } from './scroll-position.js';
 import { replyElapsedLabel } from './reply-progress.js';
@@ -26,6 +27,7 @@ import { videoAttachmentName } from '../video-notes/video-notes-presentation.js'
 import { videoNotesDetailsMarkup } from '../video-notes/transcript-context.js';
 import { directImageForMessage } from '../../../utils/image-generation-command.js';
 import { decorateCodeBlocks } from './code-blocks.js';
+import { bindTableCellTooltips, decorateTableBlocks } from './table-blocks.js';
 import { detachMessageIllustrations, generatedImagesMarkup, illustrationNote, imageReplyPlaceholder, replaceMessageIllustrations, restoreMessageIllustrations, videoIllustrationNote } from '../illustration/illustration-view.js';
 import '../illustration/illustration-inline.css';
 
@@ -94,14 +96,20 @@ function renderedContent(content, streaming, ownerDocument) {
   return fragment;
 }
 
-export function renderMessageContent(container, content, streaming = false, { textOnly = false } = {}) {
+export function renderMessageContent(container, content, streaming = false, { textOnly = false, fundMode = false } = {}) {
   if (!container) return;
   const fragment = renderedContent(content, streaming, container.ownerDocument);
   if (textOnly) fragment.querySelectorAll('picture, img, audio, video').forEach(node => node.remove());
-  if (!streaming && container.hasAttribute('data-message-content')) decorateCodeBlocks(fragment);
+  if (fundMode) enhanceFundMarkdown(fragment, { streaming });
+  if (!streaming && container.hasAttribute('data-message-content')) {
+    decorateCodeBlocks(fragment);
+    decorateTableBlocks(fragment);
+  }
   detachMessageIllustrations(container);
   syncChildren(container, fragment);
   restoreMessageIllustrations(container);
+  if (fundMode) bindFundMarkdownInteractions(container);
+  if (!streaming && container.hasAttribute('data-message-content')) bindTableCellTooltips(container);
   container.querySelectorAll('a').forEach((link) => {
     link.target = '_blank';
     link.rel = 'noopener noreferrer nofollow';
@@ -162,30 +170,18 @@ function userMessageMarkup(message) {
   return `<article class="message user-message${operation ? ' user-operation' : ''}" data-message-id="${message.id}">${operationHeader || messageModeBadgeMarkup(message)}${selection}${images}${body}${names ? `<div class="message-files">${names}</div>` : ''}${skills}${imageErrors}${actions}</article>`;
 }
 
-function decorateFundMetrics(container) {
-  if (!container?.querySelectorAll) return;
-  for (const cell of container.querySelectorAll('td')) {
-    const raw = (cell.textContent || '').trim();
-    if (/^\+\d+(?:\.\d+)?%$/.test(raw)) {
-      cell.classList.add('fund-pct-up');
-      cell.classList.remove('fund-pct-down');
-    } else if (/^[-−]\d+(?:\.\d+)?%$/.test(raw)) {
-      cell.classList.add('fund-pct-down');
-      cell.classList.remove('fund-pct-up');
-    }
-  }
-}
-
 function fundChartsMarkup(message) {
   const charts = Array.isArray(message.fundCharts) ? message.fundCharts : [];
   const safe = charts.filter(item => typeof item?.url === 'string' && item.url.startsWith('https://')).slice(0, 4);
   if (!safe.length) return '';
   const items = safe.map(item => `
     <figure class="fund-chart-card">
-      <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.label || '盈米研报图表')}" loading="lazy" referrerpolicy="no-referrer" />
+      <div class="fund-chart-frame">
+        <img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.label || '盈米研报图表')}" loading="lazy" referrerpolicy="no-referrer" />
+      </div>
       <figcaption>
-        <span>${escapeHtml(item.label || '盈米研报图表')}</span>
-        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">查看大图</a>
+        <span class="fund-chart-caption">${escapeHtml(item.label || '盈米研报图表')}</span>
+        <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">查看大图 ↗</a>
       </figcaption>
     </figure>
   `).join('');
@@ -350,7 +346,7 @@ export function createReplyClock({ root, getConversation, getRun, isVisible = ()
 export function messageMarkup(message, options = {}) {
   return message?.role === 'user'
     ? userMessageMarkup(message)
-    : `<article class="message assistant-message" data-message-id="${message.id}" data-response-status="${message.status || 'complete'}">${Object.values(assistantParts(message, options)).join('')}</article>`;
+    : `<article class="message assistant-message" data-message-id="${message.id}" data-response-status="${message.status || 'complete'}"${message.fundMode ? ' data-fund-mode="true"' : ''}>${Object.values(assistantParts(message, options)).join('')}</article>`;
 }
 
 const articlePaints = new WeakMap();
@@ -431,8 +427,7 @@ export function paintConversationMessage(article, message, options = {}) {
   const content = cache.get('body').node;
   if (galleryChanged) replaceMessageIllustrations(content, gallery ? nodeFromMarkup(article.ownerDocument, gallery) : null);
   if (galleryChanged || previous?.content !== message.content || previous?.status !== status) {
-    renderMessageContent(content, message.content, status === 'streaming');
-    if (message.fundMode && status !== 'streaming') decorateFundMetrics(content);
+    renderMessageContent(content, message.content, status === 'streaming', { fundMode: Boolean(message.fundMode) });
   } else syncMessageDecorations(article);
   articlePaints.set(article, { parts: cache, gallery, status, content: message.content });
   if (finished) finishReplyMotion(article, hadCursor);
@@ -479,7 +474,7 @@ export function updateStreamingMessage({
     article.outerHTML = messageMarkup(message, { showSuggestions, frameActions, allowImageReference });
     const rendered = messagesElement.querySelector(`[data-message-id="${message.id}"]`);
     if (!rendered) return false;
-    renderMessageContent(rendered.querySelector('[data-message-content]'), message.content, false);
+    renderMessageContent(rendered.querySelector('[data-message-content]'), message.content, false, { fundMode: Boolean(message.fundMode) });
     hydrateIcons(rendered);
     restoreViewPosition(conversationView, messagesElement, position, followToPage);
     return true;
@@ -489,7 +484,9 @@ export function updateStreamingMessage({
   const contentElement = article.querySelector('[data-message-content]');
   if (!contentElement) return false;
   const painted = articlePaints.get(article);
-  if (!painted || painted.content !== message.content) renderMessageContent(contentElement, message.content, true);
+  if (!painted || painted.content !== message.content) {
+    renderMessageContent(contentElement, message.content, true, { fundMode: Boolean(message.fundMode) });
+  }
   if (painted) painted.content = message.content;
   restoreViewPosition(conversationView, messagesElement, position, followToPage);
   return true;

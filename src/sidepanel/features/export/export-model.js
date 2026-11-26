@@ -68,6 +68,7 @@ export function createExportSnapshot(conversation) {
       turn.assistant = { id: text(message.id), content: text(message.content),
         status: ['complete', 'streaming', 'stopped', 'error'].includes(message.status) ? message.status : 'complete',
         errorMessage: text(message.errorMessage),
+        ...(message.fundMode ? { fundMode: true } : {}),
         sources: (Array.isArray(message.sources) ? message.sources : []).map(sourceFor).filter(Boolean),
         illustrations: (Array.isArray(message.attachments) ? message.attachments : [])
           .filter(file => file?.type === 'image' && (file.generated || file.videoFrame)).map(illustrationFor) };

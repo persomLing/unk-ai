@@ -105,20 +105,34 @@ code { padding: 2px 5px; border-radius: 4px; background: var(--teal-soft); color
 .model-meta strong { color: var(--ink-secondary); font-size: 12px; font-weight: 600; }
 .model-meta > span { margin-left: 8px; color: var(--muted); font-size: 10px; }
 .model-meta small { display: block; margin-top: 3px; color: var(--muted); font-size: 10.5px; }
-.model-library { display: grid; gap: 8px; }
+.model-library { display: grid; gap: 8px; max-height: min(440px, 52vh); overflow-y: auto; padding: 2px 4px 2px 1px; }
 .model-library:empty { display: none; }
 .parameters-model-name { display: inline-flex; max-width: 100%; margin-top: 8px; padding: 3px 7px; border-radius: 5px; color: var(--teal); background: var(--teal-soft); font-size: 10px; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
-.library-item { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); transition: border-color .14s, background-color .14s; }
+.library-item { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 13px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); transition: border-color .14s, background-color .14s, opacity .14s; }
 .library-item:hover { background: var(--surface-card); border-color: var(--line-strong); }
 .library-item.is-selected { border-color: color-mix(in srgb, var(--teal) 42%, var(--line)); background: var(--teal-soft); }
+.library-item.is-dragging { opacity: 0.45; }
+.library-item.is-drop-before::before,
+.library-item.is-drop-after::after { content: ''; position: absolute; left: 8px; right: 8px; height: 2px; border-radius: 2px; background: var(--teal); pointer-events: none; }
+.library-item.is-drop-before::before { top: -5px; }
+.library-item.is-drop-after::after { bottom: -5px; }
 .library-item[role="button"] { cursor: pointer; }
+.library-drag-handle { flex: 0 0 auto; color: var(--subtle); font-size: 13px; line-height: 1; letter-spacing: -1px; cursor: grab; user-select: none; padding: 4px 2px; }
+.library-item:hover .library-drag-handle { color: var(--muted); }
+.library-item.is-dragging .library-drag-handle { cursor: grabbing; }
+.library-item-body { flex: 1; min-width: 0; }
 .library-item > div { min-width: 0; }
 .library-item strong { display: inline-block; max-width: 72%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; color: var(--ink); font-size: 12.5px; font-weight: 600; }
 .library-kind { display: inline-block; margin-left: 6px; padding: 1px 6px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--muted); font-size: 9.5px; vertical-align: middle; }
 .library-kind.is-image { color: var(--teal); border-color: var(--teal); }
 .library-item small { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 10.5px; }
-.library-actions { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; }
-.library-current { color: var(--teal); font-size: 10px; white-space: nowrap; }
+.library-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.library-order-group { display: inline-flex; align-items: center; gap: 2px; }
+.library-move { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; color: var(--muted); background: transparent; cursor: pointer; transition: color .14s, background-color .14s; }
+.library-move:hover:not(:disabled) { color: var(--teal); background: var(--teal-soft); }
+.library-move:disabled { opacity: 0.28; cursor: default; }
+.library-move .icon { width: 13px; height: 13px; }
+.library-current { color: var(--teal); font-size: 10px; white-space: nowrap; margin-inline: 3px; }
 .library-remove { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; color: var(--muted); background: transparent; }
 .library-remove:hover { color: var(--danger); background: var(--danger-soft); }
 .library-remove .icon { width: 14px; height: 14px; }

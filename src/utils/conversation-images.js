@@ -6,6 +6,7 @@ const IMAGE_WAIT_MS = 5000;
 const EXTENSIONS = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
 const MIME_TYPES = Object.fromEntries(Object.entries(EXTENSIONS).map(([mime, extension]) => [extension, mime]));
 const IMAGE_PATH = /^images\/([a-f0-9]{64})\.(png|jpg|webp|gif)$/;
+const IMAGE_FILENAME = /^([a-f0-9]{64})\.(png|jpg|webp|gif)$/;
 
 function imageAttachments(conversation) {
   return (conversation.messages || []).flatMap(message => Array.isArray(message?.attachments)
@@ -135,4 +136,116 @@ export async function hydrateConversationImages(conversation, { directoryHandle 
     }
   }));
   return copy;
+}
+
+function mergeInto(target, source) {
+  for (const item of source) target.add(item);
+}
+
+/** Collect referenced content-addressed image filenames from one conversation. */
+export async function collectConversationImageFilenames(conversation, { includeDataUrlHashes = false, onlyWithoutDataUrl = false } = {}) {
+  const filenames = new Set();
+  for (const attachment of imageAttachments(conversation || {})) {
+    if (onlyWithoutDataUrl && attachment.dataUrl) continue;
+    if (attachment.imagePath) {
+      const matched = IMAGE_PATH.exec(String(attachment.imagePath));
+      if (matched) filenames.add(`${matched[1]}.${matched[2]}`);
+    }
+    if (includeDataUrlHashes && attachment.dataUrl) {
+      try {
+        const { bytes, mime } = decodeImage(attachment.dataUrl);
+        const hash = await digest(bytes);
+        filenames.add(`${hash}.${EXTENSIONS[mime]}`);
+      } catch {
+        // Ignore malformed inline dataUrls when collecting references for GC.
+      }
+    }
+  }
+  return filenames;
+}
+
+/** Delete unreferenced SHA-256 image files in `images/` when all live roots verify cleanly. */
+export async function pruneUnusedConversationImages({ directoryHandle, getLiveRoots } = {}) {
+  if (!directoryHandle) return { deleted: 0, failed: 0, skipped: true, reason: 'no-directory' };
+  let permission;
+  try {
+    permission = await directoryHandle.queryPermission({ mode: 'readwrite' });
+  } catch {
+    permission = 'denied';
+  }
+  if (permission !== 'granted') return { deleted: 0, failed: 0, skipped: true, reason: 'permission-denied' };
+
+  let imagesDir;
+  try {
+    imagesDir = await directoryHandle.getDirectoryHandle('images');
+  } catch (error) {
+    if (error?.name === 'NotFoundError') return { deleted: 0, failed: 0, skipped: false };
+    return { deleted: 0, failed: 0, skipped: true, reason: 'images-unreadable' };
+  }
+
+  const candidates = [];
+  try {
+    for await (const [name, handle] of imagesDir.entries()) {
+      if (handle?.kind === 'file' && IMAGE_FILENAME.test(name)) candidates.push(name);
+    }
+  } catch {
+    return { deleted: 0, failed: 0, skipped: true, reason: 'images-unreadable' };
+  }
+  if (!candidates.length) return { deleted: 0, failed: 0, skipped: false };
+
+  const { pendingWrites = [], trashedDeletions = [], temporaryConversation = null } = (await getLiveRoots?.()) || {};
+  const referenced = new Set();
+  for (const entry of pendingWrites) {
+    mergeInto(referenced, await collectConversationImageFilenames(entry?.conversation, { includeDataUrlHashes: true }));
+  }
+  for (const entry of trashedDeletions) {
+    if (entry && entry.state !== 'restored' && entry.conversation) {
+      mergeInto(referenced, await collectConversationImageFilenames(entry.conversation, { includeDataUrlHashes: false, onlyWithoutDataUrl: true }));
+    }
+  }
+  if (temporaryConversation) {
+    mergeInto(referenced, await collectConversationImageFilenames(temporaryConversation, { includeDataUrlHashes: true }));
+  }
+
+  let conversationsDir = null;
+  try {
+    conversationsDir = await directoryHandle.getDirectoryHandle('conversations');
+  } catch (error) {
+    if (error?.name !== 'NotFoundError') {
+      return { deleted: 0, failed: 0, skipped: true, reason: 'conversations-unreadable' };
+    }
+  }
+
+  if (conversationsDir) {
+    try {
+      for await (const [name, handle] of conversationsDir.entries()) {
+        if (handle?.kind !== 'file' || !name.endsWith('.json')) continue;
+        let record;
+        try {
+          record = JSON.parse(await (await handle.getFile()).text());
+        } catch {
+          return { deleted: 0, failed: 0, skipped: true, reason: 'corrupt-conversation-record' };
+        }
+        if (!record || typeof record !== 'object') {
+          return { deleted: 0, failed: 0, skipped: true, reason: 'corrupt-conversation-record' };
+        }
+        mergeInto(referenced, await collectConversationImageFilenames(record, { includeDataUrlHashes: false }));
+      }
+    } catch {
+      return { deleted: 0, failed: 0, skipped: true, reason: 'conversations-unreadable' };
+    }
+  }
+
+  let deleted = 0;
+  let failed = 0;
+  for (const filename of candidates) {
+    if (referenced.has(filename)) continue;
+    try {
+      await imagesDir.removeEntry(filename);
+      deleted += 1;
+    } catch (error) {
+      if (error?.name !== 'NotFoundError') failed += 1;
+    }
+  }
+  return { deleted, failed, skipped: false };
 }

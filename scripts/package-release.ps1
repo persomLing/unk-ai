@@ -4,13 +4,14 @@ param([switch]$SkipGuide)
 $ErrorActionPreference = 'Stop'
 $taskRoot = Split-Path -Parent $PSScriptRoot
 $distRoot = Join-Path $taskRoot 'dist'
-$sourceManifest = Get-Content -LiteralPath (Join-Path $taskRoot 'manifest.json') -Raw | ConvertFrom-Json
-$distManifest = Get-Content -LiteralPath (Join-Path $distRoot 'manifest.json') -Raw | ConvertFrom-Json
-$metadata = Get-Content -LiteralPath (Join-Path $taskRoot 'package.json') -Raw | ConvertFrom-Json
-$lock = Get-Content -LiteralPath (Join-Path $taskRoot 'package-lock.json') -Raw | ConvertFrom-Json -AsHashtable
+$sourceManifest = Get-Content -LiteralPath (Join-Path $taskRoot 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$distManifest = Get-Content -LiteralPath (Join-Path $distRoot 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+$metadata = Get-Content -LiteralPath (Join-Path $taskRoot 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 $version = $sourceManifest.version
 if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Invalid release version.' }
-$versions = @($distManifest.version, $metadata.version, $lock.version, $lock.packages[''].version)
+$lockVersions = @(node -e "const l = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8')); console.log(l.version || ''); console.log(l.packages?.['']?.version || '');" (Join-Path $taskRoot 'package-lock.json'))
+if ($LASTEXITCODE -ne 0 -or $lockVersions.Count -lt 2) { throw 'Cannot read package-lock.json versions.' }
+$versions = @($distManifest.version, $metadata.version, $lockVersions[0], $lockVersions[1])
 if (@($versions | Where-Object { $_ -ne $version }).Count) { throw 'Source/build versions differ.' }
 $status = @(git -C $taskRoot status --porcelain)
 if ($LASTEXITCODE -ne 0 -or $status.Count) { throw 'Commit the release before packaging; the Git working tree must be clean.' }
@@ -28,7 +29,7 @@ $releaseInfo = [ordered]@{ schemaVersion = 1; name = 'UNK AI'; version = $versio
   releaseNotes = 'RELEASE-NOTES.md' }
 if (!$SkipGuide) { $releaseInfo.userGuide = 'USER-GUIDE.html' }
 if (Test-Path -LiteralPath $checkPath -PathType Leaf) {
-  $check = Get-Content -LiteralPath $checkPath -Raw | ConvertFrom-Json
+  $check = Get-Content -LiteralPath $checkPath -Raw -Encoding UTF8 | ConvertFrom-Json
   if ($check.version -ne $version -or $check.commit -ne $commit -or $check.passed -ne $true) { throw 'Release check record differs from this commit.' }
   $releaseInfo.validation = [ordered]@{ command = $check.command; passed = $true; completedAt = $check.completedAt }
 }
@@ -47,6 +48,24 @@ function Assert-DistFile([string]$relative) {
     throw "Missing or invalid build entry: $relative"
   }
 }
+function Get-RelativePath([string]$basePath, [string]$targetPath) {
+  $baseFull = [IO.Path]::GetFullPath($basePath).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+  $targetFull = [IO.Path]::GetFullPath($targetPath)
+  if ($targetFull.StartsWith($baseFull, [StringComparison]::OrdinalIgnoreCase)) {
+    return $targetFull.Substring($baseFull.Length)
+  }
+  return [Uri]::UnescapeDataString(([Uri]$baseFull).MakeRelativeUri([Uri]$targetFull).OriginalString).Replace('/', [IO.Path]::DirectorySeparatorChar)
+}
+function Get-BytesSha256Hex([byte[]]$bytes) {
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try { return [BitConverter]::ToString($algorithm.ComputeHash($bytes)).Replace('-', '') }
+  finally { $algorithm.Dispose() }
+}
+function Get-StreamSha256Hex([IO.Stream]$stream) {
+  $algorithm = [Security.Cryptography.SHA256]::Create()
+  try { return [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '') }
+  finally { $algorithm.Dispose() }
+}
 $required = @($distManifest.background.service_worker, $distManifest.side_panel.default_path, $distManifest.options_ui.page,
   'src/sidepanel/theme-boot.js', 'content/agent-scanner.js', 'pdfjs/LICENSE', 'third-party/mp4box.LICENSE', 'third-party/fflate.LICENSE',
   "_locales/$($distManifest.default_locale)/messages.json")
@@ -55,36 +74,41 @@ $required += $distManifest.icons.PSObject.Properties.Value
 $required += $distManifest.action.default_icon.PSObject.Properties.Value
 foreach ($relative in $required) { Assert-DistFile $relative }
 foreach ($html in Get-ChildItem -LiteralPath $distRoot -Filter '*.html' -Recurse -File) {
-  foreach ($match in [regex]::Matches((Get-Content -LiteralPath $html.FullName -Raw), '(?:src|href)=["'']([^"'']+)["'']')) {
+  foreach ($match in [regex]::Matches((Get-Content -LiteralPath $html.FullName -Raw -Encoding UTF8), '(?:src|href)=["'']([^"'']+)["'']')) {
     $url = $match.Groups[1].Value
     if ($url -match '^(?:#|data:|https?:)') { continue }
     $file = if ($url.StartsWith('/')) { Join-Path $distRoot $url.TrimStart('/') } else { Join-Path $html.DirectoryName $url }
-    Assert-DistFile ([IO.Path]::GetRelativePath($distRoot, $file))
+    Assert-DistFile (Get-RelativePath $distRoot $file)
   }
 }
 $sourceHash = (Get-FileHash -LiteralPath (Join-Path $taskRoot 'manifest.json') -Algorithm SHA256).Hash
 if ($sourceHash -ne (Get-FileHash -LiteralPath (Join-Path $distRoot 'manifest.json') -Algorithm SHA256).Hash) { throw 'Built manifest differs from source.' }
 $files = @(Get-ChildItem -LiteralPath $distRoot -Recurse -File | Sort-Object FullName)
 $expected = @{}
+$zipFiles = [ordered]@{}
 foreach ($file in $files) {
-  $relative = [IO.Path]::GetRelativePath($distRoot, $file.FullName).Replace('\', '/')
+  $relative = (Get-RelativePath $distRoot $file.FullName).Replace('\', '/')
   if (($relative.Split('/')[0] -notin @('_locales', 'assets', 'content', 'icons', 'pdfjs', 'src', 'manifest.json', 'service-worker.js') -and
     $relative -notin @('third-party/mp4box.LICENSE', 'third-party/fflate.LICENSE')) -or
     $file.Extension -in @('.zip', '.map', '.pem', '.key', '.pfx', '.env') -or
     ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Unexpected build file: $relative" }
   $expected[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+  $zipFiles[$relative] = $file.FullName
 }
+Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::CreateFromDirectory($distRoot, $packagePath, [IO.Compression.CompressionLevel]::Optimal, $false)
-$archive = [IO.Compression.ZipFile]::Open($packagePath, [IO.Compression.ZipArchiveMode]::Update)
+$archive = [IO.Compression.ZipFile]::Open($packagePath, [IO.Compression.ZipArchiveMode]::Create)
 try {
+  foreach ($relative in $zipFiles.Keys) {
+    [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $zipFiles[$relative], $relative, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+  }
   foreach ($name in $releaseFiles.Keys) {
-    if ($archive.GetEntry($name)) { throw "Build already includes release metadata: $name" }
+    if ($expected.ContainsKey($name)) { throw "Build already includes release metadata: $name" }
     $bytes = $releaseFiles[$name]
     $entry = $archive.CreateEntry($name, [IO.Compression.CompressionLevel]::Optimal)
     $stream = $entry.Open()
     try { $stream.Write($bytes, 0, $bytes.Length) } finally { $stream.Dispose() }
-    $expected[$name] = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes))
+    $expected[$name] = Get-BytesSha256Hex $bytes
   }
 } finally { $archive.Dispose() }
 $archive = [IO.Compression.ZipFile]::OpenRead($packagePath)
@@ -95,9 +119,8 @@ try {
   foreach ($entry in $entries) {
     if (!$expected.ContainsKey($entry.FullName)) { throw "Unexpected ZIP entry: $($entry.FullName)" }
     $stream = $entry.Open()
-    $algorithm = [Security.Cryptography.SHA256]::Create()
-    try { $hash = [Convert]::ToHexString($algorithm.ComputeHash($stream)) }
-    finally { $algorithm.Dispose(); $stream.Dispose() }
+    try { $hash = Get-StreamSha256Hex $stream }
+    finally { $stream.Dispose() }
     if ($hash -ne $expected[$entry.FullName]) { throw "ZIP bytes differ: $($entry.FullName)" }
     $verified += [ordered]@{ path = $entry.FullName; bytes = $entry.Length; sha256 = $hash.ToLowerInvariant() }
   }
@@ -108,5 +131,5 @@ $report = [ordered]@{ version = $version; commit = $commit; package = $packagePa
   manifestAtRoot = $true; allBuildFilesEqualDist = $true; releaseFiles = @($releaseFiles.Keys); fileCount = $verified.Count; files = $verified }
 $reportDir = Join-Path $taskRoot 'output'
 [IO.Directory]::CreateDirectory($reportDir) | Out-Null
-$report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $reportDir "package-v$version-validation.json") -Encoding utf8
+[IO.File]::WriteAllText((Join-Path $reportDir "package-v$version-validation.json"), ($report | ConvertTo-Json -Depth 6) + [Environment]::NewLine, $utf8)
 [pscustomobject]$report | Select-Object version, commit, package, bytes, sha256, fileCount, manifestAtRoot, allBuildFilesEqualDist, releaseFiles | ConvertTo-Json

@@ -166,7 +166,12 @@ async function releaseCurrent({ skipGuide } = {}) {
   if (!existsSync(packagePath)) {
     const packageArgs = ['-NoProfile', '-File', resolve(root, 'scripts/package-release.ps1')];
     if (skipGuide) packageArgs.push('-SkipGuide');
-    execFileSync('pwsh', packageArgs, { cwd: root, stdio: 'inherit', windowsHide: true });
+    try {
+      execFileSync('pwsh', packageArgs, { cwd: root, stdio: 'inherit', windowsHide: true });
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      execFileSync('powershell', packageArgs, { cwd: root, stdio: 'inherit', windowsHide: true });
+    }
   }
   const packageReport = jsonFile(reportPath);
   const packageInfo = validatePackage(packagePath, packageReport, prepared.version, commit);

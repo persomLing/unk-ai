@@ -27,13 +27,17 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
    App Shell & Header
    ========================================================================== */
 .app-shell {
-  --workspace-measure: 704px;
-  --workspace-gutter: clamp(14px, 4vw, 30px);
+  --workspace-measure: clamp(704px, 78vw, 1080px);
+  --workspace-gutter: clamp(14px, 3vw, 32px);
   height: 100%;
   display: flex;
   flex-direction: column;
   position: relative;
   background: var(--surface-alt);
+}
+
+.app-shell.history-docked {
+  --workspace-measure: clamp(704px, 64vw, 980px);
 }
 
 .app-header {
@@ -350,6 +354,217 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   display: flex;
   flex-direction: column;
   z-index: 1;
+}
+
+/* 1-step Previous Conversation Switch-Back Button & Hover Preview */
+.previous-chat-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.previous-chat-wrap[hidden] {
+  display: none;
+}
+
+.previous-chat-btn {
+  width: 28px;
+  height: 28px;
+  color: var(--ink-secondary);
+}
+
+.previous-chat-btn .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.previous-chat-tip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  width: min(260px, calc(100vw - 32px));
+  padding: 9px 11px;
+  border-radius: 10px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.previous-chat-tip[hidden] {
+  display: none;
+}
+
+.previous-chat-kicker {
+  font-size: 10px;
+  font-weight: 650;
+  color: var(--teal);
+  letter-spacing: 0.02em;
+}
+
+.previous-chat-tip strong {
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.previous-chat-tip p {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* Long-conversation Turn Directory: special accent dash right above the turn rail (9+ turns) */
+.turn-directory {
+  position: absolute;
+  top: 72px;
+  right: 4px;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
+}
+
+.turn-directory[hidden] {
+  display: none;
+}
+
+.turn-directory-dash {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 22px;
+  height: 14px;
+  padding: 0 2px 0 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.turn-directory-dash::before {
+  content: '';
+  display: block;
+  width: 14px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--teal);
+  opacity: 0.85;
+  transition: width 160ms var(--ease-out), opacity 140ms ease, background-color 140ms ease;
+}
+
+.turn-directory-dash:hover::before,
+.turn-directory-dash:focus-visible::before,
+.turn-directory-dash.is-open::before {
+  width: 22px;
+  opacity: 1;
+  background: var(--teal-dark);
+}
+
+.turn-directory-panel {
+  pointer-events: auto;
+  position: absolute;
+  top: -4px;
+  right: 24px;
+  width: min(332px, calc(100vw - 38px));
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.turn-directory-header {
+  padding: 11px 14px 9px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.turn-directory-header strong {
+  font-size: 13px;
+  font-weight: 680;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.turn-directory-header span {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.turn-directory-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  max-height: min(360px, 54vh);
+  overflow-y: auto;
+  gap: 1px;
+}
+
+.turn-directory-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.turn-directory-row:hover {
+  background: var(--surface-card);
+}
+
+.turn-directory-row.is-current {
+  background: var(--teal-soft);
+}
+
+.turn-directory-time {
+  flex: 0 0 auto;
+  font-family: var(--folio-font);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.turn-directory-row.is-current .turn-directory-time {
+  color: var(--teal);
+  font-weight: 650;
+}
+
+.turn-directory-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.turn-directory-row.is-current .turn-directory-text {
+  color: var(--teal-dark);
+  font-weight: 550;
 }
 
 /* Codex-style turn rail. The rail and preview live outside the scrolling
@@ -1872,29 +2087,150 @@ img[data-image-preview]:focus-visible {
 }
 
 /* ==========================================================================
-   Markdown Tables (优雅现代表格，平铺拉伸，自适应圆角与微交互)
+   Markdown Tables (全局精致数据表：利落 6px 圆角、自适应横纵滚动、悬停放大)
    ========================================================================== */
+.message-table-block {
+  position: relative;
+  margin: 12px 0;
+  min-width: 0;
+}
+
+.message-table-toolbar {
+  position: absolute;
+  top: -11px;
+  right: 8px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+  transition: opacity 150ms ease, transform 150ms var(--ease-out);
+}
+
+.message-table-block:hover .message-table-toolbar,
+.message-table-block:focus-within .message-table-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .message-table-toolbar {
+    opacity: 0.92;
+    pointer-events: auto;
+  }
+}
+
+.message-table-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--ink-secondary);
+  font-size: 11px;
+  font-weight: 550;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease, transform 140ms var(--ease-tactile);
+}
+
+.message-table-action .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.message-table-action:hover,
+.message-table-action:focus-visible {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.message-table-action:active {
+  transform: scale(0.95);
+}
+
 .md-table-scroll {
-  --scrollbar-height: 4px;
+  --scrollbar-width: 5px;
+  --scrollbar-height: 5px;
   width: 100%;
   max-width: 100%;
   overflow-x: auto;
-  margin: 14px 0;
+  overflow-y: visible;
+  margin: 12px 0;
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
+  border-radius: 10px;
   background: var(--surface);
   box-shadow: var(--shadow-xs);
+}
+
+.message-table-block > .md-table-scroll {
+  margin: 0;
+}
+
+.md-table-scroll[data-table-tall="true"] {
+  max-height: min(420px, 56vh);
+  overflow-y: auto;
+}
+
+/* Clean 2-line cell clamp with ellipsis; expanded lightbox shows full content */
+.md-cell-clip {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+.md-table-scroll.is-expanded .md-cell-clip {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+/* Global Table Cell Hover Tooltip (Paper & Ink popover rules) */
+.table-cell-tooltip {
+  position: fixed;
+  z-index: 95;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 8px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  animation: ui-popover-in 120ms var(--ease-out) both;
+}
+
+.table-cell-tooltip[hidden] {
+  display: none;
 }
 
 .message-content table {
   display: table;
   width: 100%;
   min-width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
   border-spacing: 0;
   margin: 0;
-  font-size: calc(var(--chat-font-size) - 1px);
-  line-height: 1.6;
+  font-size: calc(var(--chat-font-size) - 0.8px);
+  line-height: 1.55;
   color: var(--ink);
   border: none;
 }
@@ -1904,44 +2240,189 @@ img[data-image-preview]:focus-visible {
 }
 
 .message-content th {
-  padding: 9px 12px;
+  padding: 8px 11px;
   font-weight: 650;
-  font-size: calc(1em - .5px);
+  font-size: calc(1em - 0.5px);
   color: var(--ink);
   text-align: left;
   background: var(--surface-alt);
   border-bottom: 1px solid var(--line-strong);
-  border-right: 1px solid var(--line);
   white-space: nowrap;
 }
 
-.message-content th:last-child {
-  border-right: none;
+.md-table-scroll[data-table-tall="true"] thead th,
+.md-table-scroll.is-expanded thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .message-content td {
-  padding: 8px 12px;
+  padding: 7.5px 11px;
   border-bottom: 1px solid var(--line);
-  border-right: 1px solid var(--line);
   vertical-align: middle;
   color: var(--ink);
-  transition: background 0.12s ease;
+  transition: background-color 120ms ease;
 }
 
-.message-content td:last-child {
-  border-right: none;
-}
-
-.message-content tr:last-child td {
+.message-content tbody tr:last-child td {
   border-bottom: none;
 }
 
 .message-content tbody tr:nth-child(even) td {
-  background: var(--surface-card);
+  background: color-mix(in srgb, var(--ink) 1.8%, var(--surface));
 }
 
 .message-content tbody tr:hover td {
   background: var(--teal-soft);
+}
+
+/* Sticky first column on wide tables so row labels stay readable during horizontal scroll */
+.md-table-scroll[data-table-wide="true"] th:first-child,
+.md-table-scroll[data-table-wide="true"] td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  box-shadow: 1px 0 0 var(--line);
+}
+
+.md-table-scroll[data-table-wide="true"] thead th:first-child {
+  z-index: 3;
+  background: var(--surface-alt);
+}
+
+.md-table-scroll[data-table-wide="true"] tbody tr:nth-child(even) td:first-child {
+  background: color-mix(in srgb, var(--ink) 1.8%, var(--surface));
+}
+
+.md-table-scroll[data-table-wide="true"] tbody tr:hover td:first-child {
+  background: var(--teal-soft);
+}
+
+/* Global Table Lightbox Dialog */
+.table-preview-dialog {
+  width: min(94vw, 1080px);
+  max-width: min(94vw, 1080px);
+  max-height: 88vh;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.table-preview-dialog::backdrop {
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.table-preview-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  min-width: 0;
+}
+
+.table-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-alt);
+  flex-shrink: 0;
+}
+
+.table-preview-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.table-preview-title strong {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.table-preview-title span {
+  font-family: var(--folio-font);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.table-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.table-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-secondary);
+  font-size: 11.5px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+
+.table-preview-btn .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.table-preview-btn:hover {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.table-preview-viewport {
+  padding: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.table-preview-viewport > .message-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  font-size: 13.5px;
+}
+
+.table-preview-viewport .md-table-scroll.is-expanded {
+  margin: 0;
+  max-height: calc(88vh - 86px);
+  overflow: auto;
+  border-radius: 10px;
+}
+
+.table-preview-viewport .md-table-scroll.is-expanded table {
+  font-size: 13px;
+}
+
+.table-preview-viewport .md-table-scroll.is-expanded th,
+.table-preview-viewport .md-table-scroll.is-expanded td {
+  padding: 9px 14px;
 }
 
 .message-content hr {
@@ -2109,9 +2590,8 @@ img[data-image-preview]:focus-visible {
 .thinking-dots i:nth-child(3) { animation-delay: 0.32s; }
 
 @keyframes thinking {
-  0%, 75%, 100% { opacity: 0.32; transform: scaleX(1) scaleY(1); }
-  32% { opacity: 1; transform: scaleX(2.1) scaleY(0.88); }
-  52% { opacity: 0.85; transform: scaleX(0.95) scaleY(1.06); }
+  0%, 80%, 100% { opacity: 0.3; transform: translateY(0) scale(0.88); }
+  40% { opacity: 1; transform: translateY(-2.5px) scale(1.08); }
 }
 
 /* 打字机光标 */
@@ -2550,6 +3030,29 @@ img[data-image-preview]:focus-visible {
   flex: 0 0 auto;
 }
 
+/* Compact bottom fade veil so scrolling messages dissolve cleanly without touching the companion */
+.composer-area::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 16px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    color-mix(in srgb, var(--surface-alt) 68%, transparent) 60%,
+    var(--surface-alt) 100%
+  );
+  z-index: 0;
+}
+
+.composer-area > * {
+  position: relative;
+  z-index: 2;
+}
+
 .composer {
   width: 100%;
   max-width: var(--composer-max-width);
@@ -2847,7 +3350,7 @@ img[data-image-preview]:focus-visible {
    ========================================================================== */
 .agent-panel {
   width: 100%;
-  max-width: 720px;
+  max-width: var(--workspace-measure);
   margin: 0 auto 8px;
   max-height: 44vh;
   overflow-y: auto;

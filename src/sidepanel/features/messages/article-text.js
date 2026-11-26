@@ -1,10 +1,15 @@
 const MAX_TEXT = 2_000_000;
 const MAX_NODES = 20_000;
 
-/** Inline attachment UI is not part of the answer's quote offsets. */
+/** Inline attachment, chart, and table-action UI is not part of the answer's quote offsets. */
 export function isArticleDecoration(node) {
   const element = node?.nodeType === 1 ? node : node?.parentElement;
-  return Boolean(element?.closest?.('.message-illustrations') || element?.closest?.('.generated-image'));
+  return Boolean(
+    element?.closest?.('.message-illustrations')
+    || element?.closest?.('.generated-image')
+    || element?.closest?.('[data-fund-decoration="true"]')
+    || element?.closest?.('[data-table-decoration="true"]'),
+  );
 }
 
 export function articleTextSnapshot(body) {

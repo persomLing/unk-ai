@@ -8,6 +8,8 @@ import {
   loadFundModeConfig,
 } from './fund-mode-config.js';
 import {
+  beijingDateKey,
+  beijingMorningCycleKey,
   incrementDailyFundUsage,
   loadDailyFundFeed,
   loadDailyFundUsage,
@@ -310,10 +312,26 @@ export function parseMarketTemperatureSnapshot(raw) {
 
 export function parseHotTopicsList(raw) {
   const text = typeof raw?.text === 'string' ? raw.text : '';
-  const data = (raw?.structured && typeof raw.structured === 'object' ? raw.structured : null)
+  let data = (raw?.structured && typeof raw.structured === 'object' ? raw.structured : null)
     || tryParseJson(text);
+  if (!data && text) {
+    const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+    if (jsonMatch) data = tryParseJson(jsonMatch[1]);
+  }
   const items = [];
   const seen = new Set();
+
+  const pushTopic = (rawTitle, rawSummary = '') => {
+    const cleanTitle = String(rawTitle || '')
+      .replace(/^[\d.\s、\-*•#]+/, '')
+      .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+      .replace(/^【([^】]+)】\s*/, '$1：')
+      .trim();
+    if (cleanTitle.length < 3 || seen.has(cleanTitle)) return;
+    seen.add(cleanTitle);
+    const cleanSummary = typeof rawSummary === 'string' ? rawSummary.trim().slice(0, 72) : '';
+    items.push({ title: cleanTitle.slice(0, 48), summary: cleanSummary });
+  };
 
   const walk = (node, depth = 0) => {
     if (!node || depth > 5 || items.length >= 5) return;
@@ -321,15 +339,15 @@ export function parseHotTopicsList(raw) {
       for (const entry of node) walk(entry, depth + 1);
       return;
     }
+    if (typeof node === 'string') {
+      if (depth >= 1) pushTopic(node);
+      return;
+    }
     if (typeof node !== 'object') return;
-    const title = node.topic || node.title || node.topicName || node.name || node.keyword || '';
-    const summary = node.summary || node.description || node.reason || node.logic || '';
-    if (typeof title === 'string' && title.trim().length >= 3 && !seen.has(title.trim())) {
-      seen.add(title.trim());
-      items.push({
-        title: title.trim().slice(0, 48),
-        summary: typeof summary === 'string' ? summary.trim().slice(0, 72) : '',
-      });
+    const title = node.topic || node.title || node.topicName || node.hotTopic || node.topicTitle || node.subject || node.headline || node.name || node.keyword || '';
+    const summary = node.summary || node.description || node.reason || node.logic || node.abstract || node.content || '';
+    if (typeof title === 'string' && title.trim().length >= 3) {
+      pushTopic(title, summary);
       return;
     }
     for (const value of Object.values(node)) {
@@ -337,6 +355,23 @@ export function parseHotTopicsList(raw) {
     }
   };
   if (data) walk(data);
+
+  // Fallback for Markdown / plain-text bullet or numbered topic lists
+  if (!items.length && text) {
+    for (const rawLine of text.split(/\r?\n/)) {
+      if (items.length >= 5) break;
+      const line = rawLine.trim();
+      if (!line || line.startsWith('{') || line.startsWith('}') || line.startsWith('[') || line.startsWith(']')) continue;
+      if (/^(?:共|总计|来源|数据|更新|截至|说明|免责|备注)/.test(line)) continue;
+      const numbered = line.match(/^(?:\d+[.、)）]|[-*•])\s+(.+)$/);
+      if (numbered) {
+        const cleaned = numbered[1].replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1');
+        const colonIdx = cleaned.search(/[：:]/);
+        if (colonIdx >= 3) pushTopic(cleaned.slice(0, colonIdx), cleaned.slice(colonIdx + 1));
+        else pushTopic(cleaned, '');
+      }
+    }
+  }
   return items;
 }
 
@@ -387,7 +422,7 @@ export function parsePopularFundsList(raw) {
   return items;
 }
 
-function defaultArgsFromSchema(toolDef) {
+function defaultArgsFromSchema(toolDef, now = Date.now) {
   const schema = toolDef?.inputSchema;
   if (!schema || typeof schema !== 'object' || !schema.properties) return {};
   const required = new Set(Array.isArray(schema.required) ? schema.required : []);
@@ -407,7 +442,9 @@ function defaultArgsFromSchema(toolDef) {
     } else if (type === 'array') {
       args[key] = [];
     } else if (type === 'string') {
-      args[key] = '';
+      if (/date|day/i.test(key)) args[key] = beijingDateKey(now());
+      else if (/query|keyword|topic|search/i.test(key)) args[key] = '今日财经热点';
+      else args[key] = '';
     }
   }
   return args;
@@ -445,18 +482,52 @@ export function createFundModeController({
   let tempError = '';
   let tempLoading = false;
   let feedTab = 'topics'; // 'topics' | 'popular'
-  let feedData = { topics: null, popular: null };
-  let feedLoading = false;
-  let feedError = '';
+  const feedState = {
+    topics: { items: null, loading: false, error: '', fetchedCycle: '' },
+    popular: { items: null, loading: false, error: '', fetchedCycle: '' },
+  };
   let popoverOpen = false;
   let autoFetchedDate = '';
+  let lastHasMessages = false;
   let lastBarHtml = '';
   let lastWelcomeHtml = '';
   let fundCarousel = null;
   let disposed = false;
   let tempController = null;
-  let feedController = null;
+  const feedControllers = { topics: null, popular: null };
   const defaultPlaceholder = input?.getAttribute?.('placeholder') || '输入消息…';
+
+  function emptyFeedMessage(tab) {
+    return tab === 'topics'
+      ? '今日财经热点暂时为空，可稍后重试或让 AI 直接汇总。'
+      : '暂未能解析热门关注基金列表，可直接让 AI 帮你查询。';
+  }
+
+  function applyCachedFeed(cached) {
+    const currentCycle = beijingMorningCycleKey(now());
+    if (!cached) {
+      for (const tab of ['topics', 'popular']) {
+        if (feedState[tab].fetchedCycle && feedState[tab].fetchedCycle !== currentCycle && !feedState[tab].loading) {
+          feedState[tab] = { items: null, loading: false, error: '', fetchedCycle: '' };
+        }
+      }
+      return;
+    }
+    const meta = cached.meta && typeof cached.meta === 'object' ? cached.meta : {};
+    const cycleKey = cached.cycleKey || currentCycle;
+    for (const tab of ['topics', 'popular']) {
+      const tabMeta = meta[tab];
+      const hasItems = Array.isArray(cached[tab]);
+      if (!hasItems && !tabMeta) continue;
+      const items = hasItems ? cached[tab] : [];
+      const tabCycle = tabMeta?.cycleKey || cycleKey;
+      if (items.length) {
+        feedState[tab] = { items, loading: feedState[tab].loading, error: '', fetchedCycle: tabCycle };
+      } else if (tabMeta?.empty || hasItems) {
+        feedState[tab] = { items: [], loading: feedState[tab].loading, error: emptyFeedMessage(tab), fetchedCycle: tabCycle };
+      }
+    }
+  }
 
   function renderQuickPopover(configured) {
     if (!popoverOpen || !configured) return '';
@@ -592,15 +663,16 @@ export function createFundModeController({
   function renderFeedWidget(configured, { compact = false } = {}) {
     if (!configured) return '';
     const isTopics = feedTab === 'topics';
-    const list = isTopics ? feedData.topics : feedData.popular;
+    const currentState = feedState[feedTab];
+    const list = currentState.items;
     const visibleList = Array.isArray(list) ? (compact ? list : list.slice(0, isTopics ? 3 : 6)) : null;
     let bodyHtml = '';
 
-    if (feedLoading) {
+    if (currentState.loading) {
       bodyHtml = '<p class="fund-feed-placeholder">正在同步今日速览…</p>';
-    } else if (feedError) {
+    } else if (currentState.error) {
       bodyHtml = `<div class="fund-feed-error-box">
-        <span>${escapeHtml(feedError)}</span>
+        <span>${escapeHtml(currentState.error)}</span>
         <div class="fund-feed-error-actions">
           <button type="button" class="fund-feed-load-btn" data-fund-action="refresh-feed">重试</button>
           <button type="button" class="fund-temp-ask-btn" data-fund-action="ask-feed-ai"><span>让 AI 查</span>${icon('arrow-right')}</button>
@@ -628,7 +700,7 @@ export function createFundModeController({
       }
     } else {
       bodyHtml = `<div class="fund-feed-cta">
-        <span>按需加载今日${isTopics ? '财经热点' : '热门关注基金'}（每日缓存 1 次）</span>
+        <span>按需加载今日${isTopics ? '财经热点' : '热门关注基金'}（每日 09:00 自动同步 1 次）</span>
         <button type="button" class="fund-feed-load-btn" data-fund-action="load-feed">立即加载</button>
       </div>`;
     }
@@ -640,7 +712,7 @@ export function createFundModeController({
             <button type="button" role="tab" aria-selected="${isTopics}" class="fund-feed-tab${isTopics ? ' is-active' : ''}" data-fund-feed-tab="topics">${icon('flame')}<span>财经热点</span></button>
             <button type="button" role="tab" aria-selected="${!isTopics}" class="fund-feed-tab${!isTopics ? ' is-active' : ''}" data-fund-feed-tab="popular">${icon('trending-up')}<span>热门关注基金</span></button>
           </div>
-          <button type="button" class="fund-temp-icon-btn${feedLoading ? ' is-spinning' : ''}" data-fund-action="refresh-feed" title="刷新当前速览" aria-label="刷新当前速览"${feedLoading ? ' disabled' : ''}>${icon('regenerate')}</button>
+          <button type="button" class="fund-temp-icon-btn${currentState.loading ? ' is-spinning' : ''}" data-fund-action="refresh-feed" title="仅刷新当前标签" aria-label="仅刷新当前标签"${currentState.loading ? ' disabled' : ''}>${icon('regenerate')}</button>
         </div>
         ${bodyHtml}
       </section>
@@ -660,12 +732,13 @@ export function createFundModeController({
   }
 
   function renderWelcome(hasMessages = false) {
+    lastHasMessages = Boolean(hasMessages);
     if (!fundWelcome) return;
-    const showFundWelcome = active && !hasMessages;
+    const showFundWelcome = active && !lastHasMessages;
     fundWelcome.hidden = !showFundWelcome;
     if (welcome) {
       if (showFundWelcome) welcome.hidden = true;
-      else if (!hasMessages) welcome.hidden = false;
+      else if (!lastHasMessages) welcome.hidden = false;
     }
     if (!showFundWelcome) {
       fundCarousel?.setActive(false);
@@ -802,61 +875,85 @@ export function createFundModeController({
   }
 
   async function loadFeed(tab = feedTab, { force = false } = {}) {
-    if (feedLoading || !hasFundModeApiKey(config)) return;
-    if (!force && Array.isArray(feedData[tab]) && feedData[tab].length) return;
+    const targetTab = tab === 'popular' ? 'popular' : 'topics';
+    const state = feedState[targetTab];
+    if (state.loading || !hasFundModeApiKey(config)) return;
+    const currentCycle = beijingMorningCycleKey(now());
+    if (!force && state.fetchedCycle === currentCycle) return;
     if (!force) {
       const cached = await loadDailyFundFeed({ storage, now });
-      if (cached) {
-        feedData = { ...feedData, ...cached };
-        if (Array.isArray(feedData[tab]) && feedData[tab].length) {
-          if (!disposed) renderWelcome(false);
-          return;
+      applyCachedFeed(cached);
+      if (feedState[targetTab].fetchedCycle === currentCycle) {
+        if (!disposed) {
+          renderBar();
+          renderWelcome(lastHasMessages);
         }
+        return;
       }
     }
-    feedLoading = true;
-    feedError = '';
+    feedState[targetTab] = { ...feedState[targetTab], loading: true, error: '' };
     renderBar();
-    renderWelcome(Boolean(welcome?.hidden && fundWelcome?.hidden));
-    feedController?.abort();
-    feedController = new AbortController();
+    renderWelcome(lastHasMessages);
+    feedControllers[targetTab]?.abort();
+    const controller = new AbortController();
+    feedControllers[targetTab] = controller;
     try {
       const client = createYingmiMcpClient({ endpoint: config.endpoint, apiKey: config.apiKey });
-      const toolName = tab === 'topics' ? 'SearchHotTopic' : 'GetPopularFund';
+      const toolName = targetTab === 'topics' ? 'SearchHotTopic' : 'GetPopularFund';
       const cachedTools = await loadCachedMcpTools(client.endpoint, { storage, now });
       const toolDef = Array.isArray(cachedTools) ? cachedTools.find(t => t?.name === toolName) : null;
-      const toolArgs = sanitizeFundToolArgs(toolName, defaultArgsFromSchema(toolDef));
-      const result = await client.callTool(toolName, toolArgs, { signal: feedController.signal, timeoutMs: 18000 });
+      const toolArgs = sanitizeFundToolArgs(toolName, defaultArgsFromSchema(toolDef, now));
+      const result = await client.callTool(toolName, toolArgs, { signal: controller.signal, timeoutMs: 18000 });
       if (client.lastQuota) await saveRemoteFundQuota(client.lastQuota, { storage, now });
       usage = await incrementDailyFundUsage(1, { storage, now });
       if (result.isError) {
-        feedError = friendlyFeedError(result.text);
+        feedState[targetTab] = {
+          ...feedState[targetTab],
+          error: friendlyFeedError(result.text),
+          fetchedCycle: currentCycle,
+        };
       } else {
-        const parsed = tab === 'topics' ? parseHotTopicsList(result) : parsePopularFundsList(result);
-        if (parsed.length) {
-          feedData = { ...feedData, [tab]: parsed };
-          await saveDailyFundFeed({ [tab]: parsed }, { storage, now });
-        } else {
-          feedError = tab === 'topics'
-            ? '今日财经热点暂时为空，可稍后重试或让 AI 直接汇总。'
-            : '暂未能解析热门关注基金列表，可直接让 AI 帮你查询。';
-        }
+        const parsed = targetTab === 'topics' ? parseHotTopicsList(result) : parsePopularFundsList(result);
+        const isEmpty = parsed.length === 0;
+        feedState[targetTab] = {
+          items: parsed,
+          loading: false,
+          error: isEmpty ? emptyFeedMessage(targetTab) : '',
+          fetchedCycle: currentCycle,
+        };
+        await saveDailyFundFeed({
+          [targetTab]: parsed,
+          meta: {
+            [targetTab]: {
+              cycleKey: currentCycle,
+              fetchedAt: now(),
+              empty: isEmpty,
+            },
+          },
+        }, { storage, now });
       }
     } catch (error) {
       if (error?.name !== 'AbortError') {
-        feedError = friendlyFeedError(error?.message);
+        feedState[targetTab] = {
+          ...feedState[targetTab],
+          error: friendlyFeedError(error?.message),
+          fetchedCycle: currentCycle,
+        };
       }
     } finally {
-      feedLoading = false;
-      feedController = null;
+      feedState[targetTab] = { ...feedState[targetTab], loading: false };
+      if (feedControllers[targetTab] === controller) {
+        feedControllers[targetTab] = null;
+      }
       if (!disposed) {
         renderBar();
-        renderWelcome(Boolean(welcome?.hidden && fundWelcome?.hidden));
+        renderWelcome(lastHasMessages);
       }
     }
   }
 
   async function refreshState(hasMessages = false, { autoSyncTemp = false } = {}) {
+    lastHasMessages = Boolean(hasMessages);
     config = await loadFundModeConfig(storage);
     usage = await loadDailyFundUsage({ storage, now });
     const cachedTemp = await loadDailyMarketTemperature({ storage, now });
@@ -865,18 +962,22 @@ export function createFundModeController({
       tempError = '';
     }
     const cachedFeed = await loadDailyFundFeed({ storage, now });
-    if (cachedFeed) {
-      feedData = { ...feedData, ...cachedFeed };
-    }
+    applyCachedFeed(cachedFeed);
     if (disposed) return;
     renderBar();
-    renderWelcome(hasMessages);
+    renderWelcome(lastHasMessages);
 
-    if (autoSyncTemp && active && hasFundModeApiKey(config) && !cachedTemp) {
-      const todayKey = usage.date || String(new Date(now()).toISOString().slice(0, 10));
-      if (autoFetchedDate !== todayKey) {
-        autoFetchedDate = todayKey;
-        void refreshTemperature({ force: false, hasMessages });
+    if (autoSyncTemp && active && hasFundModeApiKey(config)) {
+      if (!cachedTemp) {
+        const todayKey = usage.date || String(new Date(now()).toISOString().slice(0, 10));
+        if (autoFetchedDate !== todayKey) {
+          autoFetchedDate = todayKey;
+          void refreshTemperature({ force: false, hasMessages: lastHasMessages });
+        }
+      }
+      const currentCycle = beijingMorningCycleKey(now());
+      if (feedState[feedTab].fetchedCycle !== currentCycle) {
+        void loadFeed(feedTab, { force: false });
       }
     }
   }
@@ -910,10 +1011,12 @@ export function createFundModeController({
       const nextTab = tabBtn.dataset.fundFeedTab === 'popular' ? 'popular' : 'topics';
       if (feedTab !== nextTab) {
         feedTab = nextTab;
-        feedError = '';
         renderBar();
-        renderWelcome(Boolean(welcome?.hidden && fundWelcome?.hidden));
-        void loadFeed(feedTab, { force: false });
+        renderWelcome(lastHasMessages);
+        const currentCycle = beijingMorningCycleKey(now());
+        if (feedState[feedTab].fetchedCycle !== currentCycle) {
+          void loadFeed(feedTab, { force: false });
+        }
       }
       return true;
     }
@@ -948,11 +1051,12 @@ export function createFundModeController({
       else if (action === 'toggle-popover') {
         popoverOpen = !popoverOpen;
         renderBar();
-        if (popoverOpen && !Array.isArray(feedData[feedTab])) {
+        const currentCycle = beijingMorningCycleKey(now());
+        if (popoverOpen && feedState[feedTab].fetchedCycle !== currentCycle) {
           void loadFeed(feedTab, { force: false });
         }
       }
-      else if (action === 'refresh-temp') void refreshTemperature({ force: true, hasMessages: Boolean(welcome?.hidden && fundWelcome?.hidden) });
+      else if (action === 'refresh-temp') void refreshTemperature({ force: true, hasMessages: lastHasMessages });
       else if (action === 'ask-temp') {
         if (closeOnPick) closePopover();
         onQuickPrompt?.(MARKET_TEMP_PROMPT_SCENARIO);
@@ -1102,7 +1206,7 @@ export function createFundModeController({
   const onStorageChange = (changes, area) => {
     if (area !== 'local' || disposed) return;
     if (changes.fundModeConfig || changes.fundModeDailyUsage || changes.fundModeRemoteQuota || changes.fundModeDailyMarketTemp || changes.fundModeDailyFeed) {
-      void refreshState(Boolean(welcome?.hidden && fundWelcome?.hidden));
+      void refreshState(lastHasMessages);
     }
   };
 
@@ -1149,7 +1253,8 @@ export function createFundModeController({
       fundCarousel?.dispose();
       fundCarousel = null;
       tempController?.abort();
-      feedController?.abort();
+      feedControllers.topics?.abort();
+      feedControllers.popular?.abort();
       fundBar?.removeEventListener('click', onBarClick);
       fundWelcome?.removeEventListener('click', onWelcomeClick);
       fundSkillChip?.removeEventListener('click', onSkillChipClick);

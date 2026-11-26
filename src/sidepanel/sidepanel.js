@@ -69,6 +69,7 @@ import { normalizeProviderConfig, requestProfile } from '../utils/profiles.js';
 import { exportConversationMarkdown } from '../utils/exporter.js';
 import { createMessageCopy } from './features/messages/message-copy.js';
 import { copyCodeBlock } from './features/messages/code-blocks.js';
+import { openTablePreview } from './features/messages/table-blocks.js';
 import { createExportController } from './features/export/export-controller.js';
 import { createConversationExportMenu } from './features/export/export-menu.js';
 import { createExportDownloader } from './features/export/download-export.js';
@@ -211,6 +212,10 @@ const readingCompanion = createReadingCompanion({
 });
 const historyDrawer = $('#history-drawer');
 const conversationStage = $('#conversation-stage');
+const previousChatWrap = $('#previous-chat-wrap');
+const previousChatBtn = $('#previous-chat-btn');
+const previousChatTip = $('#previous-chat-tip');
+const turnDirectoryElement = $('#turn-directory');
 const turnNavigatorElement = $('#turn-navigator');
 const turnPreview = $('#turn-preview');
 let historySidebar = null;
@@ -220,6 +225,7 @@ let historyNavigationBusy = false;
 let historyRefreshVersion = 0;
 let historyOrganization = null;
 let deletedActiveConversationId = null;
+let previousConversationSwitch = null;
 let selectionChatSessions = null;
 let contextUsageRefreshTimer = null;
 let configRevision = 0;
@@ -425,6 +431,7 @@ const turnNavigator = createTurnNavigator({
   messages: messagesElement,
   rail: turnNavigatorElement,
   preview: turnPreview,
+  directory: turnDirectoryElement,
   getConversation: () => state.conversation,
   openSource: url => openSourcePage({ url }),
   onNavigate: () => { state.followToPage = false; },
@@ -602,11 +609,55 @@ function syncConversationModel() {
   state.selectedEffort = selection.effort;
 }
 
+function summarizeConversationForReturn(conversation) {
+  if (!conversation?.id) return null;
+  const msgs = Array.isArray(conversation.messages) ? conversation.messages : [];
+  const firstUser = msgs.find(m => m?.role === 'user');
+  const lastMsg = [...msgs].reverse().find(m => m?.content || m?.displayContent);
+  const rawTitle = String(conversation.title || '').trim();
+  const title = rawTitle && rawTitle !== '新对话'
+    ? rawTitle
+    : String(firstUser?.displayContent ?? firstUser?.content ?? '').replace(/\s+/g, ' ').trim().slice(0, 36) || '新对话';
+  const rawPreview = lastMsg
+    ? String(lastMsg.displayContent ?? lastMsg.content ?? '').replace(/\s+/g, ' ').trim()
+    : '';
+  const preview = rawPreview
+    ? (rawPreview.length > 72 ? `${rawPreview.slice(0, 72).trimEnd()}…` : rawPreview)
+    : '空白新对话';
+  return {
+    id: conversation.id,
+    title,
+    preview,
+    turnCount: msgs.filter(m => m?.role === 'user').length,
+    isTemporary: conversation.storage === 'temporary',
+    snapshot: conversation.storage === 'temporary' && !msgs.length ? conversation : null,
+  };
+}
+
+function renderPreviousChatButton() {
+  if (!previousChatWrap || !previousChatBtn || !previousChatTip) return;
+  const target = previousConversationSwitch;
+  const visible = Boolean(target?.id && target.id !== state.conversation?.id);
+  previousChatWrap.hidden = !visible;
+  if (!visible) {
+    previousChatTip.hidden = true;
+    return;
+  }
+  previousChatBtn.disabled = Boolean(state.generatingId || state.isSubmitting || state.compressing || agentSlot?.isBusy() || historyMutationBusy);
+  const countText = target.turnCount > 0 ? ` · ${target.turnCount} 轮` : '';
+  previousChatTip.innerHTML = `<span class="previous-chat-kicker">返回上一次对话${escapeHtml(countText)}</span><strong>${escapeHtml(target.title)}</strong><p>${escapeHtml(target.preview)}</p>`;
+}
+
 function showConversation(conversation) {
+  const prev = state.conversation;
+  if (prev?.id && conversation?.id && prev.id !== conversation.id) {
+    previousConversationSwitch = summarizeConversationForReturn(prev);
+  }
   draftModelSelection = null;
   toggleModelDropdown(false);
   state.conversation = conversation;
   syncConversationModel();
+  renderPreviousChatButton();
 }
 
 function rememberConversationModel(model, effort) {
@@ -1436,6 +1487,7 @@ function updateComposer() {
   renderModelSwitcher();
   $('#new-chat').disabled = busy || historyMutationBusy;
   $('#history-new-chat').disabled = busy || historyMutationBusy;
+  renderPreviousChatButton();
   historySidebar?.setBusy(busy || historyMutationBusy);
   $('#export-selected').disabled = !state.conversation?.id;
   conversationExportMenu.sync(state.conversation?.id);
@@ -2543,6 +2595,35 @@ $('#composer').addEventListener('drop', (event) => {
 $('#new-chat').addEventListener('click', () => {
   if (!historyMutationBusy) void newConversation().catch(error => toast(error.message || '新建对话失败。', 'error'));
 });
+previousChatBtn?.addEventListener('pointerenter', () => {
+  if (previousConversationSwitch && !previousChatWrap.hidden) previousChatTip.hidden = false;
+});
+previousChatBtn?.addEventListener('focus', () => {
+  if (previousConversationSwitch && !previousChatWrap.hidden) previousChatTip.hidden = false;
+});
+previousChatWrap?.addEventListener('pointerleave', () => { previousChatTip.hidden = true; });
+previousChatBtn?.addEventListener('blur', () => { previousChatTip.hidden = true; });
+previousChatBtn?.addEventListener('click', () => {
+  previousChatTip.hidden = true;
+  const target = previousConversationSwitch;
+  if (!target?.id || target.id === state.conversation?.id || historyMutationBusy) return;
+  if (target.snapshot && target.isTemporary && !target.turnCount) {
+    if (state.generatingId || state.isSubmitting || state.compressing || agentSlot?.isBusy()) {
+      toast('请先停止当前任务，再切换会话。');
+      return;
+    }
+    void historyNavigation.run(async operation => {
+      operation.commit(() => {
+        showConversation(target.snapshot);
+        state.pendingPage = null;
+        setHistoryOpen(false);
+        renderConversation();
+      });
+    }, { label: '返回上一次对话' }).catch(error => toast(error.message || '切换对话失败。', 'error'));
+    return;
+  }
+  void openConversation(target.id).catch(error => toast(error.message || '切换对话失败。', 'error'));
+});
 $('#setup-required').addEventListener('click', async (event) => {
   if (!event.target.closest('button')) return;
   const setup = $('#setup-required');
@@ -2852,6 +2933,10 @@ messagesElement.addEventListener('click', async (event) => {
   if (!message) return;
   if (button.dataset.action === 'copy-code') {
     await copyCodeBlock(button, { writeText: text => navigator.clipboard.writeText(text), notify: toast });
+    return;
+  }
+  if (button.dataset.action === 'expand-table') {
+    openTablePreview(button, { writeText: text => navigator.clipboard.writeText(text), notify: toast });
     return;
   }
   if (button.dataset.action === 'reference-image') {

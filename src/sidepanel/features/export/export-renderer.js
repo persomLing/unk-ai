@@ -94,8 +94,9 @@ export function buildExportDocument(snapshot, { document: targetDocument = globa
     const status = statusText(turn.assistant);
     if (status) answer.append(textElement(doc, 'p', 'export-status', status));
     if (turn.assistant?.content) {
-      content = textElement(doc, 'div', 'export-markdown', '');
-      renderMessageContent(content, String(turn.assistant.content));
+      const isFund = Boolean(turn.assistant.fundMode);
+      content = textElement(doc, 'div', isFund ? 'export-markdown export-fund-markdown' : 'export-markdown', '');
+      renderMessageContent(content, String(turn.assistant.content), false, { fundMode: isFund });
       for (const img of content.querySelectorAll('img')) {
         // Even data images in Markdown remain text: only explicit local attachments are embedded.
         const url = safeUrl(img.getAttribute('src'));
@@ -164,7 +165,7 @@ function measurePagination(paper, signal) {
     }
     if (lines.length > 25_000) throw new Error('内容排版过长，请减少所选回合后导出。');
   }
-  for (const block of paper.querySelectorAll('tr, img, .katex-display, .export-heading, h1, h2, h3, h4, h5, h6, .export-role')) {
+  for (const block of paper.querySelectorAll('tr, img, .katex-display, .export-heading, .fund-vis-card, .fund-kpi-card, .fund-callout, h1, h2, h3, h4, h5, h6, .export-role')) {
     const rect = block.getBoundingClientRect();
     let bottom = rect.bottom;
     if (block.matches('h1, h2, h3, h4, h5, h6, .export-role') && block.nextElementSibling) {

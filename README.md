@@ -7,7 +7,7 @@
 **Paper & Ink 温润纸感 Chrome 侧栏 AI 助手**  
 边看网页边提问、多页对比、B 站视频笔记、基金研究工作台与本地化对话管理
 
-[![Version](https://img.shields.io/badge/version-v0.20.1-2f6b55?style=flat-square)](https://github.com/persomLing/unk-ai/releases)
+[![Version](https://img.shields.io/badge/version-v0.20.2-2f6b55?style=flat-square)](https://github.com/persomLing/unk-ai/releases)
 [![Platform](https://img.shields.io/badge/Chrome-Manifest%20V3-4a5568?style=flat-square)](#开始使用)
 [![API](https://img.shields.io/badge/Model-OpenAI%20Compatible-7a5a44?style=flat-square)](#模型与数据)
 [![Storage](https://img.shields.io/badge/Data-Local--First-5c6b73?style=flat-square)](#模型与数据)
@@ -20,7 +20,7 @@
 
 UNK AI 是一个基于 Chrome 侧栏的本地优先 AI 助手，用于边看网页边提问、整理资料与沉淀长对话。支持接入自选的 OpenAI 兼容模型服务，会话与图片可自动同步保存到你的本地文件夹。
 
-当前源码版本：**0.20.1**。已发布版本安装包与说明见 [GitHub Releases](https://github.com/persomLing/unk-ai/releases)。
+当前源码版本：**0.20.2**。已发布版本安装包与说明见 [GitHub Releases](https://github.com/persomLing/unk-ai/releases)。
 
 ## 界面预览
 
@@ -64,7 +64,7 @@ UNK AI 是一个基于 Chrome 侧栏的本地优先 AI 助手，用于边看网�
 
 ### 方式一：下载安装包（推荐）
 
-需要支持侧栏的 Chrome。前往 [GitHub Releases](https://github.com/persomLing/unk-ai/releases/latest) 下载最新安装包（或使用本地打包生成的 `unk-ai-v0.20.1.zip`）：
+需要支持侧栏的 Chrome。前往 [GitHub Releases](https://github.com/persomLing/unk-ai/releases/latest) 下载最新安装包（或使用本地打包生成的 `unk-ai-v0.20.2.zip`）：
 
 1. 解压安装包，确认目录根部直接包含 `manifest.json`（包内附更新说明与离线操作手册）。
 2. 在浏览器地址栏打开 `chrome://extensions`，开启右上角 **开发者模式**。

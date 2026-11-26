@@ -1,5 +1,284 @@
 /* ===== Fund Research Mode (盈米 MCP) — Paper & Ink Editorial System ===== */
 
+/* ----- Per-Theme Financial Semantic Palette (6 Accents × Light & Dark = 12 Themes) -----
+ * Chinese A-share / public fund convention: Red = Up (红涨), Green = Down (绿跌).
+ * Down is ALWAYS unmistakably emerald/jade-green across every accent (including wine,
+ * ocean, parchment, and dusk), while harmonized to each theme's paper/ink temperature.
+ */
+:root {
+  /* Forest (Default Light) */
+  --fund-up: #c43b31;
+  --fund-up-soft: rgba(196, 59, 49, 0.09);
+  --fund-up-line: rgba(196, 59, 49, 0.24);
+  --fund-down: #1e7a52;
+  --fund-down-soft: rgba(30, 122, 82, 0.09);
+  --fund-down-line: rgba(30, 122, 82, 0.24);
+  --fund-flat: #6c757d;
+  --fund-flat-soft: rgba(108, 117, 125, 0.09);
+
+  --fund-cold: #1e7a52;
+  --fund-cool: #2f6f8f;
+  --fund-mid: #9c6621;
+  --fund-warm: #b85c22;
+  --fund-hot: #c43b31;
+
+  --fund-report-surface: var(--surface);
+  --fund-report-elev: color-mix(in srgb, var(--teal) 3.5%, var(--surface));
+  --fund-report-header: color-mix(in srgb, var(--teal) 7.5%, var(--surface));
+  --fund-report-zebra: color-mix(in srgb, var(--ink) 2.2%, var(--surface));
+  --fund-report-border: var(--line-strong);
+  --fund-chart-grid: rgba(29, 35, 40, 0.09);
+  --fund-chart-axis: var(--muted);
+
+  --fund-chart-1: #2d6a58;
+  --fund-chart-2: #c46d2d;
+  --fund-chart-3: #3b6f9c;
+  --fund-chart-4: #8b5a96;
+  --fund-chart-5: #b84552;
+  --fund-chart-6: #5d8736;
+}
+
+:root[data-theme="dark"] {
+  /* Forest (Default Dark) */
+  --fund-up: #f07c73;
+  --fund-up-soft: rgba(240, 124, 115, 0.14);
+  --fund-up-line: rgba(240, 124, 115, 0.30);
+  --fund-down: #5cc993;
+  --fund-down-soft: rgba(92, 201, 147, 0.14);
+  --fund-down-line: rgba(92, 201, 147, 0.30);
+  --fund-flat: #959fa9;
+  --fund-flat-soft: rgba(149, 159, 169, 0.14);
+
+  --fund-cold: #5cc993;
+  --fund-cool: #7ab8d9;
+  --fund-mid: #e2b46e;
+  --fund-warm: #e89662;
+  --fund-hot: #f07c73;
+
+  --fund-report-surface: color-mix(in srgb, var(--surface-card) 68%, var(--surface));
+  --fund-report-elev: color-mix(in srgb, var(--teal) 7%, var(--surface));
+  --fund-report-header: color-mix(in srgb, var(--teal) 13%, var(--surface));
+  --fund-report-zebra: rgba(255, 255, 255, 0.028);
+  --fund-report-border: var(--line-strong);
+  --fund-chart-grid: rgba(255, 255, 255, 0.09);
+  --fund-chart-axis: var(--muted);
+
+  --fund-chart-1: #6ec2a8;
+  --fund-chart-2: #e6a96a;
+  --fund-chart-3: #7cb4e2;
+  --fund-chart-4: #bd96d4;
+  --fund-chart-5: #eb7d88;
+  --fund-chart-6: #9bc96d;
+}
+
+/* Matcha (抹茶青 — Eye-care Botanical Paper) */
+:root:not([data-theme="dark"])[data-accent="matcha"] {
+  --fund-up: #bf3f33;
+  --fund-up-soft: rgba(191, 63, 51, 0.09);
+  --fund-up-line: rgba(191, 63, 51, 0.24);
+  --fund-down: #1f7447;
+  --fund-down-soft: rgba(31, 116, 71, 0.10);
+  --fund-down-line: rgba(31, 116, 71, 0.25);
+  --fund-cold: #1f7447;
+  --fund-cool: #34708a;
+  --fund-mid: #966824;
+  --fund-warm: #b35d27;
+  --fund-hot: #bf3f33;
+  --fund-chart-grid: rgba(33, 48, 37, 0.095);
+  --fund-chart-1: #34694a;
+  --fund-chart-2: #b87633;
+  --fund-chart-3: #3c738f;
+  --fund-chart-4: #825e91;
+  --fund-chart-5: #bf4d52;
+  --fund-chart-6: #6d8a3a;
+}
+:root[data-theme="dark"][data-accent="matcha"] {
+  --fund-up: #ef8074;
+  --fund-up-soft: rgba(239, 128, 116, 0.14);
+  --fund-up-line: rgba(239, 128, 116, 0.30);
+  --fund-down: #5ec88b;
+  --fund-down-soft: rgba(94, 200, 139, 0.14);
+  --fund-down-line: rgba(94, 200, 139, 0.30);
+  --fund-cold: #5ec88b;
+  --fund-cool: #7ab7d4;
+  --fund-mid: #e0b572;
+  --fund-warm: #e69765;
+  --fund-hot: #ef8074;
+  --fund-chart-grid: rgba(232, 240, 234, 0.09);
+  --fund-chart-1: #7dc497;
+  --fund-chart-2: #e2ad6f;
+  --fund-chart-3: #7ab7d4;
+  --fund-chart-4: #b798cf;
+  --fund-chart-5: #e88286;
+  --fund-chart-6: #a3c874;
+}
+
+/* Parchment (羊皮纸 — Warm Sepia Vellum) */
+:root:not([data-theme="dark"])[data-accent="parchment"] {
+  --fund-up: #b83a2d;
+  --fund-up-soft: rgba(184, 58, 45, 0.095);
+  --fund-up-line: rgba(184, 58, 45, 0.25);
+  --fund-down: #24724c;
+  --fund-down-soft: rgba(36, 114, 76, 0.095);
+  --fund-down-line: rgba(36, 114, 76, 0.25);
+  --fund-cold: #24724c;
+  --fund-cool: #376b87;
+  --fund-mid: #8f6224;
+  --fund-warm: #b05622;
+  --fund-hot: #b83a2d;
+  --fund-chart-grid: rgba(48, 39, 29, 0.10);
+  --fund-chart-1: #7c5630;
+  --fund-chart-2: #2e735c;
+  --fund-chart-3: #3d688a;
+  --fund-chart-4: #b84a39;
+  --fund-chart-5: #855a8c;
+  --fund-chart-6: #a8842a;
+}
+:root[data-theme="dark"][data-accent="parchment"] {
+  --fund-up: #eb8273;
+  --fund-up-soft: rgba(235, 130, 115, 0.14);
+  --fund-up-line: rgba(235, 130, 115, 0.30);
+  --fund-down: #6bc490;
+  --fund-down-soft: rgba(107, 196, 144, 0.14);
+  --fund-down-line: rgba(107, 196, 144, 0.30);
+  --fund-cold: #6bc490;
+  --fund-cool: #80b2d6;
+  --fund-mid: #e0b777;
+  --fund-warm: #e49764;
+  --fund-hot: #eb8273;
+  --fund-chart-grid: rgba(241, 235, 224, 0.095);
+  --fund-chart-1: #d7ad7a;
+  --fund-chart-2: #72c4a5;
+  --fund-chart-3: #80b2d6;
+  --fund-chart-4: #e88777;
+  --fund-chart-5: #c09ad1;
+  --fund-chart-6: #d4be68;
+}
+
+/* Ocean (海湾蓝 — Crisp Coastal Blue) */
+:root:not([data-theme="dark"])[data-accent="ocean"] {
+  --fund-up: #c73d3b;
+  --fund-up-soft: rgba(199, 61, 59, 0.09);
+  --fund-up-line: rgba(199, 61, 59, 0.24);
+  --fund-down: #1a7b5c;
+  --fund-down-soft: rgba(26, 123, 92, 0.095);
+  --fund-down-line: rgba(26, 123, 92, 0.24);
+  --fund-cold: #1a7b5c;
+  --fund-cool: #2c628a;
+  --fund-mid: #9c6622;
+  --fund-warm: #bd5e24;
+  --fund-hot: #c73d3b;
+  --fund-chart-1: #2c628a;
+  --fund-chart-2: #268268;
+  --fund-chart-3: #c96f32;
+  --fund-chart-4: #7c5a99;
+  --fund-chart-5: #c24455;
+  --fund-chart-6: #4a85a8;
+}
+:root[data-theme="dark"][data-accent="ocean"] {
+  --fund-up: #f17e7b;
+  --fund-up-soft: rgba(241, 126, 123, 0.14);
+  --fund-up-line: rgba(241, 126, 123, 0.30);
+  --fund-down: #58cca4;
+  --fund-down-soft: rgba(88, 204, 164, 0.14);
+  --fund-down-line: rgba(88, 204, 164, 0.30);
+  --fund-cold: #58cca4;
+  --fund-cool: #76b4e0;
+  --fund-mid: #e5b772;
+  --fund-warm: #ea9866;
+  --fund-hot: #f17e7b;
+  --fund-chart-1: #76b4e0;
+  --fund-chart-2: #60c9a8;
+  --fund-chart-3: #e8aa72;
+  --fund-chart-4: #b697d6;
+  --fund-chart-5: #ee7f8e;
+  --fund-chart-6: #80c2de;
+}
+
+/* Dusk (暮霭紫 — Twilight Lavender Paper) */
+:root:not([data-theme="dark"])[data-accent="dusk"] {
+  --fund-up: #c43a4d;
+  --fund-up-soft: rgba(196, 58, 77, 0.09);
+  --fund-up-line: rgba(196, 58, 77, 0.24);
+  --fund-down: #1f7a5b;
+  --fund-down-soft: rgba(31, 122, 91, 0.095);
+  --fund-down-line: rgba(31, 122, 91, 0.24);
+  --fund-cold: #1f7a5b;
+  --fund-cool: #3b6d96;
+  --fund-mid: #9a6726;
+  --fund-warm: #ba5d2e;
+  --fund-hot: #c43a4d;
+  --fund-chart-grid: rgba(40, 36, 50, 0.095);
+  --fund-chart-1: #5d4f7a;
+  --fund-chart-2: #2f7d69;
+  --fund-chart-3: #c26e3d;
+  --fund-chart-4: #3e6d99;
+  --fund-chart-5: #bd4462;
+  --fund-chart-6: #7b7a38;
+}
+:root[data-theme="dark"][data-accent="dusk"] {
+  --fund-up: #f07b8b;
+  --fund-up-soft: rgba(240, 123, 139, 0.14);
+  --fund-up-line: rgba(240, 123, 139, 0.30);
+  --fund-down: #5ccaa1;
+  --fund-down-soft: rgba(92, 202, 161, 0.14);
+  --fund-down-line: rgba(92, 202, 161, 0.30);
+  --fund-cold: #5ccaa1;
+  --fund-cool: #7fb2e0;
+  --fund-mid: #e3b574;
+  --fund-warm: #e8966b;
+  --fund-hot: #f07b8b;
+  --fund-chart-grid: rgba(237, 234, 244, 0.09);
+  --fund-chart-1: #b2a3d4;
+  --fund-chart-2: #68c9ab;
+  --fund-chart-3: #e5a778;
+  --fund-chart-4: #7fb2e0;
+  --fund-chart-5: #eb8199;
+  --fund-chart-6: #bcc072;
+}
+
+/* Wine (酒红桃杏 — Rose Ivory & Burgundy; keep Up crisp vermilion & Down true emerald!) */
+:root:not([data-theme="dark"])[data-accent="wine"] {
+  --fund-up: #cc3529;
+  --fund-up-soft: rgba(204, 53, 41, 0.095);
+  --fund-up-line: rgba(204, 53, 41, 0.26);
+  --fund-down: #1d764f;
+  --fund-down-soft: rgba(29, 118, 79, 0.10);
+  --fund-down-line: rgba(29, 118, 79, 0.26);
+  --fund-cold: #1d764f;
+  --fund-cool: #356c8f;
+  --fund-mid: #9c6522;
+  --fund-warm: #bf5a22;
+  --fund-hot: #cc3529;
+  --fund-chart-grid: rgba(45, 29, 31, 0.09);
+  --fund-chart-1: #96323a;
+  --fund-chart-2: #2b755d;
+  --fund-chart-3: #3c6891;
+  --fund-chart-4: #ba7332;
+  --fund-chart-5: #7d568f;
+  --fund-chart-6: #5a8244;
+}
+:root[data-theme="dark"][data-accent="wine"] {
+  --fund-up: #f57a70;
+  --fund-up-soft: rgba(245, 122, 112, 0.15);
+  --fund-up-line: rgba(245, 122, 112, 0.32);
+  --fund-down: #5bc994;
+  --fund-down-soft: rgba(91, 201, 148, 0.15);
+  --fund-down-line: rgba(91, 201, 148, 0.32);
+  --fund-cold: #5bc994;
+  --fund-cool: #7fb1db;
+  --fund-mid: #e3b472;
+  --fund-warm: #ea9662;
+  --fund-hot: #f57a70;
+  --fund-chart-grid: rgba(243, 236, 235, 0.095);
+  --fund-chart-1: #e08289;
+  --fund-chart-2: #6ac7a5;
+  --fund-chart-3: #7fb1db;
+  --fund-chart-4: #e3ac72;
+  --fund-chart-5: #be98d1;
+  --fund-chart-6: #94c47a;
+}
+
 .fund-mode-bar {
   position: relative;
   display: flex;
@@ -398,12 +677,12 @@
   border-left: 1px solid var(--line);
 }
 
-/* Harmonious Paper & Ink semantic scale (no neon clash!) */
-.fund-ledger-col.tone-cold { --gauge-color: var(--teal); }
-.fund-ledger-col.tone-cool { --gauge-color: var(--information, #3b6f8c); }
-.fund-ledger-col.tone-neutral { --gauge-color: var(--warm, #a36222); }
-.fund-ledger-col.tone-warm { --gauge-color: var(--warning, #94581d); }
-.fund-ledger-col.tone-hot { --gauge-color: var(--danger, #c04338); }
+/* Harmonious Paper & Ink semantic scale (per-theme calibrated!) */
+.fund-ledger-col.tone-cold { --gauge-color: var(--fund-cold); }
+.fund-ledger-col.tone-cool { --gauge-color: var(--fund-cool); }
+.fund-ledger-col.tone-neutral { --gauge-color: var(--fund-mid); }
+.fund-ledger-col.tone-warm { --gauge-color: var(--fund-warm); }
+.fund-ledger-col.tone-hot { --gauge-color: var(--fund-hot); }
 
 .fund-ledger-head {
   display: flex;
@@ -498,24 +777,19 @@
 
 .fund-ticker-chg.is-up,
 .fund-pct-up {
-  color: var(--danger, #c04338);
-  font-weight: 600;
+  color: var(--fund-up);
+  font-weight: 650;
 }
 
 .fund-ticker-chg.is-down,
 .fund-pct-down {
-  color: var(--teal, #2d6a58);
-  font-weight: 600;
+  color: var(--fund-down);
+  font-weight: 650;
 }
 
-:root[data-theme="dark"] .fund-ticker-chg.is-up,
-:root[data-theme="dark"] .fund-pct-up {
-  color: #f87171;
-}
-
-:root[data-theme="dark"] .fund-ticker-chg.is-down,
-:root[data-theme="dark"] .fund-pct-down {
-  color: #4ade80;
+.fund-pct-flat {
+  color: var(--fund-flat);
+  font-weight: 550;
 }
 
 .fund-temp-empty {
@@ -1041,36 +1315,1020 @@
   height: 11px;
 }
 
-/* Financial Typography & Full-Width Tables inside Fund Messages */
+/* ===== Fund Mode Editorial Markdown Report System ===== */
+
 .assistant-message[data-fund-mode="true"] .message-content,
 [data-workspace-mode="fund"] .assistant-message .message-content {
   font-variant-numeric: tabular-nums;
 }
 
-.assistant-message[data-fund-mode="true"] .message-content table {
+/* Report Headings (Clean Broadsheet Hierarchy — No Redundant Double Lines) */
+.assistant-message[data-fund-mode="true"] .message-content h1,
+.assistant-message[data-fund-mode="true"] .message-content h2 {
+  font-family: var(--display-font);
+  letter-spacing: -0.01em;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content h2 {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0 8px;
+  padding: 0 0 0 9px;
+  border-bottom: 0;
+  font-size: calc(1em + 2px);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content h2::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2.5px;
+  border-radius: 2px;
+  background: var(--teal);
+  opacity: 0.85;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content h3 {
+  margin: 14px 0 6px;
+  font-size: calc(1em + 0.5px);
+  color: var(--ink);
+}
+
+/* Collapse redundant markdown `---` rules directly above headings so there are never double lines */
+.assistant-message[data-fund-mode="true"] .message-content hr {
+  margin: 14px 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content hr:has(+ h1),
+.assistant-message[data-fund-mode="true"] .message-content hr:has(+ h2),
+.assistant-message[data-fund-mode="true"] .message-content hr:has(+ h3) {
+  display: none;
+}
+
+/* Inline Red-Up / Green-Down Financial Metrics */
+.fund-metric {
+  font-family: var(--folio-font);
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+  white-space: nowrap;
+  border-radius: 4px;
+  padding: 0 3px;
+}
+
+.fund-metric.is-up {
+  color: var(--fund-up);
+  background: var(--fund-up-soft);
+}
+
+.fund-metric.is-down {
+  color: var(--fund-down);
+  background: var(--fund-down-soft);
+}
+
+.fund-metric.is-flat {
+  color: var(--fund-flat);
+  background: var(--fund-flat-soft);
+}
+
+/* Keep table cells ultra-crisp without double pill padding */
+.assistant-message[data-fund-mode="true"] .message-content td .fund-metric {
+  padding: 0;
+  background: transparent;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content td.fund-pct-up {
+  color: var(--fund-up);
+  font-family: var(--folio-font);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content td.fund-pct-down {
+  color: var(--fund-down);
+  font-family: var(--folio-font);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content td.fund-pct-flat {
+  color: var(--fund-flat);
+  font-family: var(--folio-font);
+}
+
+/* Valuation & Temperature Badges */
+.fund-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.fund-badge.tone-cold {
+  color: var(--fund-cold);
+  background: color-mix(in srgb, var(--fund-cold) 12%, transparent);
+  border-color: color-mix(in srgb, var(--fund-cold) 26%, transparent);
+}
+
+.fund-badge.tone-cool {
+  color: var(--fund-cool);
+  background: color-mix(in srgb, var(--fund-cool) 12%, transparent);
+  border-color: color-mix(in srgb, var(--fund-cool) 26%, transparent);
+}
+
+.fund-badge.tone-mid {
+  color: var(--fund-mid);
+  background: color-mix(in srgb, var(--fund-mid) 12%, transparent);
+  border-color: color-mix(in srgb, var(--fund-mid) 26%, transparent);
+}
+
+.fund-badge.tone-warm {
+  color: var(--fund-warm);
+  background: color-mix(in srgb, var(--fund-warm) 13%, transparent);
+  border-color: color-mix(in srgb, var(--fund-warm) 28%, transparent);
+}
+
+.fund-badge.tone-hot {
+  color: var(--fund-hot);
+  background: color-mix(in srgb, var(--fund-hot) 13%, transparent);
+  border-color: color-mix(in srgb, var(--fund-hot) 28%, transparent);
+}
+
+/* Risk Level Badges (R1 - R5) */
+.fund-risk-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.fund-risk-badge.level-r1 {
+  color: var(--fund-cold);
+  background: color-mix(in srgb, var(--fund-cold) 11%, transparent);
+  border-color: color-mix(in srgb, var(--fund-cold) 24%, transparent);
+}
+
+.fund-risk-badge.level-r2 {
+  color: var(--fund-cool);
+  background: color-mix(in srgb, var(--fund-cool) 11%, transparent);
+  border-color: color-mix(in srgb, var(--fund-cool) 24%, transparent);
+}
+
+.fund-risk-badge.level-r3 {
+  color: var(--fund-mid);
+  background: color-mix(in srgb, var(--fund-mid) 12%, transparent);
+  border-color: color-mix(in srgb, var(--fund-mid) 26%, transparent);
+}
+
+.fund-risk-badge.level-r4 {
+  color: var(--fund-warm);
+  background: color-mix(in srgb, var(--fund-warm) 13%, transparent);
+  border-color: color-mix(in srgb, var(--fund-warm) 28%, transparent);
+}
+
+.fund-risk-badge.level-r5 {
+  color: var(--fund-hot);
+  background: color-mix(in srgb, var(--fund-hot) 13%, transparent);
+  border-color: color-mix(in srgb, var(--fund-hot) 28%, transparent);
+}
+
+/* Fund 6-digit Code Pill */
+.fund-code-pill {
+  display: inline-block;
+  font-family: var(--folio-font);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  border: 1px solid var(--accent-line);
+}
+
+/* Editorial Financial Tables (Crisp 6px radius, sticky header/first-col, clean hairlines) */
+.assistant-message[data-fund-mode="true"] .message-content .md-table-scroll,
+.table-preview-viewport [data-fund-mode="true"] .md-table-scroll {
+  border: 1px solid var(--fund-report-border);
+  border-radius: 10px;
+  background: var(--fund-report-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content table,
+.table-preview-viewport [data-fund-mode="true"] table {
   width: 100%;
   min-width: 100%;
-  border-collapse: collapse;
-  font-size: 12.5px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: calc(var(--chat-font-size) - 0.8px);
   font-variant-numeric: tabular-nums;
 }
 
-.assistant-message[data-fund-mode="true"] .message-content thead th {
-  background: var(--teal-soft);
-  font-weight: 600;
+.assistant-message[data-fund-mode="true"] .message-content thead th,
+.table-preview-viewport [data-fund-mode="true"] thead th {
+  background: var(--fund-report-header);
+  color: var(--ink);
+  font-weight: 650;
+  font-size: 11.5px;
+  letter-spacing: 0.01em;
   white-space: nowrap;
+  padding: 8px 11px;
+  border-bottom: 1px solid var(--fund-report-border);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content tbody td,
+.table-preview-viewport [data-fund-mode="true"] tbody td {
+  padding: 7.5px 11px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content tbody td:not(.fund-num-col),
+.table-preview-viewport [data-fund-mode="true"] tbody td:not(.fund-num-col) {
+  max-width: 190px;
+  white-space: normal;
+  min-width: 76px;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content tbody td:has(.fund-code-pill),
+.assistant-message[data-fund-mode="true"] .message-content tbody td:has(.fund-badge),
+.assistant-message[data-fund-mode="true"] .message-content tbody td:has(.fund-risk-badge),
+.table-preview-viewport [data-fund-mode="true"] tbody td:has(.fund-code-pill),
+.table-preview-viewport [data-fund-mode="true"] tbody td:has(.fund-badge),
+.table-preview-viewport [data-fund-mode="true"] tbody td:has(.fund-risk-badge) {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content tbody tr:nth-child(even) td,
+.table-preview-viewport [data-fund-mode="true"] tbody tr:nth-child(even) td {
+  background: var(--fund-report-zebra);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content tbody tr:hover td,
+.table-preview-viewport [data-fund-mode="true"] tbody tr:hover td {
+  background: var(--teal-soft);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content .md-table-scroll[data-table-wide="true"] thead th:first-child,
+.table-preview-viewport [data-fund-mode="true"] .md-table-scroll[data-table-wide="true"] thead th:first-child {
+  background: var(--fund-report-header);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content .md-table-scroll[data-table-wide="true"] tbody td:first-child,
+.table-preview-viewport [data-fund-mode="true"] .md-table-scroll[data-table-wide="true"] tbody td:first-child {
+  background: var(--fund-report-surface);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content .md-table-scroll[data-table-wide="true"] tbody tr:nth-child(even) td:first-child,
+.table-preview-viewport [data-fund-mode="true"] .md-table-scroll[data-table-wide="true"] tbody tr:nth-child(even) td:first-child {
+  background: var(--fund-report-zebra);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content .md-table-scroll[data-table-wide="true"] tbody tr:hover td:first-child,
+.table-preview-viewport [data-fund-mode="true"] .md-table-scroll[data-table-wide="true"] tbody tr:hover td:first-child {
+  background: var(--teal-soft);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content .fund-num-col,
+.table-preview-viewport [data-fund-mode="true"] .fund-num-col {
+  text-align: right;
+  font-family: var(--folio-font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content td.fund-alloc-cell,
+.table-preview-viewport [data-fund-mode="true"] td.fund-alloc-cell {
+  position: relative;
+  padding-bottom: 10px;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content td.fund-alloc-cell::after,
+.table-preview-viewport [data-fund-mode="true"] td.fund-alloc-cell::after {
+  content: '';
+  position: absolute;
+  left: 11px;
+  right: 11px;
+  bottom: 4px;
+  height: 2.5px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--teal) 0 var(--fund-bar-pct, 0%),
+    color-mix(in srgb, var(--line-strong) 65%, transparent) var(--fund-bar-pct, 0%) 100%
+  );
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.table-preview-viewport [data-fund-mode="true"] td.fund-pct-up { color: var(--fund-up); font-family: var(--folio-font); }
+.table-preview-viewport [data-fund-mode="true"] td.fund-pct-down { color: var(--fund-down); font-family: var(--folio-font); }
+.table-preview-viewport [data-fund-mode="true"] td.fund-pct-flat { color: var(--fund-flat); font-family: var(--folio-font); }
+.table-preview-viewport [data-fund-mode="true"] td .fund-metric { padding: 0; background: transparent; }
+
+/* Editorial Callout Blockquotes */
+.assistant-message[data-fund-mode="true"] .message-content blockquote.fund-callout {
+  position: relative;
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  border: 1px solid var(--line);
+  border-left-width: 3.5px;
+  background: var(--fund-report-elev);
+  color: var(--ink);
+  box-shadow: var(--shadow-xs);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content blockquote.fund-callout p:last-child {
+  margin-bottom: 0;
+}
+
+.assistant-message[data-fund-mode="true"] .message-content blockquote.fund-callout.tone-summary {
+  border-left-color: var(--teal);
+  border-color: var(--accent-line);
+  border-left-width: 3.5px;
+  background: color-mix(in srgb, var(--teal) 6.5%, var(--surface));
+}
+
+.assistant-message[data-fund-mode="true"] .message-content blockquote.fund-callout.tone-risk {
+  border-left-color: var(--fund-hot);
+  border-color: var(--fund-up-line);
+  border-left-width: 3.5px;
+  background: var(--fund-up-soft);
+}
+
+.assistant-message[data-fund-mode="true"] .message-content blockquote.fund-callout.tone-strategy {
+  border-left-color: var(--fund-cool);
+  border-color: color-mix(in srgb, var(--fund-cool) 28%, var(--line));
+  border-left-width: 3.5px;
+  background: color-mix(in srgb, var(--fund-cool) 7%, var(--surface));
+}
+
+/* ===== Executive KPI Ledger Card (```fund-kpi) ===== */
+.fund-kpi-card {
+  margin: 12px 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--fund-report-border);
+  background: var(--fund-report-surface);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+.fund-kpi-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 13px;
+  border-bottom: 1px solid var(--line);
+  background: var(--fund-report-header);
+}
+
+.fund-kpi-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--teal);
+}
+
+.fund-kpi-asof {
+  font-family: var(--folio-font);
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.fund-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: -1px;
+}
+
+.fund-kpi-grid.cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fund-kpi-grid.cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.fund-kpi-cell {
+  padding: 11px 13px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.fund-kpi-grid.cols-2 .fund-kpi-cell:nth-child(2n),
+.fund-kpi-grid.cols-3 .fund-kpi-cell:nth-child(3n),
+.fund-kpi-grid.cols-4 .fund-kpi-cell:nth-child(4n) {
+  border-right: 0;
+}
+
+.fund-kpi-cell:last-child {
+  border-right: 0;
+}
+
+.fund-kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-kpi-value {
+  font-family: var(--folio-font);
+  font-size: 17.5px;
+  font-weight: 750;
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-kpi-cell.trend-up .fund-kpi-value { color: var(--fund-up); }
+.fund-kpi-cell.trend-down .fund-kpi-value { color: var(--fund-down); }
+.fund-kpi-cell.trend-flat .fund-kpi-value { color: var(--fund-flat); }
+.fund-kpi-cell.trend-cold .fund-kpi-value { color: var(--fund-cold); }
+.fund-kpi-cell.trend-cool .fund-kpi-value { color: var(--fund-cool); }
+.fund-kpi-cell.trend-mid .fund-kpi-value { color: var(--fund-mid); }
+.fund-kpi-cell.trend-warm .fund-kpi-value { color: var(--fund-warm); }
+.fund-kpi-cell.trend-hot .fund-kpi-value { color: var(--fund-hot); }
+
+.fund-kpi-sub {
+  font-size: 10.5px;
+  line-height: 1.35;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ===== Native Pure-SVG Interactive Fund Charts (```fund-chart) ===== */
+.fund-vis-card {
+  margin: 13px 0;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--fund-report-border);
+  background: var(--fund-report-surface);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+.fund-vis-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--fund-report-elev);
+}
+
+.fund-vis-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.fund-vis-title {
+  font-family: var(--display-font);
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+}
+
+.fund-vis-subtitle {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.fund-vis-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 14px 2px;
+  font-size: 11.5px;
+}
+
+.fund-vis-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fund-vis-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--swatch-color, var(--fund-chart-1));
+  flex-shrink: 0;
+}
+
+.fund-vis-swatch.is-dashed {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--swatch-color, var(--fund-chart-2)) 0 4px,
+    transparent 4px 7px
+  );
+}
+
+.fund-vis-legend-name {
+  color: var(--ink-secondary);
+  white-space: nowrap;
+}
+
+.fund-vis-legend-val {
+  font-family: var(--folio-font);
+  font-size: 11.5px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.fund-vis-legend-val.is-up { color: var(--fund-up); }
+.fund-vis-legend-val.is-down { color: var(--fund-down); }
+
+.fund-vis-stage {
+  position: relative;
+  padding: 6px 10px 8px;
+}
+
+.fund-vis-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  user-select: none;
+}
+
+.fund-svg-grid {
+  stroke: var(--fund-chart-grid);
+  stroke-width: 1;
+}
+
+.fund-svg-zero {
+  stroke: var(--line-strong);
+  stroke-width: 1.15;
+  stroke-dasharray: 4 3;
+}
+
+.fund-svg-axis-label {
+  fill: var(--fund-chart-axis);
+  font-family: var(--folio-font);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-svg-bar {
+  transition: opacity 120ms ease;
+}
+
+.fund-svg-bar-val {
+  fill: var(--ink-secondary);
+  font-family: var(--folio-font);
+  font-size: 10px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-svg-bar-val.is-up { fill: var(--fund-up); }
+.fund-svg-bar-val.is-down { fill: var(--fund-down); }
+
+.fund-svg-crosshair {
+  stroke: var(--teal);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 3;
+  opacity: 0.78;
+  pointer-events: none;
+}
+
+.fund-svg-hover-band {
+  fill: var(--teal);
+  opacity: 0.065;
+  pointer-events: none;
+}
+
+.fund-svg-hover-dots {
+  pointer-events: none;
+}
+
+.fund-svg-hit {
+  cursor: pointer;
+}
+
+/* Interactive Floating Chart Tooltip */
+.fund-vis-tooltip {
+  position: absolute;
+  top: 10px;
+  z-index: 6;
+  min-width: 126px;
+  max-width: 220px;
   padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  pointer-events: none;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--ink);
 }
 
-.assistant-message[data-fund-mode="true"] .message-content tbody td {
-  padding: 6px 10px;
+.fund-vis-tooltip[hidden] {
+  display: none;
 }
 
-.assistant-message[data-fund-mode="true"] .message-content tbody tr:nth-child(even) {
-  background: var(--surface-alt);
+.fund-vis-tooltip-head {
+  font-family: var(--folio-font);
+  font-size: 10.5px;
+  font-weight: 650;
+  color: var(--muted);
+  padding-bottom: 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
 }
 
-/* Controlled ECharts Cards */
+.fund-vis-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.fund-vis-tooltip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.fund-vis-tooltip-row span {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-vis-tooltip-row strong {
+  font-family: var(--folio-font);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fund-vis-tooltip-row strong.is-up { color: var(--fund-up); }
+.fund-vis-tooltip-row strong.is-down { color: var(--fund-down); }
+
+/* Horizontal Bar Chart (Holdings / Industry / Attribution) */
+.fund-hbar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.fund-hbar-row {
+  display: grid;
+  grid-template-columns: minmax(76px, 34%) minmax(0, 1fr) minmax(56px, auto);
+  align-items: center;
+  gap: 10px;
+}
+
+.fund-hbar-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.fund-hbar-label {
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-hbar-note {
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-hbar-track {
+  position: relative;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--fund-chart-grid);
+  overflow: hidden;
+}
+
+.fund-hbar-list.is-diverging .fund-hbar-track::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--line-strong);
+  z-index: 2;
+}
+
+.fund-hbar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: var(--hbar-color, var(--fund-chart-1));
+  transition: width 240ms var(--ease-out);
+}
+
+.fund-hbar-fill.is-pos {
+  background: var(--fund-up);
+  border-radius: 0 999px 999px 0;
+}
+
+.fund-hbar-fill.is-neg {
+  background: var(--fund-down);
+  border-radius: 999px 0 0 999px;
+}
+
+.fund-hbar-val {
+  font-family: var(--folio-font);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.fund-hbar-val.is-up { color: var(--fund-up); }
+.fund-hbar-val.is-down { color: var(--fund-down); }
+
+/* Donut Allocation Chart */
+.fund-donut-body {
+  display: grid;
+  grid-template-columns: 152px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  padding: 13px 16px;
+}
+
+.fund-donut-ring {
+  position: relative;
+  width: 152px;
+  height: 152px;
+  margin: 0 auto;
+}
+
+.fund-donut-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.fund-donut-seg {
+  cursor: pointer;
+  transition: stroke-width 150ms ease, opacity 150ms ease;
+}
+
+.fund-donut-seg.is-active {
+  stroke-width: 22;
+}
+
+.fund-donut-center {
+  position: absolute;
+  inset: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+  gap: 2px;
+}
+
+.fund-donut-center strong {
+  font-family: var(--folio-font);
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.15;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-donut-center span {
+  font-size: 10.5px;
+  color: var(--muted);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.fund-donut-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3.5px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 130ms ease;
+}
+
+.fund-donut-legend-row:hover,
+.fund-donut-legend-row.is-active {
+  background: var(--teal-soft);
+}
+
+.fund-donut-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.fund-donut-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fund-donut-val {
+  font-family: var(--folio-font);
+  font-size: 12px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* Gauge / Valuation Temperature Strip */
+.fund-gauge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  padding: 12px 14px 14px;
+}
+
+.fund-gauge-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fund-gauge-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fund-gauge-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.fund-gauge-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.fund-gauge-readout strong {
+  font-family: var(--folio-font);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.fund-gauge-track {
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--fund-cold) 0%,
+    var(--fund-cool) 26%,
+    var(--fund-mid) 52%,
+    var(--fund-warm) 76%,
+    var(--fund-hot) 100%
+  );
+  opacity: 0.88;
+}
+
+.fund-gauge-pin {
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2.5px solid var(--ink);
+  box-shadow: var(--shadow-xs);
+  transform: translate(-50%, -50%);
+}
+
+.fund-vis-footer {
+  padding: 6px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--fund-report-elev);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+/* Streaming Chart / KPI Skeleton */
+.fund-vis-skeleton {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--accent-line);
+  background: var(--fund-report-elev);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fund-vis-skeleton-label {
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--teal);
+}
+
+.fund-vis-skeleton-bars {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  align-items: end;
+  gap: 8px;
+  height: 44px;
+}
+
+.fund-vis-skeleton-bars i {
+  display: block;
+  border-radius: 5px;
+  background: linear-gradient(90deg, var(--surface-alt) 25%, var(--teal-soft) 50%, var(--surface-alt) 75%);
+  background-size: 200% 100%;
+  animation: fund-shimmer 1.4s ease infinite;
+}
+
+.fund-vis-skeleton-bars i:nth-child(1) { height: 55%; }
+.fund-vis-skeleton-bars i:nth-child(2) { height: 85%; }
+.fund-vis-skeleton-bars i:nth-child(3) { height: 42%; }
+.fund-vis-skeleton-bars i:nth-child(4) { height: 74%; }
+
+/* Controlled External Yingmi ECharts Cards */
 .fund-charts-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -1081,9 +2339,19 @@
 .fund-chart-card {
   margin: 0;
   border-radius: var(--radius-md);
-  border: 1px solid var(--line);
-  background: var(--surface);
+  border: 1px solid var(--fund-report-border);
+  background: var(--fund-report-surface);
+  box-shadow: var(--shadow-xs);
   overflow: hidden;
+}
+
+.fund-chart-frame {
+  padding: 8px;
+  background: #ffffff;
+}
+
+:root[data-theme="dark"] .fund-chart-frame {
+  background: #e9ecf0;
 }
 
 .fund-chart-card img {
@@ -1092,22 +2360,39 @@
   height: auto;
   max-height: 360px;
   object-fit: contain;
-  background: #fff;
+  border-radius: 4px;
+}
+
+:root[data-theme="dark"] .fund-chart-card img {
+  filter: brightness(0.93) contrast(1.02);
 }
 
 .fund-chart-card figcaption {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 7px 12px;
   font-size: 11.5px;
   color: var(--muted);
+  background: var(--fund-report-elev);
   border-top: 1px solid var(--line);
+}
+
+.fund-chart-caption {
+  font-weight: 550;
+  color: var(--ink-secondary);
 }
 
 .fund-chart-card figcaption a {
   color: var(--teal);
+  font-weight: 600;
   text-decoration: none;
+  white-space: nowrap;
+}
+
+.fund-chart-card figcaption a:hover {
+  text-decoration: underline;
 }
 
 /* Fund Sources & Disclaimer Footer */
@@ -1234,10 +2519,18 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 440px) {
   .fund-sheet-masthead { flex-direction: column; align-items: flex-start; }
   .fund-ledger-grid { grid-template-columns: 1fr; }
   .fund-ledger-col + .fund-ledger-col { border-left: 0; border-top: 1px solid var(--line); }
+  .fund-kpi-grid.cols-3,
+  .fund-kpi-grid.cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fund-kpi-grid.cols-3 .fund-kpi-cell:nth-child(3n),
+  .fund-kpi-grid.cols-4 .fund-kpi-cell:nth-child(4n) { border-right: 1px solid var(--line); }
+  .fund-kpi-grid.cols-3 .fund-kpi-cell:nth-child(2n),
+  .fund-kpi-grid.cols-4 .fund-kpi-cell:nth-child(2n) { border-right: 0; }
+  .fund-donut-body { grid-template-columns: 1fr; gap: 10px; }
+  .fund-hbar-row { grid-template-columns: minmax(68px, 36%) minmax(0, 1fr) minmax(52px, auto); gap: 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1246,7 +2539,8 @@
   .fund-ledger-bar i,
   .fund-sheet-icon-btn.is-spinning .icon,
   .fund-temp-icon-btn.is-spinning .icon,
-  .fund-temp-skeleton i {
+  .fund-temp-skeleton i,
+  .fund-vis-skeleton-bars i {
     animation: none;
   }
 }

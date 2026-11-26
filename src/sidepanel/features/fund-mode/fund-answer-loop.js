@@ -57,6 +57,11 @@ function hasSubstantiveContent(value) {
   return value.replace(DSML_ARTIFACT_RE, '').trim().length > 0;
 }
 
+function isRetryableToolProtocolError(error) {
+  if (!error || error.name === 'AbortError' || error.name === 'TimeoutError') return false;
+  return String(error.message || '').startsWith('模型工具响应无效：');
+}
+
 function joined(prefix, value) {
   return prefix && value ? `${prefix}\n\n${value}` : prefix || value || '';
 }
@@ -117,6 +122,23 @@ function budgetResult(reason, remoteCallsUsed) {
     remaining: { remoteCalls: Math.max(0, MAX_REMOTE_CALLS - remoteCallsUsed) },
     notice: '本次远程工具未执行。本轮工具预算已结束，请依据已返回数据完成回答并注明未核实项。',
   };
+}
+
+function isEmptyToolPayload(data) {
+  if (data === null || data === undefined) return true;
+  if (typeof data === 'string') {
+    const t = data.trim();
+    return !t || t === '[]' || t === '{}';
+  }
+  if (Array.isArray(data)) return data.length === 0;
+  if (typeof data === 'object') {
+    const keys = Object.keys(data);
+    if (!keys.length) return true;
+    for (const k of ['list', 'data', 'items', 'records', 'rows']) {
+      if (Array.isArray(data[k]) && data[k].length === 0 && keys.length <= 3) return true;
+    }
+  }
+  return false;
 }
 
 function parseToolArgs(call) {
@@ -296,7 +318,7 @@ export async function createFundToolSession({
       const rawData = raw.structured !== null ? raw.structured : raw.text;
       const charts = extractSafeChartUrls(rawData, fundToolLabel(name));
       const trimmed = trimToolPayload(rawData);
-      if (ttl > 0) {
+      if (ttl > 0 && !isEmptyToolPayload(rawData)) {
         cache.set(key, { data: trimmed.data, truncated: trimmed.truncated }, ttl);
       }
 
@@ -431,16 +453,33 @@ export async function runFundResearchAnswer({
           budgetStatus.content = budgetInstructions(remoteCallsUsed, round, true);
           fitFundToolContext(history, attemptTools, budget);
         }
-        result = await awaitWithAbort(connection.request({
-          requestId,
-          purpose: 'answer',
-          messages: history,
-          tools: attemptTools,
-          toolChoice: (exhausted || retryForceFinal) ? 'none' : 'auto',
-          timeoutMs: 120000,
-          onDelta: (delta, full) => { run.assertCurrent(); onDelta?.(delta, joined(prefix, full)); },
-          onReasoning: (delta, full) => { run.assertCurrent(); onReasoning?.(delta, joined(reasoningPrefix, full)); },
-        }), run.signal);
+        let attemptContent = '';
+        let attemptReasoning = '';
+        try {
+          result = await awaitWithAbort(connection.request({
+            requestId,
+            purpose: 'answer',
+            messages: history,
+            tools: attemptTools,
+            toolChoice: (exhausted || retryForceFinal) ? 'none' : 'auto',
+            timeoutMs: 120000,
+            onDelta: (delta, full) => { run.assertCurrent(); attemptContent = full; onDelta?.(delta, joined(prefix, full)); },
+            onReasoning: (delta, full) => { run.assertCurrent(); attemptReasoning = full; onReasoning?.(delta, joined(reasoningPrefix, full)); },
+          }), run.signal);
+        } catch (error) {
+          run.assertCurrent();
+          if (!isRetryableToolProtocolError(error)
+            || hasSubstantiveContent(attemptContent)
+            || protocolRetries >= MAX_PROTOCOL_RETRIES
+            || run.deadlineAt - now() <= 5000) {
+            throw error;
+          }
+          protocolRetries++;
+          if (attemptContent) onDelta?.('', prefix);
+          if (attemptReasoning) onReasoning?.('', reasoningPrefix);
+          run.phase('waiting-model');
+          continue;
+        }
         run.assertCurrent();
         if (!result || typeof result.content !== 'string' || !Array.isArray(result.toolCalls)) {
           throw new Error('当前模型服务不支持流式工具调用（tool_calls），无法在基金模式下调用盈米 MCP。');

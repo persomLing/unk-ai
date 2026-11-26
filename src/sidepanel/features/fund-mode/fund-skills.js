@@ -28,12 +28,12 @@ export const FUND_SKILLS = Object.freeze({
       '1. 身份与分类校准（必做）：先用 GuessFundCode/SearchFunds（若给名称）再调 BatchGetFundsDetail 核对真实名称、代码与基金类型，严禁跳过详情直接推断类型。',
       '2. 通用基线：调用 GetBatchFundPerformance（多区间业绩/同类分位/夏普/回撤）；深度或风险分析补充 AnalyzeFundRisk 与 BatchGetFundNavHistory（画曲线必须传 isDesc: false）。',
       '3. 按基金类型分支深挖（严禁跨类混用）：',
-      '   - 权益/偏股混合：调 getStockAllocationAndMetricsByFundCode（PE/PB/ROE/集中度）、getFundIndustryAllocation、getFundBrinsonIndicator（配置/选股超额）与 fund-recovery-ability。',
+      '   - 权益/偏股混合：调 getStockAllocationAndMetricsByFundCode（PE/PB/ROE/集中度）、getFundIndustryAllocation、getFundBrinsonIndicator（配置/选股超额）与 fund-recovery-ability。若 getFundIndustryAllocation 对某只基金返回空数组（常见于最新季报尚未有中信口径穿透），可切换口径/省略报告期或改用重仓股与 getFundIndustryPreference 交叉补充，勿用相同参数重复空查。',
       '   - 债券基金：调 getBondIndicator（久期/杠杆/集中度）、getBondAllocationByFundCode（券种，assetType 用下划线如 bond_asset）、getBondFundCreditRatingLevel、getFundCampisiIndicator、getFundDiveCount。',
       '   - QDII 查 getQdFundAreaAllocation；指数基金查 getFundBenchmarkInfo；货币基金只看 7 日年化/万份收益/规模流动性，不跑股票归因。',
       '4. 多基金对比时必调 GetFundsCorrelation 评估相关性与重仓重叠度。',
       '5. 口径防误读：managers[].periodReturn 是基金经理历史从业期回报，绝不能写成“本基金任职回报”；不编造无字段支撑的 Sortino 或自定义评分。',
-      '6. 研报输出结构：核心结论（80-120字）→ 关键指标对比表 → 业绩与持有人体验（回撤/修复周期）→ 持仓结构与归因 → 风险点、申赎费率与条件式适配场景。',
+      '6. 研报输出结构：`> **核心结论**` → `fund-kpi` 核心指标卡 → `fund-chart` 阶段收益/回撤柱状图（或净值 `line` 走势图，基于真实工具返回数据）→ 关键指标对比表 → 持仓结构与归因（可用 `hbar` 展示前五大行业/重仓）→ `> **风险提示**`、申赎费率与条件式适配场景。',
     ].join('\n'),
   },
   'fund-screener': {
@@ -48,7 +48,7 @@ export const FUND_SKILLS = Object.freeze({
       '1. 候选池初筛：通用筛选用 SearchFunds（严禁同时传 keyword 与 category；page 从 0 开始；指数基金可按跟踪误差排序）；债基券种/信用硬条件用 filterBondFundByBondType / filterBondFundByCreditRating（assetType 必须用驼峰如 bondAsset/totalNetAsset）；换手率用 filterStockFundByStockTurnover；债基排雷用 getBondFundWithAlertRecord。',
       '2. 交集收敛与核验：多条件取交集收敛到 <=20 只，必须调 BatchGetFundsDetail 核对身份与申赎状态，再按需补 GetBatchFundPerformance、AnalyzeFundRisk、fund-recovery-ability、BatchGetFundTradeLimit。',
       '3. 硬约束红线：若无完全匹配结果，先如实告知并列出瓶颈条件，严禁静默放宽硬约束。',
-      '4. 输出规范：默认精选 3–5 只候选基金，用结构化对比表呈现，并逐只写明「核心优势」与「需要接受的权衡/风险」；热门访问榜与跳水记录均不得直接作为买卖推荐。',
+      '4. 输出规范：默认精选 3–5 只候选基金，用结构化对比表呈现，并可配 1 张 `fund-chart` 柱状图对比收益/回撤，逐只写明「核心优势」与「需要接受的权衡/风险」；热门访问榜与跳水记录均不得直接作为买卖推荐。',
     ].join('\n'),
   },
   'portfolio-analysis': {
@@ -64,7 +64,7 @@ export const FUND_SKILLS = Object.freeze({
       '2. 完整体检调用链：DiagnoseFundPortfolio（综合诊断）→ GetFundAssetClassAnalysis / GetAssetAllocation（六大类资产穿透）→ GetFundsCorrelation（只传 [{fundCode}]，严禁传 amount/fundName）→ GetFundsBackTest（传 [{fundCode, amount}]，严禁传 fundName）→ AnalyzePortfolioRisk。',
       '3. 进阶情景（按需）：流动性查 BatchGetFundTradeLimit + BatchGetFundTradeRules；未来情景调 MonteCarloSimulate（必须齐全六大类键且合计为 1，未穿透出的类别严禁填 0；且不可用于模拟定投路径）。',
       '4. 避坑红线：GetPortfolioNavHistory 仅用于投顾组合 poCode，绝不能用于用户自建基金篮子。',
-      '5. 输出结构：诊断结论摘要 → 权重与集中度（HHI）→ 六大类穿透 → 相关性与分散度 → 历史回测与风险归因 → 按「证据 → 问题 → 改善目标 → 可能代价 → 待确认条件」组织的优化建议。',
+      '5. 输出结构：`> **核心结论**` → `fund-kpi` 组合核心指标（集中度 HHI/预期回撤/收益）→ `fund-chart`（`donut` 六大类资产穿透 + `bar` 或 `line` 历史回测）→ 权重与相关性表 → 按「证据 → 问题 → 改善目标 → 可能代价 → 待确认条件」组织的优化建议与 `> **风险提示**`。',
     ].join('\n'),
   },
   'strategy-analysis': {
@@ -94,7 +94,7 @@ export const FUND_SKILLS = Object.freeze({
       '1. 时间与行情校准：必要时调 GetCurrentTime / GetTxnDayRange（beforeDays/afterDays 必传字符串）确认最近交易日，再调 GetLatestQuotations 获取收盘市场温度与核心宽基指数估值。',
       '2. 事实与观点分离：用 SearchFinancialNews 获取权威财经事实，searchRealtimeAiAnalysis 仅作次级线索（过滤其中主观买卖建议），叠加 SearchManagerViewpoint / searchInvestAdvisorContent 汇总具名观点；仅用户问平台热度时查 SearchHotTopic / GetPopularFund(size: 8)。',
       '3. 口径红线：GetLatestQuotations 为交易日收盘截面，非盘中实时价；区间涨跌幅禁止用首尾日涨跌幅相减；无结构化数据时严禁编造行业涨跌榜、两市成交额或北向资金数字。',
-      '4. 输出结构：核心市场温度与宽基估值表 → 关键催化事件与逻辑拆解 → 基金经理/投顾观点对照 → 观察要点与风险提示。',
+      '4. 输出结构：`> **核心结论**` → `fund-chart`（`gauge` 市场温度仪表条）与核心宽基估值表 → 关键催化事件与逻辑拆解 → 基金经理/投顾观点对照 → 观察要点与 `> **风险提示**`。',
     ].join('\n'),
   },
   'wealth-planning': {
@@ -121,7 +121,7 @@ export const FUND_SKILLS = Object.freeze({
     preloadCategories: ['style_attribution', 'advisor_strategy', 'wealth_planning'],
     sop: [
       '【执行 Skill：advisor-product-communication（产品规则与费率答疑 SOP）】',
-      '1. 身份与状态确认：先调 BatchGetFundsDetail 核对基金全称、A/C 份额差异与申购/认购/赎回状态（区分 canAllot 申购与 canSubscribe 认购）。',
+      '1. 身份与状态确认：先调 BatchGetFundsDetail 核对基金全称、A/C 份额差异与申购/认购/赎回状态（内部区分 canAllot 日常申购与 canSubscribe 募集期认购；已成立基金日常开放申购时 canSubscribe=false 属正常现象，输出表格时转成清晰中文如「开放申购」「非募集期」「开放赎回」，勿裸露英文字段名）。',
       '2. 规则核验链：调 BatchGetFundTradeLimit（起购/限额/定投限制）→ BatchGetFundTradeRules（申赎费率、确认与到账时间）→ GetTxnDayRange（查询具体交易日与确认日历，beforeDays/afterDays 传字符串）；按需补 BatchGetFundsDividendRecord / BatchGetFundsSplitHistory 或 GetAdvisorChargeFeeModel。',
       '3. 输出结构：用清晰表格整理「申购/赎回费率阶梯（含 7 天惩罚性赎回费提醒）」「限额与状态」「T+N 确认与到账时间轴」，以及 A/C 份额持有期成本对比与常见误区提示。',
     ].join('\n'),

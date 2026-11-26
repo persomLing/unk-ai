@@ -5,6 +5,25 @@ import { presentVideoNotesMessage } from '../video-notes/video-notes-presentatio
 
 const MAX_PREVIEW = 220;
 const HIDE_DELAY = 120;
+const DIRECTORY_MIN_TURNS = 9;
+const WEEKDAYS_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+export function formatTurnSpanHeader(turns = []) {
+  const times = turns
+    .map(t => (t?.createdAt ? new Date(t.createdAt) : null))
+    .filter(d => d && !Number.isNaN(d.getTime()));
+  if (!times.length) return '当前对话目录';
+  const first = times[0];
+  const last = times[times.length - 1];
+  const startTime = formatTime(first);
+  const endTime = formatTime(last);
+  const firstDate = `${first.getMonth() + 1}月${first.getDate()}日${WEEKDAYS_ZH[first.getDay()]}`;
+  if (first.toDateString() === last.toDateString()) {
+    return startTime === endTime ? `${firstDate}，${startTime}` : `${firstDate}，${startTime} – ${endTime}`;
+  }
+  const lastDate = `${last.getMonth() + 1}月${last.getDate()}日`;
+  return `${first.getMonth() + 1}月${first.getDate()}日 ${startTime} – ${lastDate} ${endTime}`;
+}
 
 export function formatTurnPreviewTime(timestamp, nowMs = Date.now()) {
   if (!timestamp) return '';
@@ -104,6 +123,7 @@ export function createTurnNavigator({
   messages,
   rail,
   preview,
+  directory = null,
   getConversation,
   openSource = () => {},
   onNavigate = () => {},
@@ -119,6 +139,7 @@ export function createTurnNavigator({
   let turns = [];
   let conversationId = null;
   let previewTurnId = null;
+  let directoryOpen = false;
   let updateFrame = null;
   let hideTimer = null;
   let resizeObserver = null;
@@ -220,9 +241,111 @@ export function createTurnNavigator({
     renderPreview(turn, button);
   }
 
-  function navigate(button) {
-    const index = [...rail.children].indexOf(button);
-    const turn = turns[index];
+  function activeTurnUserId() {
+    if (!turns.length || !view?.getBoundingClientRect) return turns[turns.length - 1]?.userId || null;
+    const viewTop = view.getBoundingClientRect().top + 56;
+    let activeId = turns[0]?.userId || null;
+    for (const turn of turns) {
+      const article = messages.querySelector(`[data-message-id="${CSS.escape(turn.userId)}"]`);
+      if (!article) continue;
+      if (article.getBoundingClientRect().top <= viewTop) activeId = turn.userId;
+      else break;
+    }
+    return activeId;
+  }
+
+  function closeDirectory() {
+    if (!directoryOpen || !directory) return;
+    directoryOpen = false;
+    renderDirectory();
+  }
+
+  function positionDirectory() {
+    if (!directory || directory.hidden) return;
+    const firstRailItem = rail.firstElementChild;
+    if (!firstRailItem || !stage?.getBoundingClientRect) return;
+    const stageRect = stage.getBoundingClientRect();
+    const itemRect = firstRailItem.getBoundingClientRect();
+    if (!stageRect.height || !itemRect.height) return;
+    const top = Math.max(12, Math.round(itemRect.top - stageRect.top - 16));
+    directory.style.top = `${top}px`;
+  }
+
+  function renderDirectory() {
+    if (!directory) return;
+    const show = turns.length >= DIRECTORY_MIN_TURNS;
+    directory.hidden = !show;
+    if (!show) {
+      directoryOpen = false;
+      directory.replaceChildren();
+      return;
+    }
+    const doc = directory.ownerDocument || globalThis.document;
+    const trigger = doc.createElement('button');
+    trigger.type = 'button';
+    trigger.className = `turn-directory-dash${directoryOpen ? ' is-open' : ''}`;
+    trigger.setAttribute('aria-expanded', String(directoryOpen));
+    trigger.setAttribute('aria-haspopup', 'dialog');
+    trigger.setAttribute('aria-label', `展开本对话全部 ${turns.length} 轮目录`);
+    trigger.title = `全部 ${turns.length} 轮对话目录`;
+    trigger.addEventListener('click', (event) => {
+      event.stopPropagation();
+      directoryOpen = !directoryOpen;
+      if (directoryOpen) withdrawPreview();
+      renderDirectory();
+    });
+
+    const children = [trigger];
+    if (directoryOpen) {
+      const panel = doc.createElement('div');
+      panel.className = 'turn-directory-panel ui-popover';
+      panel.setAttribute('role', 'dialog');
+      panel.setAttribute('aria-label', '本对话提问目录');
+
+      const header = doc.createElement('div');
+      header.className = 'turn-directory-header';
+      const title = doc.createElement('strong');
+      title.textContent = formatTurnSpanHeader(turns);
+      const sub = doc.createElement('span');
+      sub.textContent = `${turns.length} 轮对话`;
+      header.append(title, sub);
+
+      const list = doc.createElement('div');
+      list.className = 'turn-directory-list';
+      const activeId = activeTurnUserId();
+
+      turns.forEach((turn, idx) => {
+        const row = doc.createElement('button');
+        row.type = 'button';
+        row.className = `turn-directory-row${turn.userId === activeId ? ' is-current' : ''}`;
+        row.dataset.turnUserId = turn.userId;
+
+        const timeEl = doc.createElement('time');
+        timeEl.className = 'turn-directory-time';
+        timeEl.textContent = turn.createdAt ? formatTime(new Date(turn.createdAt)) : `#${idx + 1}`;
+
+        const textEl = doc.createElement('span');
+        textEl.className = 'turn-directory-text';
+        textEl.textContent = turn.question || '未命名提问';
+        textEl.title = turn.question || '';
+
+        row.append(timeEl, textEl);
+        row.addEventListener('click', () => {
+          navigateToTurn(turn);
+          closeDirectory();
+        });
+        list.append(row);
+      });
+
+      panel.append(header, list);
+      children.push(panel);
+    }
+
+    directory.replaceChildren(...children);
+    requestFrame(positionDirectory);
+  }
+
+  function navigateToTurn(turn) {
     const article = turn && messages.querySelector(`[data-message-id="${CSS.escape(turn.userId)}"]`);
     if (!article) return;
     const behavior = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
@@ -230,6 +353,11 @@ export function createTurnNavigator({
     onNavigate(turn);
     view.scrollBy({ top: delta, behavior });
     withdrawPreview();
+  }
+
+  function navigate(button) {
+    const index = [...rail.children].indexOf(button);
+    navigateToTurn(turns[index]);
   }
 
   function onPointerOver(event) {
@@ -256,15 +384,29 @@ export function createTurnNavigator({
     buttons[next]?.focus();
   }
 
+  function onDocumentPointerDown(event) {
+    if (directoryOpen && directory && !directory.contains(event.target)) {
+      closeDirectory();
+    }
+  }
+
+  function onDocumentKeyDown(event) {
+    if (directoryOpen && event.key === 'Escape') {
+      closeDirectory();
+    }
+  }
+
   function sync(conversation) {
     if (disposed) return;
     conversationId = conversation?.id || null;
     turns = turnsForConversation(conversation);
     withdrawPreview();
+    directoryOpen = false;
     rail.replaceChildren(...turns.map(makeRailItem));
     const visible = turns.length > 0;
     rail.hidden = !visible;
     stage.classList.toggle('has-turn-navigator', visible);
+    renderDirectory();
     if (!visible) return;
     for (const button of rail.children) {
       button.addEventListener('pointerenter', () => showPreview(button));
@@ -274,6 +416,7 @@ export function createTurnNavigator({
 
   function resize() {
     scheduleUpdate();
+    positionDirectory();
     if (!preview.hidden) {
       const button = rail.querySelector(`[data-turn-user-id="${CSS.escape(previewTurnId || '')}"]`);
       if (button) positionPreview(button);
@@ -290,6 +433,8 @@ export function createTurnNavigator({
   preview.addEventListener('focusout', scheduleWithdraw);
   preview.addEventListener('keydown', onKeyDown);
   view.addEventListener('scroll', scheduleUpdate, { passive: true });
+  globalThis.document?.addEventListener?.('pointerdown', onDocumentPointerDown);
+  globalThis.document?.addEventListener?.('keydown', onDocumentKeyDown);
   globalThis.addEventListener?.('resize', resize);
   if (typeof ResizeObserver === 'function') {
     resizeObserver = new ResizeObserver(() => { if (!preview.hidden) scheduleUpdate(); });
@@ -313,8 +458,15 @@ export function createTurnNavigator({
       rail.removeEventListener('keydown', onKeyDown);
       preview.removeEventListener('keydown', onKeyDown);
       view.removeEventListener('scroll', scheduleUpdate);
-      globalThis.removeEventListener?.('resize', resize);
+      globalThis.document?.removeEventListener?.('pointerdown', onDocumentPointerDown);
+      globalThis.document?.removeEventListener?.('keydown', onDocumentKeyDown);
+      globalThis.addEventListener && globalThis.removeEventListener?.('resize', resize);
       withdrawPreview();
+      directoryOpen = false;
+      if (directory) {
+        directory.replaceChildren();
+        directory.hidden = true;
+      }
       rail.replaceChildren();
       rail.hidden = true;
       stage.classList.remove('has-turn-navigator');

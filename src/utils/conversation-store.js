@@ -28,13 +28,48 @@ import {
   updateConversationDeletion,
   withConversationSyncLock,
 } from './conversation-outbox.js';
-import { awaitWithAbort } from './abortable.js';
-import { hydrateConversationImages } from './conversation-images.js';
+import { awaitWithAbort, awaitWithTimeout } from './abortable.js';
+import {
+  collectConversationImageFilenames,
+  hydrateConversationImages,
+  pruneUnusedConversationImages,
+} from './conversation-images.js';
 
 const DEFAULT_SYNC_WAIT_MS = 1500;
 const syncJobs = new Map();
 const deletionOperations = new Map();
+const knownConversationImages = new Map();
 const DEFAULT_HISTORY_WAIT_MS = 5000;
+const DEFAULT_IMAGE_GC_WAIT_MS = 5000;
+
+function hasDroppedImages(previous, current) {
+  if (!previous?.size) return false;
+  for (const filename of previous) {
+    if (!current?.has(filename)) return true;
+  }
+  return false;
+}
+
+async function pruneDirectoryImages(directoryHandle, { timeoutMs = DEFAULT_IMAGE_GC_WAIT_MS } = {}) {
+  if (!directoryHandle) return { deleted: 0, failed: 0, skipped: true, reason: 'no-directory' };
+  try {
+    return await awaitWithTimeout(withConversationSyncLock(() => pruneUnusedConversationImages({
+      directoryHandle,
+      getLiveRoots: async () => ({
+        pendingWrites: await listPendingConversationWrites(),
+        trashedDeletions: await listConversationDeletions(),
+        temporaryConversation: await getTemporaryConversation(),
+      }),
+    }), '__image_gc__'), { timeoutMs, message: '清理未引用本地图片超时。' });
+  } catch {
+    return { deleted: 0, failed: 0, skipped: true, reason: 'error' };
+  }
+}
+
+export async function pruneUnusedImages({ directoryHandle, timeoutMs } = {}) {
+  const target = directoryHandle === undefined ? await getConversationDirectoryHandle() : directoryHandle;
+  return pruneDirectoryImages(target, { timeoutMs });
+}
 
 function newId() {
   return globalThis.crypto.randomUUID();
@@ -206,6 +241,12 @@ async function synchronizeEntry(pending) {
     }
     await writeConversationRecord(pending.conversation, { directoryHandle: pending.directoryHandle });
     await acknowledgeConversationWrite(pending.id, pending.revision);
+    const currentImages = await collectConversationImageFilenames(pending.conversation, { includeDataUrlHashes: true }).catch(() => null);
+    const previousImages = knownConversationImages.get(pending.id);
+    if (currentImages) knownConversationImages.set(pending.id, currentImages);
+    if (previousImages && currentImages && hasDroppedImages(previousImages, currentImages)) {
+      await pruneDirectoryImages(pending.directoryHandle);
+    }
     return { ...pending.conversation, syncStatus: 'synced', syncError: '', syncDirectoryName: pending.directoryHandle?.name || '' };
   } catch (error) {
     pending.error = error.message || '本地文件夹暂时不可写。';
@@ -231,6 +272,8 @@ export async function retryPendingConversationWrites(options = {}) {
       if (saved.syncError) result.errors.push({ id: saved.id, message: saved.syncError });
     }
   }
+  const directoryHandle = await getConversationDirectoryHandle();
+  if (directoryHandle) await pruneDirectoryImages(directoryHandle);
   return result;
 }
 
@@ -266,7 +309,9 @@ export async function loadConversation(id) {
     if (current && current.state !== 'restored') return null;
     const hydrated = await hydrateConversationImages(normalize({ ...pending.conversation, syncStatus: 'pending', syncError: pending.error || '', syncDirectoryName: pending.directoryHandle?.name || '' }), { directoryHandle: pending.directoryHandle });
     const latest = await getConversationDeletion(id);
-    return latest && latest.state !== 'restored' ? null : hydrated;
+    if (latest && latest.state !== 'restored') return null;
+    knownConversationImages.set(id, await collectConversationImageFilenames(hydrated, { includeDataUrlHashes: true }).catch(() => new Set()));
+    return hydrated;
   }
   const directoryHandle = await getConversationDirectoryHandle();
   const record = await readConversationRecord(id, { directoryHandle });
@@ -276,7 +321,9 @@ export async function loadConversation(id) {
   const hydrated = record ? await hydrateConversationImages(record, { directoryHandle }) : null;
   const latest = await getConversationDeletion(id);
   if (latest && latest.state !== 'restored') return null;
-  return hydrated ? normalize({ ...hydrated, ...(latest?.generation ? { storageGeneration: latest.generation } : {}), storage: 'local', syncStatus: 'synced', syncError: '', syncDirectoryName: directoryHandle?.name || '' }) : null;
+  if (!hydrated) return null;
+  knownConversationImages.set(id, await collectConversationImageFilenames(hydrated, { includeDataUrlHashes: true }).catch(() => new Set()));
+  return normalize({ ...hydrated, ...(latest?.generation ? { storageGeneration: latest.generation } : {}), storage: 'local', syncStatus: 'synced', syncError: '', syncDirectoryName: directoryHandle?.name || '' });
 }
 
 function historyWaitMs(timeoutMs) {
@@ -354,6 +401,9 @@ async function deleteForHistory(id, token, directoryAtSubmission, deletedAt, gua
   checkHistoryOperation(guard);
   const fingerprint = await historyRead(recordFingerprint(disk), guard);
   checkHistoryOperation(guard);
+  const rawCandidate = pending?.conversation || (disk ? normalize({ ...disk, storage: 'local' }) : null);
+  const candidate = rawCandidate ? await historyRead(hydrateConversationImages(rawCandidate, { directoryHandle: target }), guard) : null;
+  checkHistoryOperation(guard);
   let deleted;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const latest = await historyRead(getPendingConversationWrite(id), guard);
@@ -362,7 +412,7 @@ async function deleteForHistory(id, token, directoryAtSubmission, deletedAt, gua
     checkHistoryOperation(guard);
     guard.phase = 'committing';
     try {
-      deleted = await stageConversationDeletion(id, pending?.conversation || (disk ? normalize({ ...disk, storage: 'local' }) : null), target, { token, diskFingerprint: fingerprint, deletedAt, expectedPendingRevision: latest?.revision || null });
+      deleted = await stageConversationDeletion(id, candidate, target, { token, diskFingerprint: fingerprint, deletedAt, expectedPendingRevision: latest?.revision || null });
       break;
     } catch (error) {
       if (error.code !== 'CONVERSATION_REVISION_CHANGED' || attempt === 2) throw error;
@@ -375,7 +425,8 @@ async function deleteForHistory(id, token, directoryAtSubmission, deletedAt, gua
   try {
     await deleteConversationRecord(id, { directoryHandle: deleted.directoryHandle });
     await updateConversationDeletion(id, token, { state: 'deleted', completedAt: timestamp(), error: '' });
-    return { kind: 'deleted' };
+    knownConversationImages.delete(id);
+    return { kind: 'deleted', directoryHandle: deleted.directoryHandle };
   } catch (error) {
     // The backup+tombstone transaction already committed. A diagnostic failure
     // cannot turn a deleted/unknown disk result into a successful deletion.
@@ -398,6 +449,21 @@ export async function trashSavedConversations(ids, options = {}) {
   deletionOperations.set(token, { ids: uniqueIds, deletedAt });
   Promise.allSettled(jobs.map(job => job.task)).then(() => deletionOperations.delete(token));
   const results = await Promise.all(jobs.map(job => job.observed));
+  const deletedDirectories = [];
+  for (const result of results) {
+    if (result.kind !== 'deleted' || !result.directoryHandle) continue;
+    let duplicate = false;
+    for (const existing of deletedDirectories) {
+      if (await sameDirectory(existing, result.directoryHandle).catch(() => false)) {
+        duplicate = true;
+        break;
+      }
+    }
+    if (!duplicate) deletedDirectories.push(result.directoryHandle);
+  }
+  for (const handle of deletedDirectories) {
+    await pruneDirectoryImages(handle);
+  }
   return {
     token,
     deletedIds: results.filter(result => result.kind === 'deleted').map(result => result.id),
@@ -474,13 +540,17 @@ export async function deleteSavedConversation(conversation) {
     await clearTemporaryConversation();
     return true;
   }
-  return withConversationSyncLock(async () => {
+  let targetDirectory = null;
+  const deleted = await withConversationSyncLock(async () => {
     const pending = await getPendingConversationWrite(conversation.id);
-    const directoryHandle = await getConversationWriteTarget(conversation.id) || await getConversationDirectoryHandle();
-    const deleted = await deleteConversationRecord(conversation.id, { directoryHandle });
+    targetDirectory = await getConversationWriteTarget(conversation.id) || await getConversationDirectoryHandle();
+    const removed = await deleteConversationRecord(conversation.id, { directoryHandle: targetDirectory });
     await forgetConversationWrite(conversation.id, pending?.revision || null);
-    return deleted;
+    knownConversationImages.delete(conversation.id);
+    return removed;
   }, conversation.id);
+  if (deleted && targetDirectory) await pruneDirectoryImages(targetDirectory);
+  return deleted;
 }
 
 /**

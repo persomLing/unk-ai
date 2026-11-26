@@ -6,6 +6,7 @@ import { createFloatingChatDock } from './floating-chat-dock.js';
 import { createFloatingChatActivity } from './floating-chat-activity.js';
 import { createPastedTextDraft } from './pasted-text-draft.js';
 import { copyCodeBlock } from './code-blocks.js';
+import { openTablePreview } from './table-blocks.js';
 
 /** A separate presenter for the existing conversation runtime. */
 export function createSelectionChatView({ document = globalThis.document, runtime, selection, anchorRect,
@@ -259,6 +260,8 @@ export function createSelectionChatView({ document = globalThis.document, runtim
       void runtime.retry(message.id).catch(error => notice(error.message));
     } else if (action === 'copy-code') {
       void copyCodeBlock(button, { writeText: text => view.navigator.clipboard.writeText(text), notify: notice });
+    } else if (action === 'expand-table') {
+      openTablePreview(button, { writeText: text => view.navigator.clipboard.writeText(text), notify: notice });
     } else if (action === 'toggle-thinking') {
       message.userToggledThinking = true;
       message.thinkingExpanded = button.getAttribute('aria-expanded') !== 'true';
