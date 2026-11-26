@@ -619,7 +619,15 @@ function summarizeConversationForReturn(conversation) {
     ? rawTitle
     : String(firstUser?.displayContent ?? firstUser?.content ?? '').replace(/\s+/g, ' ').trim().slice(0, 36) || '新对话';
   const rawPreview = lastMsg
-    ? String(lastMsg.displayContent ?? lastMsg.content ?? '').replace(/\s+/g, ' ').trim()
+    ? String(lastMsg.displayContent ?? lastMsg.content ?? '')
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/^#{1,6}\s+/gm, '')
+      .replace(/^\s*>\s?/gm, '')
+      .replace(/\|?-{3,}\|?/g, ' ')
+      .replace(/[*_~|]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
     : '';
   const preview = rawPreview
     ? (rawPreview.length > 72 ? `${rawPreview.slice(0, 72).trimEnd()}…` : rawPreview)
@@ -650,8 +658,11 @@ function renderPreviousChatButton() {
 
 function showConversation(conversation) {
   const prev = state.conversation;
+  const prevHasMessages = Boolean(prev?.messages?.length);
+  const nextHasMessages = Boolean(conversation?.messages?.length);
   if (prev?.id && conversation?.id && prev.id !== conversation.id) {
-    previousConversationSwitch = summarizeConversationForReturn(prev);
+    if (!prevHasMessages && !nextHasMessages) previousConversationSwitch = null;
+    else previousConversationSwitch = summarizeConversationForReturn(prev);
   }
   draftModelSelection = null;
   toggleModelDropdown(false);
@@ -2595,7 +2606,7 @@ $('#composer').addEventListener('drop', (event) => {
 $('#new-chat').addEventListener('click', () => {
   if (!historyMutationBusy) void newConversation().catch(error => toast(error.message || '新建对话失败。', 'error'));
 });
-previousChatBtn?.addEventListener('pointerenter', () => {
+previousChatWrap?.addEventListener('pointerenter', () => {
   if (previousConversationSwitch && !previousChatWrap.hidden) previousChatTip.hidden = false;
 });
 previousChatBtn?.addEventListener('focus', () => {
@@ -2622,7 +2633,7 @@ previousChatBtn?.addEventListener('click', () => {
     }, { label: '返回上一次对话' }).catch(error => toast(error.message || '切换对话失败。', 'error'));
     return;
   }
-  void openConversation(target.id).catch(error => toast(error.message || '切换对话失败。', 'error'));
+  void selectConversation(target.id).catch(error => toast(error.message || '切换对话失败。', 'error'));
 });
 $('#setup-required').addEventListener('click', async (event) => {
   if (!event.target.closest('button')) return;

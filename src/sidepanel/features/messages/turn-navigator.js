@@ -5,8 +5,14 @@ import { presentVideoNotesMessage } from '../video-notes/video-notes-presentatio
 
 const MAX_PREVIEW = 220;
 const HIDE_DELAY = 120;
-const DIRECTORY_MIN_TURNS = 9;
+const MAX_RAIL_TICKS = 8;
+const DIRECTORY_MIN_TURNS = MAX_RAIL_TICKS + 1;
 const WEEKDAYS_ZH = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+export function visibleRailTurns(turns = []) {
+  const start = Math.max(0, turns.length - MAX_RAIL_TICKS);
+  return { start, turns: turns.slice(start) };
+}
 
 export function formatTurnSpanHeader(turns = []) {
   const times = turns
@@ -356,8 +362,8 @@ export function createTurnNavigator({
   }
 
   function navigate(button) {
-    const index = [...rail.children].indexOf(button);
-    navigateToTurn(turns[index]);
+    const turn = turns.find(item => item.userId === button?.dataset.turnUserId);
+    navigateToTurn(turn);
   }
 
   function onPointerOver(event) {
@@ -402,7 +408,8 @@ export function createTurnNavigator({
     turns = turnsForConversation(conversation);
     withdrawPreview();
     directoryOpen = false;
-    rail.replaceChildren(...turns.map(makeRailItem));
+    const { start: railStart, turns: railTurns } = visibleRailTurns(turns);
+    rail.replaceChildren(...railTurns.map((turn, offset) => makeRailItem(turn, railStart + offset)));
     const visible = turns.length > 0;
     rail.hidden = !visible;
     stage.classList.toggle('has-turn-navigator', visible);

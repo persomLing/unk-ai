@@ -16,10 +16,7 @@
         <div class="header-toolbar">
         <div class="header-leading">
           <button id="open-history" class="icon-button" type="button" aria-label="打开历史侧边栏" title="历史对话" aria-haspopup="dialog" aria-controls="history-drawer" aria-expanded="false"><i data-icon="sidebar"></i></button>
-          <div id="previous-chat-wrap" class="previous-chat-wrap" hidden>
-            <button id="previous-chat-btn" class="icon-button previous-chat-btn" type="button" aria-label="返回上一次对话"><i data-icon="arrow-left"></i></button>
-            <div id="previous-chat-tip" class="previous-chat-tip ui-popover" role="tooltip" hidden></div>
-          </div>
+
           <span class="workspace-wordmark">UNK AI</span>
           <div id="model-switcher" class="model-switcher">
             <button id="model-trigger" class="model-trigger" type="button" aria-label="选择模型" aria-haspopup="listbox" aria-expanded="false">
@@ -50,6 +47,10 @@
 
       <div id="fund-mode-bar" class="fund-mode-bar" role="region" aria-label="基金研究模式状态" hidden></div>
       <div id="conversation-stage" class="conversation-stage">
+      <div id="previous-chat-wrap" class="previous-chat-wrap" hidden>
+        <button id="previous-chat-btn" class="previous-chat-btn" type="button" aria-label="返回上一次对话"><i data-icon="arrow-left"></i></button>
+        <div id="previous-chat-tip" class="previous-chat-tip ui-popover" role="tooltip" hidden></div>
+      </div>
       <main id="conversation-view" class="conversation-view">
         <div id="welcome-sky" class="welcome-sky" aria-hidden="true"></div>
         <div id="setup-required" class="setup-required" hidden>
