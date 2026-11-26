@@ -21,3 +21,75 @@ pre code { padding: 0; }
 .skip-link:focus { top: 8px; }
 
 .masthead .brand-mark { display: block; width: 32px; height: 32px; margin: 0; border: 0; background: transparent; }
+
+.toc-toggle { display: none; }
+.toc a[aria-current="location"] {
+  background: #e1ede5;
+  box-shadow: inset 3px 0 #20685d;
+  color: #1b5445;
+  font-weight: 700;
+}
+
+@media screen and (max-width: 850px) {
+  .toc-ready { scroll-padding-top: 72px; }
+  .toc-ready .toc {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    padding: 0;
+    margin-bottom: 10px;
+    overflow: visible;
+  }
+  .toc-ready .toc-toggle {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 10px 12px;
+    list-style: none;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #f8faf7;
+    color: #1d4c3e;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .toc-toggle::-webkit-details-marker { display: none; }
+  .toc-toggle:focus-visible { outline: 2px solid var(--green); outline-offset: -3px; }
+  .toc-toggle > :first-child { flex: none; }
+  .toc-current {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #415d51;
+    font-weight: 500;
+  }
+  .toc-toggle::after {
+    content: "";
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border: solid currentColor;
+    border-width: 0 1.5px 1.5px 0;
+    transform: rotate(45deg);
+    margin: -4px 2px 0 0;
+  }
+  .toc-disclosure[open] > .toc-toggle::after { transform: rotate(225deg); margin-top: 3px; }
+  .toc-ready .toc-menu {
+    position: absolute;
+    inset-inline: 0;
+    top: calc(100% + 4px);
+    max-height: min(65vh, 32rem);
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #f8faf7;
+    box-shadow: 0 8px 22px #1d382619;
+  }
+  .toc-ready .toc-title { display: none; }
+}

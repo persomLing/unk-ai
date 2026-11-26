@@ -13,6 +13,7 @@ output/
 !/docs/USER-GUIDE.md
 !/docs/USER-GUIDE.html
 !/docs/user-guide-reader.css
+!/docs/user-guide-reader.js
 !/docs/images/
 /docs/images/*
 !/docs/images/user-guide-*

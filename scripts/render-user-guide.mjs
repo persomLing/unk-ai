@@ -19,6 +19,7 @@ for (let i = 0; i < tokens.length; i++) {
     const label = tokens[i + 1].content;
     const id = `section-${++section}`;
     token.attrSet('id', id);
+    token.attrSet('tabindex', '-1');
     headings.push({ id, label });
   }
   for (const child of token.children || []) {
@@ -54,6 +55,7 @@ body = body.replace(/<table>/g, '<div class="table-scroll" tabindex="0" aria-lab
 if ((body.match(/<figure /g) || []).length !== figures.length) throw new Error('Every figure requires a caption.');
 const css = readFileSync(resolve(docs, 'user-guide-reader.css'), 'utf8')
   + '\n' + readFileSync(resolve(root, 'src/styles/scrollbars.css'), 'utf8');
+const readerScript = readFileSync(resolve(docs, 'user-guide-reader.js'), 'utf8');
 const logo = `data:image/png;base64,${readFileSync(resolve(root, 'icons/icon-48.png')).toString('base64')}`;
 figures.sort((a, b) => a.number - b.number);
 const html = `<!doctype html>
@@ -63,10 +65,14 @@ const html = `<!doctype html>
 <style>${css}</style></head><body>
 <a class="skip-link" href="#guide-content">跳到正文</a>
 <header class="masthead"><div class="brand"><img class="brand-mark" src="${logo}" width="32" height="32" alt="" /> UNK AI</div><span class="edition">操作手册 · v${escape(version)}</span></header>
-<div class="layout"><aside class="toc" aria-label="操作手册目录"><p class="toc-title">阅读目录</p><nav>${headings.map(({ id, label }) => `<a href="#${id}">${escape(label)}</a>`).join('\n')}</nav>
+<div class="layout"><aside class="toc" aria-label="操作手册目录">
+<details class="toc-disclosure" open>
+<summary class="toc-toggle"><span>阅读目录</span><span class="toc-current"></span></summary>
+<div class="toc-menu"><p class="toc-title">阅读目录</p><nav aria-label="章节">${headings.map(({ id, label }) => `<a href="#${id}">${escape(label)}</a>`).join('\n')}</nav>
 <details class="figure-index"><summary>图解索引 · ${figures.length} 张</summary>${figures.map(figure => `<a href="#figure-${figure.number}">图 ${figure.number} · ${escape(figure.alt)}</a>`).join('\n')}</details>
-<small>依据当前插件实现核对<br>更新于 ${escape(date)}<br>全部图片已嵌入，可离线打开<br>宽图与表格可横向滚动查看</small></aside>
+<small>依据当前插件实现核对<br>更新于 ${escape(date)}<br>全部图片已嵌入，可离线打开<br>宽图与表格可横向滚动查看</small></div></details></aside>
 <article id="guide-content">${body}<p id="references">本阅读版正文、样式与 ${figures.length} 幅图解均已嵌入文件，可独立打开。可编辑原文为项目 docs/USER-GUIDE.md。</p></article></div>
+<script id="guide-reader">${readerScript}</script>
 </body></html>
 `;
 writeFileSync(resolve(docs, 'USER-GUIDE.html'), html);
