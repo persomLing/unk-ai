@@ -1,3 +1,5 @@
+import { isBuiltInAccountMcpProxyUrl } from './account-auth.js';
+
 const DEFAULT_PROTOCOL_VERSION = '2025-03-26';
 const DEFAULT_CLIENT_INFO = Object.freeze({ name: 'unk-ai', version: '0.20.0' });
 const DEFAULT_TIMEOUT_MS = 18000;
@@ -13,6 +15,14 @@ export class McpClientError extends Error {
   }
 }
 
+export function isAllowedMcpEndpointUrl(parsed) {
+  if (!parsed || typeof parsed !== 'object') return false;
+  if (parsed.protocol === 'https:') return true;
+  if (parsed.protocol !== 'http:') return false;
+  const host = String(parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  return host === '127.0.0.1' || host === 'localhost' || host === '::1' || isBuiltInAccountMcpProxyUrl(parsed);
+}
+
 export function sanitizeMcpEndpoint(endpoint) {
   const raw = String(endpoint || '').trim();
   if (!raw) throw new McpClientError('请先配置 MCP 服务端点地址。', { code: 'MCP_INVALID_ENDPOINT' });
@@ -22,8 +32,8 @@ export function sanitizeMcpEndpoint(endpoint) {
   } catch {
     throw new McpClientError('MCP 服务端点不是有效的 URL。', { code: 'MCP_INVALID_ENDPOINT' });
   }
-  if (parsed.protocol !== 'https:') {
-    throw new McpClientError('MCP 服务端点仅支持 HTTPS 协议。', { code: 'MCP_INVALID_ENDPOINT' });
+  if (!isAllowedMcpEndpointUrl(parsed)) {
+    throw new McpClientError('MCP 服务端点仅支持 HTTPS 协议（本地测试支持 127.0.0.1 / localhost）。', { code: 'MCP_INVALID_ENDPOINT' });
   }
   return parsed.toString();
 }

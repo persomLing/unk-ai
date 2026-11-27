@@ -18,6 +18,9 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.theme) {
     applySettingsTheme(changes.theme.newValue || 'light');
   }
+  if (area === 'local' && (changes.providerConfig || changes.accountSession)) {
+    void syncAccountOptionsState?.();
+  }
   if (area === 'local' && changes.interfacePreferences) {
     applySettingsAppearance(changes.interfacePreferences.newValue || DEFAULT_APPEARANCE);
   }
@@ -50,6 +53,8 @@ import { installTopicSettings } from './topic-settings.js';
 import { installSuggestionSettings } from './suggestion-settings.js';
 import { installUpdateSettings } from './update-settings.js';
 import { installFundSettings } from './fund-settings.js';
+import { installAccountSettings } from './account-settings.js';
+import { getAccountSession } from '../utils/account-auth.js';
 import { awaitWithTimeout } from '../utils/abortable.js';
 import { recordDiagnostic, getDiagnosticStatus, collectDiagnosticLogs, flushDiagnostics } from '../utils/diagnostic-log.js';
 import { installRuntimeDiagnostics } from '../utils/diagnostic-observer.js';
@@ -106,6 +111,8 @@ let savedRevision = 0;
 let hasSavedConfig = false;
 let disposed = false;
 let configBusy = false;
+let accountManaged = false;
+let syncAccountOptionsState = null;
 let diagnosticStatusVersion = 0;
 const diagnosticStatus = document.querySelector('#diagnostic-status');
 const diagnosticFeedback = document.querySelector('#diagnostic-feedback');
@@ -208,6 +215,7 @@ document.querySelector('#settings-theme')?.addEventListener('click', async () =>
 function renderSaveState() {
   const node = document.querySelector('#save-state');
   if (!node) return;
+  if (accountManaged) { node.dataset.state = 'saved'; node.textContent = '当前由账号登录托管（只读）'; return; }
   const dirty = settingsRevision !== savedRevision;
   node.dataset.state = dirty ? 'dirty' : 'saved';
   node.textContent = !settingsReady ? '正在读取配置…' : dirty ? '有未保存的修改' : hasSavedConfig ? '模型配置已保存' : '配置后保存以开始使用';
@@ -255,10 +263,10 @@ async function renderStorage() {
       ? '文件夹授权已失效，请重新选择或授权'
       : '首次使用需授权一个本地文件夹';
   chooseDirectoryButton.lastChild.textContent = info.configured ? (info.granted ? '更换文件夹' : '恢复权限') : '选择文件夹';
-  const hasModel = Boolean(form.elements.endpointUrl.value.trim() && profileLibrary.length);
+  const hasModel = Boolean((accountManaged || form.elements.endpointUrl.value.trim()) && profileLibrary.length);
   const setupRequired = !info.granted || !hasModel;
   setupBanner.hidden = !setupRequired;
-  saveButton.disabled = configBusy || !info.granted;
+  saveButton.disabled = configBusy || accountManaged || !info.granted;
   if (!info.configured) {
     setupBanner.querySelector('strong').textContent = '先选择本地对话存储位置';
     setupBanner.querySelector('span').textContent = '保存模型前，请先授权一个用于保存正式对话的本地文件夹。';
@@ -266,11 +274,11 @@ async function renderStorage() {
     setupBanner.querySelector('strong').textContent = '文件夹授权已失效';
     setupBanner.querySelector('span').textContent = '请重新点击“选择文件夹”恢复读写权限，再保存模型设置。';
   } else if (!hasModel) {
-    setupBanner.querySelector('strong').textContent = '还差一个模型';
-    setupBanner.querySelector('span').textContent = '请填写服务地址，获取模型并添加到模型库。';
+    setupBanner.querySelector('strong').textContent = accountManaged ? '当前账号暂无可用模型' : '选择接入方式开始使用';
+    setupBanner.querySelector('span').textContent = accountManaged ? '请联系管理员在后台为当前账号分配可用模型，或刷新同步配置。' : '可自主配置 API 接入，或使用管理员分配的账户登录自动同步模型。';
   }
   const setupAction = document.querySelector('#setup-action');
-  if (setupAction) { setupAction.href = !info.granted ? '#storage-section' : '#connection-section'; setupAction.textContent = !info.granted ? '前往本地数据' : '连接模型'; }
+  if (setupAction) { setupAction.href = !info.granted ? '#storage-section' : '#account-section'; setupAction.textContent = !info.granted ? '前往本地数据' : (accountManaged ? '账号管理' : '选择接入方式'); }
   return info;
 }
 
@@ -362,7 +370,7 @@ function applyModelKindVisibility() {
     const node = document.querySelector(selector);
     if (node) node.hidden = isImage;
   }
-  reasoningEffort.disabled = isImage || !reasoningEnabled.checked;
+  reasoningEffort.disabled = accountManaged || isImage || !reasoningEnabled.checked;
   reasoningEffortField.hidden = isImage || !reasoningEnabled.checked;
   imageModelHint.hidden = !isImage;
 }
@@ -384,8 +392,8 @@ function applyProfileSettings(profile, { preserve = false } = {}) {
   markAutofilled(form.elements.contextLength, profile.contextLength, !preserve);
   markAutofilled(form.elements.maxTokens, profile.maxOutputTokens, !preserve);
   markAutofilled(form.elements.temperature, profile.temperature, !preserve);
-  reasoningEnabled.disabled = false;
-  visionEnabled.disabled = false;
+  reasoningEnabled.disabled = accountManaged;
+  visionEnabled.disabled = accountManaged;
   if (!preserve) {
     reasoningEnabled.checked = profile.supportsReasoning;
     visionEnabled.checked = profile.supportsVision;
@@ -425,16 +433,16 @@ function renderLibrary() {
   const selectedId = selectedProfile?.id;
   const total = profileLibrary.length;
   modelLibrary.innerHTML = profileLibrary.map((profile, index) => `
-    <article class="library-item ${profile.id === selectedId ? 'is-selected' : ''}" data-library-model-id="${escapeHtml(profile.id)}" data-library-index="${index}" draggable="${total > 1 ? 'true' : 'false'}" tabindex="0" role="button" aria-label="编辑模型 ${escapeHtml(profile.name)}">
-      ${total > 1 ? '<span class="library-drag-handle" aria-hidden="true" title="拖动调整顺序">⋮⋮</span>' : ''}
+    <article class="library-item ${profile.id === selectedId ? 'is-selected' : ''}" data-library-model-id="${escapeHtml(profile.id)}" data-library-index="${index}" draggable="${total > 1 && !accountManaged ? 'true' : 'false'}" tabindex="0" role="button" aria-label="${accountManaged ? '查看模型' : '编辑模型'} ${escapeHtml(profile.name)}">
+      ${total > 1 && !accountManaged ? '<span class="library-drag-handle" aria-hidden="true" title="拖动调整顺序">⋮⋮</span>' : ''}
       <div class="library-item-body"><strong>${escapeHtml(profile.name)}</strong><span class="library-kind${profile.kind === 'image' ? ' is-image' : ''}">${profile.kind === 'image' ? '生图' : '对话'}</span><small>${escapeHtml(profile.id)} · ${profile.kind === 'image' ? '生图模型，不参与对话' : profile.contextLength ? `${Number(profile.contextLength).toLocaleString('zh-CN')} 上下文` : '上下文跟随服务商'}</small></div>
       <div class="library-actions">
         ${total > 1 ? `<div class="library-order-group" role="group" aria-label="调整顺序">
-          <button class="library-move" type="button" data-move-model="${escapeHtml(profile.id)}" data-move-dir="-1" aria-label="上移 ${escapeHtml(profile.name)}" title="上移"${index === 0 ? ' disabled' : ''}>${icon('chevron-up')}</button>
-          <button class="library-move" type="button" data-move-model="${escapeHtml(profile.id)}" data-move-dir="1" aria-label="下移 ${escapeHtml(profile.name)}" title="下移"${index === total - 1 ? ' disabled' : ''}>${icon('chevron-down')}</button>
+          <button class="library-move" type="button" data-move-model="${escapeHtml(profile.id)}" data-move-dir="-1" aria-label="上移 ${escapeHtml(profile.name)}" title="上移"${accountManaged || index === 0 ? ' disabled' : ''}>${icon('chevron-up')}</button>
+          <button class="library-move" type="button" data-move-model="${escapeHtml(profile.id)}" data-move-dir="1" aria-label="下移 ${escapeHtml(profile.name)}" title="下移"${accountManaged || index === total - 1 ? ' disabled' : ''}>${icon('chevron-down')}</button>
         </div>` : ''}
-        <span class="library-current">${profile.id === selectedId ? '编辑中' : '编辑'}</span>
-        <button class="library-remove" type="button" data-model-id="${escapeHtml(profile.id)}" aria-label="移除 ${escapeHtml(profile.name)}">${icon('trash')}</button>
+        <span class="library-current">${accountManaged ? (profile.id === selectedId ? '查看中' : '查看') : (profile.id === selectedId ? '编辑中' : '编辑')}</span>
+        <button class="library-remove" type="button" data-model-id="${escapeHtml(profile.id)}" aria-label="移除 ${escapeHtml(profile.name)}"${accountManaged ? ' disabled' : ''}>${icon('trash')}</button>
       </div>
     </article>`).join('') || emptyState({ symbol: 'layers', title: '还没有添加模型', hint: '填写服务连接，获取列表后即可添加。' });
   renderParametersModelName(selectedProfile);
@@ -447,7 +455,7 @@ function renderImageModelSelect() {
   imageModelSelect.innerHTML = '<option value="">未配置</option>'
     + imageModels.map((profile) => `<option value="${escapeHtml(profile.id)}">${escapeHtml(profile.name)}</option>`).join('');
   imageModelSelect.value = imageModels.some((profile) => profile.id === previous) ? previous : '';
-  imageModelSelect.disabled = !imageModels.length;
+  imageModelSelect.disabled = accountManaged || !imageModels.length;
 }
 
 function renderParametersModelName(profile) {
@@ -498,8 +506,8 @@ function renderDiscoveredModels() {
       const tags = [model.kind === 'image' ? '生图' : '', model.supportsReasoning ? '思考' : '', model.supportsVision ? '视觉' : ''].filter(Boolean).join(' / ');
       return `<option value="${escapeHtml(model.id)}">${escapeHtml(`${model.name}${model.name !== model.id ? ` · ${model.id}` : ''}${tags ? ` · ${tags}` : ''}`)}</option>`;
     }).join('');
-  modelSelect.disabled = !discoveredModels.length;
-  addModelButton.disabled = !modelSelect.value;
+  modelSelect.disabled = accountManaged || !discoveredModels.length;
+  addModelButton.disabled = accountManaged || !modelSelect.value;
   if (discoveredModels.length) {
     modelSelect.selectedIndex = 0;
     renderModelMeta(findDiscoveredModel(modelSelect.value) || discoveredModels[0]);
@@ -622,6 +630,7 @@ async function persist({ quiet = false } = {}) {
 }
 
 form.addEventListener('submit', async (event) => {
+  if (accountManaged) { event.preventDefault(); return; }
   event.preventDefault();
   if (configBusy) return;
   configBusy = true;
@@ -640,7 +649,7 @@ form.addEventListener('submit', async (event) => {
   } finally {
     configBusy = false;
     testButton.disabled = false;
-    saveButton.disabled = !(await getDirectoryInfo()).granted;
+    saveButton.disabled = accountManaged || !(await getDirectoryInfo()).granted;
   }
 });
 
@@ -711,7 +720,7 @@ detectResearchButton.addEventListener('click', async () => {
 
 modelSelect.addEventListener('change', () => {
   if (discoveredModels.length) {
-    addModelButton.disabled = !modelSelect.value;
+    addModelButton.disabled = accountManaged || !modelSelect.value;
   }
   const discovered = findDiscoveredModel(modelSelect.value);
   if (discovered) {
@@ -747,6 +756,7 @@ chooseDirectoryButton.addEventListener('click', async () => {
 modelLibrary.addEventListener('click', (event) => {
   const moveBtn = event.target.closest('[data-move-model]');
   if (moveBtn) {
+    if (accountManaged) return;
     event.stopPropagation();
     const id = moveBtn.dataset.moveModel;
     const dir = Number(moveBtn.dataset.moveDir);
@@ -758,6 +768,7 @@ modelLibrary.addEventListener('click', (event) => {
   }
   const button = event.target.closest('[data-model-id]');
   if (button) {
+    if (accountManaged) return;
     const id = button.dataset.modelId;
     const previousId = activeProfile()?.id;
     modelSelection.remember();
@@ -805,7 +816,7 @@ function clearLibraryDropHints() {
 
 modelLibrary.addEventListener('dragstart', (event) => {
   const card = event.target.closest('[data-library-model-id]');
-  if (!card || profileLibrary.length <= 1) {
+  if (accountManaged || !card || profileLibrary.length <= 1) {
     event.preventDefault();
     return;
   }
@@ -869,7 +880,7 @@ testButton.addEventListener('click', async () => {
   testController = new AbortController();
   const timeout = setTimeout(() => testController.abort(), 45000);
   try {
-    const config = readForm();
+    const config = accountManaged ? await getAccountTestConfig() : readForm();
     validate(config);
     if (activeProfile()?.kind === 'image') {
       const probeHeaders = { Accept: 'application/json' };
@@ -912,11 +923,12 @@ testButton.addEventListener('click', async () => {
     clearTimeout(timeout);
     testController = null;
     testButton.disabled = false;
-    saveButton.disabled = !(await getDirectoryInfo()).granted;
+    saveButton.disabled = accountManaged || !(await getDirectoryInfo()).granted;
   }
 });
 
 document.querySelector('#toggle-key').addEventListener('click', (event) => {
+  if (accountManaged) return;
   const input = document.querySelector('#api-key');
   const visible = input.type === 'text';
   input.type = visible ? 'password' : 'text';
@@ -930,6 +942,7 @@ reasoningEnabled.addEventListener('change', () => {
 });
 
 modelKind.addEventListener('change', () => {
+  if (accountManaged) return;
   modelSelection.remember();
   applyModelKindVisibility();
   renderLibrary();
@@ -960,15 +973,32 @@ window.addEventListener('pagehide', () => {
   disposeSuggestionSettings();
   disposeUpdateSettings();
   fundSettings.dispose();
+  accountSettings?.dispose();
 });
 
-try {
-  await renderStorage();
+let accountSettings = null;
+let syncingAccountOptions = false;
+
+async function getAccountTestConfig() {
+  const saved = await getProviderConfig();
+  if (!saved || !saved.endpointUrl) {
+    throw new Error('当前账号尚未同步到可用模型，请先点击“立即同步配置”。');
+  }
+  const selectedProfile = activeProfile() || saved.models?.[0];
+  return {
+    ...saved,
+    selectedModelId: selectedProfile?.id || saved.selectedModelId,
+    selectedEffort: reasoningEffort.value || saved.selectedEffort,
+  };
+}
+
+async function loadProviderConfigIntoForm() {
+  const prevCreds = currentCredentials();
   const config = await getProviderConfig();
   if (config) {
     hasSavedConfig = true;
-    form.elements.endpointUrl.value = config.endpointUrl || '';
-    form.elements.apiKey.value = config.apiKey || '';
+    form.elements.endpointUrl.value = accountManaged ? '' : (config.endpointUrl || '');
+    form.elements.apiKey.value = accountManaged ? '' : (config.apiKey || '');
     form.elements.webSearchEndpoint.value = config.webSearchEndpoint || 'web_search';
     form.elements.webFetchEndpoint.value = config.webFetchEndpoint || 'web_fetch';
     webResearchEnabled.checked = config.webSearchEnabled !== false || config.webFetchEnabled !== false;
@@ -977,7 +1007,12 @@ try {
     form.elements.maxTokens.value = config.maxTokens ?? '';
     profileLibrary = config.models || [];
     modelSelection.reset(config.selectedModelId);
-    discoveredCredentials = currentCredentials();
+    const nextCreds = currentCredentials();
+    if (discoveredCredentials !== nextCreds) {
+      discoveredModels = [];
+      hasDiscoveredModels = false;
+    }
+    discoveredCredentials = nextCreds;
     renderLibrary();
     imageModelSelect.value = config.selectedImageModelId || '';
     const profile = activeProfile() || profileLibrary[0];
@@ -985,14 +1020,153 @@ try {
       applyProfileSettings(profile);
       reasoningEffort.value = config.selectedEffort || profile.reasoningDefaultEffort || 'default';
     } else {
-      renderDiscoveredModels();
+      modelKind.value = 'chat';
+      reasoningEnabled.checked = false;
+      visionEnabled.checked = false;
+      reasoningEffort.value = 'default';
+      applyModelKindVisibility();
+      renderParametersModelName(null);
+      renderModelMeta(null);
     }
   } else {
+    hasSavedConfig = false;
+    form.elements.endpointUrl.value = '';
+    form.elements.apiKey.value = '';
+    form.elements.webSearchEndpoint.value = 'web_search';
+    form.elements.webFetchEndpoint.value = 'web_fetch';
+    webResearchEnabled.checked = true;
+    form.elements.temperature.value = '';
+    form.elements.contextLength.value = '';
+    form.elements.maxTokens.value = '';
+    profileLibrary = [];
+    modelSelection.reset('');
+    if (prevCreds || discoveredCredentials) {
+      discoveredModels = [];
+      hasDiscoveredModels = false;
+      discoveredCredentials = '';
+    }
     renderLibrary();
+    imageModelSelect.value = '';
+    modelKind.value = 'chat';
+    reasoningEnabled.checked = false;
+    visionEnabled.checked = false;
+    reasoningEffort.value = 'default';
+    applyModelKindVisibility();
+    renderParametersModelName(null);
+    renderModelMeta(null);
   }
   renderDiscoveredModels();
+  savedRevision = settingsRevision;
+  renderSaveState();
+}
+
+function applyAccountManagedState(session) {
+  accountManaged = session?.mode === 'account';
+  const managedBanner = document.querySelector('#account-managed-banner');
+  if (managedBanner) {
+    managedBanner.hidden = !accountManaged;
+    const bannerText = managedBanner.querySelector('span');
+    if (bannerText && accountManaged) {
+      if (session?.status === 'disabled') {
+        bannerText.textContent = '当前账号已被管理员停用，以下模型参数仅作只读预览；请重新登录、切回 API 接入或联系管理员恢复。';
+      } else if (session?.status === 'expired') {
+        bannerText.textContent = '当前账号登录已失效，以下模型参数仅作只读预览；请在上方重新登录或切回 API 接入。';
+      } else {
+        const display = session?.user?.displayName || session?.user?.username || '当前账号';
+        bannerText.textContent = `当前由账号「${display}」托管模型配置：连接地址与密钥已隐藏，下方模型库、生成参数与联网设置仅作只读预览；切换到「API 接入」可随时使用本地配置。`;
+      }
+    }
+  }
+
+  form.elements.endpointUrl.disabled = accountManaged;
+  form.elements.apiKey.disabled = accountManaged;
+  if (form.elements.endpointUrl.dataset.localPlaceholder === undefined) {
+    form.elements.endpointUrl.dataset.localPlaceholder = form.elements.endpointUrl.placeholder || '';
+  }
+  form.elements.endpointUrl.placeholder = accountManaged ? '由账户服务自动托管（已隐藏）' : form.elements.endpointUrl.dataset.localPlaceholder;
+  if (form.elements.apiKey.dataset.localPlaceholder === undefined) {
+    form.elements.apiKey.dataset.localPlaceholder = form.elements.apiKey.placeholder || '';
+  }
+  form.elements.apiKey.placeholder = accountManaged ? '由账户服务自动托管（已隐藏）' : form.elements.apiKey.dataset.localPlaceholder;
+  if (accountManaged) {
+    form.elements.endpointUrl.value = '';
+    form.elements.apiKey.value = '';
+    form.elements.apiKey.type = 'password';
+  }
+
+  const toggleKeyButton = document.querySelector('#toggle-key');
+  if (toggleKeyButton) {
+    toggleKeyButton.disabled = accountManaged;
+    if (accountManaged) toggleKeyButton.setAttribute('aria-pressed', 'false');
+  }
+
+  loadModelsButton.disabled = accountManaged;
+  modelKind.disabled = accountManaged;
+  form.elements.contextLength.disabled = accountManaged;
+  form.elements.maxTokens.disabled = accountManaged;
+  form.elements.temperature.disabled = accountManaged;
+  reasoningEnabled.disabled = accountManaged;
+  visionEnabled.disabled = accountManaged;
+  webResearchEnabled.disabled = accountManaged;
+  webSearchEndpoint.disabled = accountManaged;
+  webFetchEndpoint.disabled = accountManaged;
+  detectResearchButton.disabled = accountManaged;
+  if (accountManaged) saveButton.disabled = true;
+
+  applyModelKindVisibility();
+  renderLibrary();
+  renderDiscoveredModels();
+  renderSaveState();
+}
+
+async function refreshOptionsForAccountState(session = null, { force = false } = {}) {
+  if (disposed || syncingAccountOptions) return;
+  const nextSession = session || await getAccountSession();
+  if (disposed) return;
+  if (!force && !accountManaged && nextSession?.mode !== 'account' && (configBusy || settingsRevision !== savedRevision)) {
+    return;
+  }
+  syncingAccountOptions = true;
+  try {
+    applyAccountManagedState(nextSession);
+    await loadProviderConfigIntoForm();
+    if (disposed) return;
+    applyAccountManagedState(nextSession);
+    await renderStorage();
+    renderSaveState();
+  } finally {
+    syncingAccountOptions = false;
+  }
+}
+
+syncAccountOptionsState = async () => {
+  await refreshOptionsForAccountState(null, { force: false });
+};
+
+accountSettings = installAccountSettings({
+  root: document.querySelector('#account-section'),
+  onStateChange(session) {
+    applyAccountManagedState(session);
+    if (settingsReady) {
+      void refreshOptionsForAccountState(session, { force: true });
+    }
+  },
+});
+
+try {
+  const initialSession = await accountSettings.refresh();
+  applyAccountManagedState(initialSession);
+  await renderStorage();
+  await loadProviderConfigIntoForm();
+  applyAccountManagedState(initialSession);
   await renderStorage();
   await agentSettings.render();
+  try {
+    const hash = window.location.hash;
+    if (hash === '#account-section' || hash === '#connection-section') {
+      document.querySelector(hash)?.scrollIntoView?.({ block: 'start' });
+    }
+  } catch {}
 } catch (error) {
   setStatus(`无法读取已有设置：${error.message}`, 'error');
 } finally {

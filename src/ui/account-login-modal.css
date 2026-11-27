@@ -1,0 +1,296 @@
+.account-login-dialog {
+  width: min(404px, calc(100vw - 24px));
+  max-width: none;
+  max-height: calc(100dvh - 28px);
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg, 18px);
+  color: var(--ink);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  overflow-y: auto;
+}
+
+.account-login-dialog::backdrop {
+  background: var(--scrim, rgba(20, 24, 28, 0.36));
+  backdrop-filter: blur(2px);
+}
+
+.account-login-surface {
+  position: relative;
+  display: grid;
+  gap: 15px;
+  padding: 24px 22px 22px;
+}
+
+.account-login-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+}
+
+.account-login-hero {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 5px;
+  padding-top: 2px;
+}
+
+.account-login-brand {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  margin-bottom: 4px;
+  border: 1px solid var(--accent-line, var(--line));
+  border-radius: 16px;
+  background: linear-gradient(145deg, var(--surface) 0%, var(--teal-soft) 100%);
+  box-shadow: var(--shadow-sm);
+}
+
+.account-login-logo {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.account-login-eyebrow {
+  color: var(--teal);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.account-login-hero h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--display-font, inherit);
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.account-login-subtitle {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.account-login-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-line, var(--line));
+  border-radius: var(--radius-sm, 10px);
+  background: var(--teal-soft);
+  color: var(--ink-secondary);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.account-login-notice[data-kind="warning"] {
+  border-color: color-mix(in srgb, var(--warning, #94581d) 30%, var(--line));
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+.account-login-notice .icon {
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  flex: 0 0 auto;
+  color: currentColor;
+}
+
+.account-login-notice[data-kind="info"] .icon {
+  color: var(--teal);
+}
+
+.account-login-form {
+  display: grid;
+  gap: 12px;
+}
+
+.account-login-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.account-login-field > span {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.account-login-field input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm, 10px);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  transition: border-color var(--motion-tap, 120ms) ease, box-shadow var(--motion-panel, 200ms) var(--ease-out, ease);
+}
+
+.account-login-field input::placeholder {
+  color: var(--subtle);
+  opacity: 1;
+}
+
+.account-login-field input:focus {
+  outline: none;
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px var(--teal-glow);
+}
+
+.account-login-secret {
+  position: relative;
+}
+
+.account-login-secret input {
+  padding-right: 40px;
+}
+
+.account-login-eye {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+}
+
+.account-login-eye .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.account-login-feedback {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: var(--radius-xs, 8px);
+  background: var(--surface-alt);
+  color: var(--ink-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.account-login-feedback.error {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.account-login-feedback.success {
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.account-login-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 9px;
+  padding-top: 4px;
+}
+
+.account-login-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 38px;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm, 10px);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition:
+    background-color var(--motion-tap, 120ms) ease,
+    border-color var(--motion-tap, 120ms) ease,
+    transform var(--motion-tap, 120ms) var(--ease-out, ease),
+    opacity var(--motion-tap, 120ms) ease;
+}
+
+.account-login-btn:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.account-login-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.account-login-btn-secondary {
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-secondary);
+}
+
+.account-login-btn-secondary:hover:not(:disabled) {
+  background: var(--surface-card);
+  color: var(--ink);
+}
+
+.account-login-btn-primary {
+  flex: 1;
+  border: 1px solid transparent;
+  background: var(--teal);
+  color: var(--on-teal);
+}
+
+.account-login-btn-primary:hover:not(:disabled) {
+  background: var(--teal-dark);
+}
+
+.account-login-btn .button-spinner {
+  display: none;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: account-login-spin 700ms linear infinite;
+}
+
+.account-login-btn.is-loading .button-spinner {
+  display: block;
+}
+
+@keyframes account-login-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .account-login-dialog[open] {
+    animation: account-login-enter 240ms var(--ease-spring, cubic-bezier(0.22, 1, 0.36, 1)) both;
+  }
+}
+
+@keyframes account-login-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 360px) {
+  .account-login-dialog {
+    width: calc(100vw - 14px);
+    border-radius: 14px;
+  }
+  .account-login-surface {
+    padding: 20px 16px 18px;
+  }
+}

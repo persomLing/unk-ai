@@ -56,6 +56,7 @@
         <div id="setup-required" class="setup-required" hidden>
           <i data-setup-symbol aria-hidden="true"></i><span data-setup-label></span><button type="button">去设置</button>
         </div>
+        <div id="account-auth-banner" class="setup-required account-auth-banner" hidden><i data-icon="user" aria-hidden="true"></i><span data-account-banner-text>账号登录已失效，请重新登录。</span><button type="button" id="account-relogin-btn">重新登录</button></div>
         <section id="welcome" class="welcome" aria-labelledby="welcome-title">
           <header class="atlas-cover welcome-cover">
             <div class="welcome-cover-copy">
@@ -92,6 +93,7 @@
               </g>
             </svg>
           </header>
+          <section id="welcome-onboarding" class="welcome-onboarding" aria-label="初始接入方式" hidden></section>
           <div class="welcome-start">
             <button class="welcome-chip welcome-secondary" type="button" data-action="fill-prompt" hidden><i data-icon="article"></i><span></span><i data-icon="arrow-right"></i></button>
           </div>
@@ -328,7 +330,7 @@
         <div id="history-feedback" class="ho-feedback" role="status" aria-live="polite" aria-atomic="true" hidden></div>
         <div id="history-batch" class="ho-batch" role="group" aria-label="批量操作" hidden></div>
         <footer class="drawer-footer">
-          <button id="open-settings" class="drawer-settings" type="button"><i data-icon="settings"></i><span>设置</span></button>
+          <button id="open-settings" class="drawer-settings" type="button"><i data-icon="settings"></i><span>设置</span></button><button id="drawer-account-btn" class="drawer-account-btn" type="button" title="账号与接入设置"><i data-icon="user"></i><span data-drawer-account-label>账号登录</span></button>
           <a class="drawer-github" href="https://github.com/persomLing/unk-ai" target="_blank" rel="noopener noreferrer" title="打开 UNK AI 的 GitHub 仓库">GitHub</a>
           <span class="drawer-storage-note"><i data-icon="lock"></i>本地保存</span>
         </footer>

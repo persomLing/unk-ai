@@ -41,6 +41,12 @@ import {
   getProviderConfig,
 } from '../utils/storage.js';
 import {
+  getAccountSession,
+  hasSavedAccountSession,
+  switchToAccountMode,
+  syncAccountProfile,
+} from '../utils/account-auth.js';
+import {
   createTemporaryConversation,
   initializeConversationSync,
   retryPendingConversationWrites,
@@ -69,14 +75,14 @@ import { normalizeProviderConfig, requestProfile } from '../utils/profiles.js';
 import { exportConversationMarkdown } from '../utils/exporter.js';
 import { createMessageCopy } from './features/messages/message-copy.js';
 import { copyCodeBlock } from './features/messages/code-blocks.js';
+import { handleMermaidAction } from './features/messages/mermaid-blocks.js';
+import { handleChartAction } from './features/charts/chart-blocks.js';
 import { openTablePreview } from './features/messages/table-blocks.js';
 import { createExportController } from './features/export/export-controller.js';
 import { createConversationExportMenu } from './features/export/export-menu.js';
 import { createExportDownloader } from './features/export/download-export.js';
 import { recordDiagnostic, collectDiagnosticLogs, flushDiagnostics } from '../utils/diagnostic-log.js';
 import { diagnosticFailure, safeDiagnostic, observeModelDiagnostic, observeConversationSaveDiagnostic, installRuntimeDiagnostics } from '../utils/diagnostic-observer.js';
-import { handleMermaidAction } from './features/messages/mermaid-blocks.js';
-import { handleChartAction } from './features/charts/chart-blocks.js';
 import { createDiagnosticExporter } from './features/diagnostics/diagnostic-export.js';
 import './features/messages/message-copy.css';
 import './features/export/export-dialog.css';
@@ -118,6 +124,10 @@ import {
   welcomePromptsFor,
 } from './features/welcome/welcome-prompts.js';
 import { createWelcomeView } from './features/welcome/welcome-view.js';
+import { createOnboardingCard, shouldShowOnboarding } from './features/onboarding/onboarding-card.js';
+import './features/onboarding/onboarding.css';
+import { createAccountLoginModal } from '../ui/account-login-modal.js';
+import '../ui/account-login-modal.css';
 import { normalizeDraftSource } from './features/welcome/draft-source.js';
 import { decodeWelcomeTopics, DEFAULT_WELCOME_TOPICS, loadWelcomeTopics, WELCOME_TOPICS_KEY } from './features/welcome/topic-preferences.js';
 import { createAgentTurnCallbacks } from './features/agent/agent-turn-callbacks.js';
@@ -240,6 +250,7 @@ const state = {
   conversation: null,
   conversations: [],
   config: null,
+  accountSession: null,
   fundMode: false,
   fundSkillId: '',
   selectedModelId: '',
@@ -738,6 +749,76 @@ function renderPageSelection() {
 }
 
 const welcomeView = createWelcomeView($('#welcome'));
+function openOptionsAt(mode = '') {
+  const query = mode === 'account' ? '?mode=account#account-section' : mode === 'api' ? '?mode=api#connection-section' : '';
+  if (query && chrome.runtime?.getURL && chrome.tabs?.create) {
+    try {
+      const url = chrome.runtime.getURL(`src/options/index.html${query}`);
+      void chrome.tabs.create({ url }).catch(() => { chrome.runtime.openOptionsPage(); });
+      return;
+    } catch {}
+  }
+  chrome.runtime.openOptionsPage();
+}
+async function applyLoggedInSession(session, loginResult = null) {
+  state.accountSession = session;
+  const latestConfig = await getProviderConfig();
+  if (latestConfig) {
+    configRevision++;
+    state.config = normalizeProviderConfig(latestConfig);
+    syncConversationModel();
+    updatePageToolbar();
+    updateComposer();
+  }
+  renderAccountStatus();
+  renderLocalPrompt();
+  const count = Array.isArray(loginResult?.profile?.models) ? loginResult.profile.models.length : (state.config?.models?.length || 0);
+  if (loginResult) {
+    toast(`已登录并同步 ${count} 个可用模型。`);
+  } else {
+    toast(`已切回账号模式（${count} 个可用模型）。`);
+  }
+}
+
+const accountLoginModal = createAccountLoginModal({
+  onSuccess: applyLoggedInSession,
+});
+
+const onboardingCard = createOnboardingCard({
+  host: $('#welcome-onboarding'),
+  onOpenOptions: (mode) => openOptionsAt(mode),
+  onRequestLogin: () => accountLoginModal.open(),
+  onResumeAccount: async () => {
+    const resumed = await switchToAccountMode();
+    if (!resumed?.ok) {
+      accountLoginModal.open();
+      return;
+    }
+    await applyLoggedInSession(resumed.session);
+    try {
+      const synced = await syncAccountProfile({ signal: startupController?.signal });
+      if (synced?.session) {
+        state.accountSession = synced.session;
+        if (synced.changed && synced.providerConfig) {
+          configRevision++;
+          state.config = normalizeProviderConfig(synced.providerConfig);
+          syncConversationModel();
+          updatePageToolbar();
+          updateComposer();
+        }
+        renderAccountStatus();
+      }
+    } catch {}
+  },
+});
+function syncOnboardingCard() {
+  if (typeof onboardingCard === 'undefined') return false;
+  return onboardingCard.sync({
+    config: state.config,
+    accountSession: state.accountSession,
+    hasConversation: Boolean(state.conversation?.messages?.length),
+  });
+}
 let welcomeTopics = DEFAULT_WELCOME_TOPICS;
 let welcomeTopicsChanged = false;
 function renderWelcomePrompts() {
@@ -1167,8 +1248,9 @@ function renderLocalPrompt() {
   const storageState = storageSetupState(state.storageInfo);
   const normalized = normalizeProviderConfig(state.config);
   const missingModel = !normalized?.models?.length;
+  const onboardingVisible = syncOnboardingCard();
   const setup = $('#setup-required');
-  setup.hidden = storageState.hidden && !missingModel;
+  setup.hidden = storageState.hidden && (!missingModel || onboardingVisible);
   if (setup.hidden) return;
   setup.dataset.storageAction = storageState.hidden ? 'settings' : storageState.action;
   setup.dataset.storageKind = storageState.hidden ? 'model' : storageState.kind;
@@ -1806,20 +1888,29 @@ function conversationTitle(text, attachments = []) {
 
 async function ensureConfigured(signal) {
   const revision = configRevision;
-  const config = await getProviderConfig();
+  const [config, accountSession] = await Promise.all([getProviderConfig(), getAccountSession()]);
   signal?.throwIfAborted();
   const storageInfo = await getDirectoryInfo();
   signal?.throwIfAborted();
+  state.accountSession = accountSession;
+  renderAccountStatus();
   if (revision === configRevision) {
     state.config = config;
     syncConversationModel();
   }
   state.storageInfo = storageInfo;
 
+  if (state.accountSession?.mode === 'account' && state.accountSession.status !== 'active') {
+    state.draft = pastedText.getValue();
+    toast(state.accountSession.status === 'disabled' ? '当前账号已被管理员停用，请重新登录或切换自配模式。' : '账号登录已失效，请重新登录。');
+    chrome.runtime.openOptionsPage();
+    return false;
+  }
+
   const normalized = normalizeProviderConfig(state.config);
   if (!normalized?.endpointUrl || !normalized?.models?.length) {
     state.draft = pastedText.getValue();
-    toast('请先配置模型服务，你的输入已保留。');
+    toast(state.accountSession?.mode === 'account' ? '当前账号尚未同步到可用模型，请检查或同步配置。' : '请先配置模型服务，你的输入已保留。');
     chrome.runtime.openOptionsPage();
     return false;
   }
@@ -2846,9 +2937,64 @@ document.addEventListener('keydown', (event) => {
 
 $('#page-refresh')?.addEventListener('click', switchToActivePage);
 $('#clear-selection').addEventListener('click', clearPageSelection);
+function renderAccountStatus() {
+  const session = state.accountSession;
+  const drawerBtn = $('#drawer-account-btn');
+  const drawerLabel = drawerBtn?.querySelector('[data-drawer-account-label]');
+  const authBanner = $('#account-auth-banner');
+  const authText = authBanner?.querySelector('[data-account-banner-text]');
+
+  if (drawerBtn && drawerLabel) {
+    if (session?.mode === 'account') {
+      const display = session.user?.displayName || session.user?.username || '已登录';
+      drawerLabel.textContent = display;
+      drawerBtn.dataset.status = session.status || 'active';
+      drawerBtn.title = `账号模式：${display}（点击前往账号与接入设置）`;
+    } else if (hasSavedAccountSession(session)) {
+      drawerLabel.textContent = 'API 接入';
+      drawerBtn.dataset.status = 'local';
+      drawerBtn.title = '当前为 API 接入模式（已保留登录账号，点击切换或管理）';
+    } else {
+      drawerLabel.textContent = '账号登录';
+      drawerBtn.dataset.status = 'local';
+      drawerBtn.title = '点击登录 UNK AI 账号';
+    }
+  }
+
+  if (authBanner && authText) {
+    const needsRelogin = session?.mode === 'account' && (session.status === 'expired' || session.status === 'disabled');
+    authBanner.hidden = !needsRelogin;
+    if (needsRelogin) {
+      authText.textContent = session.status === 'disabled'
+        ? '当前账号已被管理员停用，请重新登录或切回自定义模式。'
+        : '账号登录已失效，请重新登录以继续使用。';
+    }
+  }
+  syncOnboardingCard();
+}
+
 $('#open-settings').addEventListener('click', () => {
   toggleModelDropdown(false);
-  chrome.runtime.openOptionsPage();
+  openOptionsAt();
+});
+$('#drawer-account-btn')?.addEventListener('click', () => {
+  toggleModelDropdown(false);
+  if (state.accountSession?.mode === 'account' || hasSavedAccountSession(state.accountSession)) {
+    openOptionsAt('account');
+    return;
+  }
+  historyLayout.setOpen(false);
+  accountLoginModal.open();
+});
+$('#account-relogin-btn')?.addEventListener('click', () => {
+  const reason = state.accountSession?.status === 'disabled'
+    ? '当前账号已被管理员停用，请重新登录其他账号或联系管理员。'
+    : '账号登录已失效，请重新输入账号密码登录。';
+  accountLoginModal.open({
+    initialUsername: state.accountSession?.user?.username || '',
+    initialServerUrl: state.accountSession?.serverUrl || '',
+    reason,
+  });
 });
 $('#open-history').addEventListener('click', async () => {
   setHistoryOpen(true);
@@ -3094,12 +3240,17 @@ chrome.storage?.onChanged?.addListener((changes, area) => {
       }
     }).catch(() => {});
   }
+  if (area === 'local' && changes.accountSession) {
+    state.accountSession = changes.accountSession.newValue || null;
+    renderAccountStatus();
+  }
   if (area === 'local' && changes.providerConfig) {
     configRevision++;
     state.config = normalizeProviderConfig(changes.providerConfig.newValue);
     syncConversationModel();
     updatePageToolbar();
     updateComposer();
+    renderLocalPrompt();
     state.contextUsage = null;
     refreshContextUsage();
     renderQueueBar();
@@ -3157,6 +3308,8 @@ window.addEventListener('pagehide', () => {
   networkReadingClient.dispose();
   if (typeof historyNavigation !== 'undefined') historyNavigation.dispose();
   if (typeof historyLayout !== 'undefined') historyLayout.dispose();
+  if (typeof onboardingCard !== 'undefined') onboardingCard?.dispose();
+  if (typeof accountLoginModal !== 'undefined') accountLoginModal?.dispose();
   if (typeof historySidebar !== 'undefined') historySidebar?.dispose();
   if (typeof conversationOrganization !== 'undefined') conversationOrganization.dispose();
   if (typeof messageCopy !== 'undefined') messageCopy.dispose();
@@ -3206,6 +3359,11 @@ async function initialize() {
     const config = await waitStartup(getProviderConfig(), '读取模型配置');
     const conversations = await waitStartup(listSavedConversations(), '读取会话目录');
     if (revision === configRevision) state.config = config;
+    if (typeof getAccountSession === 'function') {
+      const accountSession = await waitStartup(getAccountSession(), '读取账号状态');
+      if (revision === configRevision) state.accountSession = accountSession;
+    }
+    if (typeof renderAccountStatus === 'function') renderAccountStatus();
     state.conversations = conversations;
     showConversation(await waitStartup(loadTemporaryConversation(), '读取临时会话'));
     if (state.conversation?.messages?.some((message) => message.status === 'streaming')) {
@@ -3258,10 +3416,38 @@ async function initialize() {
     }
     await waitStartup(agentSlot.restore(), '恢复浏览器任务');
     const normalizedCfg = normalizeProviderConfig(state.config);
+    const isAccountMode = state.accountSession?.mode === 'account';
     if (state.storageInfo.configured && !state.storageInfo.granted) {
       toast('本地文件夹权限已失效，请点击上方“恢复权限”。');
+    } else if (isAccountMode) {
+      if (state.accountSession?.status && state.accountSession.status !== 'active') {
+        toast('账号登录状态已失效，请在设置页重新登录。');
+      } else if (!normalizedCfg?.models?.length) {
+        toast('当前账号暂无可用模型，请联系管理员分配。');
+      }
     } else if (!normalizedCfg?.models?.length) {
       toast('请先配置并启用一个模型。');
+    }
+    if (isAccountMode && state.accountSession?.status === 'active') {
+      void (async () => {
+        const timerController = new AbortController();
+        const timerId = setTimeout(() => timerController.abort(), 5000);
+        const onStartupAbort = () => timerController.abort();
+        startupController.signal.addEventListener('abort', onStartupAbort, { once: true });
+        try {
+          const syncResult = await syncAccountProfile({ signal: timerController.signal });
+          if (startupController.signal.aborted) return;
+          if (syncResult?.session) {
+            state.accountSession = syncResult.session;
+            renderAccountStatus();
+          }
+        } catch {
+          // Offline or timeout preserves locally cached account profile.
+        } finally {
+          clearTimeout(timerId);
+          startupController.signal.removeEventListener('abort', onStartupAbort);
+        }
+      })();
     }
   } catch (error) {
     if (startupController.signal.aborted) return;

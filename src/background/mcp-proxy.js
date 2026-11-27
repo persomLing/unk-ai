@@ -1,6 +1,8 @@
-const MAX_PROXY_TIMEOUT_MS = 60000;
+import { isBuiltInAccountMcpProxyUrl } from '../utils/account-auth.js';
+
+const MAX_PROXY_TIMEOUT_MS = 90000;
 const DEFAULT_PROXY_TIMEOUT_MS = 20000;
-const MAX_RESPONSE_BYTES = 1024 * 1024; // 1 MiB safety cap per MCP HTTP response.
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024; // 2 MiB safety cap per MCP HTTP response.
 
 const activeRequests = new Map();
 
@@ -11,8 +13,10 @@ function validateProxyUrl(rawUrl) {
   } catch {
     throw new Error('无效的 MCP 服务地址。');
   }
-  if (parsed.protocol !== 'https:') {
-    throw new Error('MCP 代理仅允许访问 HTTPS 服务。');
+  const host = String(parsed.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+  const isLoopback = host === '127.0.0.1' || host === 'localhost' || host === '::1';
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && (isLoopback || isBuiltInAccountMcpProxyUrl(parsed)))) {
+    throw new Error('MCP 代理仅允许访问 HTTPS 服务（或内置授权地址 / 本机回环地址）。');
   }
   return parsed.toString();
 }
