@@ -66,9 +66,11 @@ function Get-StreamSha256Hex([IO.Stream]$stream) {
   try { return [BitConverter]::ToString($algorithm.ComputeHash($stream)).Replace('-', '') }
   finally { $algorithm.Dispose() }
 }
+$thirdPartyNotices = @('third-party/mp4box.LICENSE', 'third-party/fflate.LICENSE', 'third-party/echarts.LICENSE',
+  'third-party/echarts.NOTICE', 'third-party/beautiful-mermaid.LICENSE')
 $required = @($distManifest.background.service_worker, $distManifest.side_panel.default_path, $distManifest.options_ui.page,
-  'src/sidepanel/theme-boot.js', 'content/agent-scanner.js', 'pdfjs/LICENSE', 'third-party/mp4box.LICENSE', 'third-party/fflate.LICENSE',
-  "_locales/$($distManifest.default_locale)/messages.json")
+  'src/sidepanel/theme-boot.js', 'content/agent-scanner.js', 'pdfjs/LICENSE', 'assets/export-charts-runtime.js',
+  "_locales/$($distManifest.default_locale)/messages.json") + $thirdPartyNotices
 $required += $distManifest.content_scripts | ForEach-Object { $_.js }
 $required += $distManifest.icons.PSObject.Properties.Value
 $required += $distManifest.action.default_icon.PSObject.Properties.Value
@@ -89,7 +91,7 @@ $zipFiles = [ordered]@{}
 foreach ($file in $files) {
   $relative = (Get-RelativePath $distRoot $file.FullName).Replace('\', '/')
   if (($relative.Split('/')[0] -notin @('_locales', 'assets', 'content', 'icons', 'pdfjs', 'src', 'manifest.json', 'service-worker.js') -and
-    $relative -notin @('third-party/mp4box.LICENSE', 'third-party/fflate.LICENSE')) -or
+    $relative -notin $thirdPartyNotices) -or
     $file.Extension -in @('.zip', '.map', '.pem', '.key', '.pfx', '.env') -or
     ($file.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Unexpected build file: $relative" }
   $expected[$relative] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash

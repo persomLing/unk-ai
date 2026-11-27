@@ -19,6 +19,8 @@ function copyExtensionAssets() {
         ['node_modules/mp4box/LICENSE', 'third-party/mp4box.LICENSE'],
         ['node_modules/fflate/LICENSE', 'third-party/fflate.LICENSE'],
         ['node_modules/echarts/LICENSE', 'third-party/echarts.LICENSE'],
+        ['node_modules/echarts/NOTICE', 'third-party/echarts.NOTICE'],
+        ['node_modules/beautiful-mermaid/LICENSE', 'third-party/beautiful-mermaid.LICENSE'],
       ];
       for (const size of [16, 32, 48, 128]) {
         files.push([`icons/icon-${size}.png`, `icons/icon-${size}.png`]);
