@@ -35,6 +35,20 @@ export function messageModeBadgeMarkup(message) {
   return `<div class="message-mode"><details class="message-reading-note"><summary>${escapeHtml(label)}${reading.networkCount ? ` · ${Math.min(6, Number(reading.networkCount) || 0)} 个接口响应` : ''}</summary><small>${escapeHtml(details || '本轮按所选方式读取了页面。')}</small></details></div>`;
 }
 
+export function assistantRetryActionsMarkup(message, { frameActions } = {}) {
+  if (message?.agent) {
+    return ['failed', 'cancelled'].includes(message.agent.status)
+      ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>`
+      : '';
+  }
+  if (frameActions?.hideRetry) return '';
+  const status = message?.status || 'complete';
+  if (['stopped', 'error'].includes(status)) {
+    return `<button class="action-text" data-action="retry" type="button">${icon('regenerate')}重试</button>`;
+  }
+  return `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`;
+}
+
 export function messageErrorMarkup(message) {
   const error = normalizeMessageError(message);
   if (!error) return '';

@@ -1,5 +1,5 @@
 export const DISCOVER_TOOLS_NAME = 'discover_fund_tools';
-export const MAX_TOOL_RESULT_CHARS = 22000;
+export const MAX_TOOL_RESULT_CHARS = 48000;
 
 const SHORT_TTL_MS = 10 * 60 * 1000;
 const MEDIUM_TTL_MS = 30 * 60 * 1000;
@@ -122,6 +122,7 @@ export const FUND_TOOL_CATEGORIES = Object.freeze({
 const TOOL_LABELS = Object.freeze({
   [DISCOVER_TOOLS_NAME]: '加载专项基金分析工具',
   calculate_portfolio_math: '计算组合权重与 HHI 集中度',
+  analyze_fund_metrics: '计算多基统计分位与异常偏离带',
   GuessFundCode: '匹配基金代码',
   SearchFunds: '搜索筛选基金',
   GetPopularFund: '获取热门关注基金',
@@ -223,7 +224,7 @@ export function discoverToolsSchema() {
     type: 'function',
     function: {
       name: DISCOVER_TOOLS_NAME,
-      description: `按需加载更多盈米专项基金分析工具（不消耗远程配额）。当默认核心工具不足时调用。可选分类：${categoryList}`,
+      description: `按需加载更多盈米专项基金分析工具（不消耗远程配额）。当默认核心工具不足时调用，可一次传多个分类或传 "all" 解锁全部工具。可选分类：${categoryList}`,
       parameters: {
         type: 'object',
         properties: {
@@ -231,9 +232,9 @@ export function discoverToolsSchema() {
             type: 'array',
             items: {
               type: 'string',
-              enum: Object.keys(FUND_TOOL_CATEGORIES),
+              enum: [...Object.keys(FUND_TOOL_CATEGORIES), 'all'],
             },
-            description: '要启用的工具分类列表（每次最多 2 个分类）。',
+            description: '要启用的工具分类列表（支持多个分类，或传 ["all"] 一次解锁全部工具）。',
           },
         },
         required: ['categories'],
@@ -275,10 +276,16 @@ export function selectCoreMcpTools(allTools = []) {
 
 export function selectCategoryMcpTools(allTools = [], categories = []) {
   const byName = new Map(allTools.filter(tool => tool?.name).map(tool => [tool.name, tool]));
+  const normalized = Array.isArray(categories)
+    ? categories.map(raw => String(raw || '').trim()).filter(Boolean)
+    : [];
+  if (normalized.includes('all')) {
+    return allTools.filter(tool => Boolean(tool?.name));
+  }
   const activated = [];
   const seen = new Set();
-  for (const rawCategory of Array.isArray(categories) ? categories.slice(0, 2) : []) {
-    const meta = FUND_TOOL_CATEGORIES[String(rawCategory || '').trim()];
+  for (const rawCategory of normalized) {
+    const meta = FUND_TOOL_CATEGORIES[rawCategory];
     if (!meta) continue;
     for (const name of meta.tools) {
       if (byName.has(name) && !seen.has(name)) {
@@ -306,7 +313,7 @@ export function trimToolPayload(payload, maxChars = MAX_TOOL_RESULT_CHARS) {
   const shrink = (node, depth = 0) => {
     if (depth > 6 || !node || typeof node !== 'object') return;
     if (Array.isArray(node)) {
-      if (node.length > 24) node.length = 24;
+      if (node.length > 60) node.length = 60;
       for (const item of node) shrink(item, depth + 1);
       return;
     }

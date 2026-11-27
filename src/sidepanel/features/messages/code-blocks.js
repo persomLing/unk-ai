@@ -8,6 +8,7 @@ export function decorateCodeBlocks(fragment) {
   for (const code of fragment.querySelectorAll('pre > code')) {
     if (!code.textContent) continue;
     const pre = code.parentElement;
+    if (pre.closest?.('.mermaid-vis-source, .unk-chart-source')) continue;
     const document = code.ownerDocument;
     const wrapper = document.createElement('div');
     wrapper.className = 'message-code-block';

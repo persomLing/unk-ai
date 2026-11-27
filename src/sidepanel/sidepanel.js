@@ -75,6 +75,8 @@ import { createConversationExportMenu } from './features/export/export-menu.js';
 import { createExportDownloader } from './features/export/download-export.js';
 import { recordDiagnostic, collectDiagnosticLogs, flushDiagnostics } from '../utils/diagnostic-log.js';
 import { diagnosticFailure, safeDiagnostic, observeModelDiagnostic, observeConversationSaveDiagnostic, installRuntimeDiagnostics } from '../utils/diagnostic-observer.js';
+import { handleMermaidAction } from './features/messages/mermaid-blocks.js';
+import { handleChartAction } from './features/charts/chart-blocks.js';
 import { createDiagnosticExporter } from './features/diagnostics/diagnostic-export.js';
 import './features/messages/message-copy.css';
 import './features/export/export-dialog.css';
@@ -656,6 +658,15 @@ function renderPreviousChatButton() {
   previousChatTip.innerHTML = `<span class="previous-chat-kicker">返回上一次对话${escapeHtml(countText)}</span><strong>${escapeHtml(target.title)}</strong><p>${escapeHtml(target.preview)}</p>`;
 }
 
+const LAST_ACTIVE_CONVERSATION_KEY = 'lastActiveConversationId';
+
+function persistLastActiveConversation(conversationId) {
+  if (!chrome.storage?.local) return;
+  const id = typeof conversationId === 'string' ? conversationId.trim() : '';
+  if (!id) return;
+  chrome.storage.local.set({ [LAST_ACTIVE_CONVERSATION_KEY]: id }).catch(() => {});
+}
+
 function showConversation(conversation) {
   const prev = state.conversation;
   const prevHasMessages = Boolean(prev?.messages?.length);
@@ -667,6 +678,7 @@ function showConversation(conversation) {
   draftModelSelection = null;
   toggleModelDropdown(false);
   state.conversation = conversation;
+  if (state.ready) persistLastActiveConversation(conversation?.id || '');
   syncConversationModel();
   renderPreviousChatButton();
 }
@@ -2946,6 +2958,14 @@ messagesElement.addEventListener('click', async (event) => {
     await copyCodeBlock(button, { writeText: text => navigator.clipboard.writeText(text), notify: toast });
     return;
   }
+  if (['toggle-mermaid-source', 'copy-mermaid-source', 'expand-mermaid'].includes(button.dataset.action)) {
+    await handleMermaidAction(button, { writeText: text => navigator.clipboard.writeText(text), notify: toast });
+    return;
+  }
+  if (['toggle-chart-source', 'copy-chart-source', 'expand-chart'].includes(button.dataset.action)) {
+    await handleChartAction(button, { writeText: text => navigator.clipboard.writeText(text), notify: toast });
+    return;
+  }
   if (button.dataset.action === 'expand-table') {
     openTablePreview(button, { writeText: text => navigator.clipboard.writeText(text), notify: toast });
     return;
@@ -3194,13 +3214,31 @@ async function initialize() {
       });
       await waitStartup(saveCurrent(), '保存恢复后的会话');
     }
-    if (!state.conversation && conversations.length) {
-      showConversation(await waitStartup(loadConversation(conversations[0].id), '恢复会话'));
-      if (state.conversation?.messages.some((message) => message.status === 'streaming')) {
-        state.conversation.messages.forEach((message) => {
-          settleInterruptedReply(message, { aborted: true });
-        });
-        await waitStartup(saveCurrent(), '保存恢复后的会话');
+    if (!state.conversation) {
+      let preferredId = '';
+      if (chrome.storage?.local) {
+        try {
+          const saved = await waitStartup(chrome.storage.local.get(LAST_ACTIVE_CONVERSATION_KEY), '读取上次对话记录');
+          preferredId = typeof saved?.[LAST_ACTIVE_CONVERSATION_KEY] === 'string' ? saved[LAST_ACTIVE_CONVERSATION_KEY].trim() : '';
+        } catch {}
+      }
+      let restoredConversation = null;
+      if (preferredId) {
+        try {
+          restoredConversation = await waitStartup(loadConversation(preferredId), '恢复上次会话');
+        } catch {}
+      }
+      if (!restoredConversation && conversations.length) {
+        restoredConversation = await waitStartup(loadConversation(conversations[0].id), '恢复会话');
+      }
+      if (restoredConversation) {
+        showConversation(restoredConversation);
+        if (state.conversation?.messages.some((message) => message.status === 'streaming')) {
+          state.conversation.messages.forEach((message) => {
+            settleInterruptedReply(message, { aborted: true });
+          });
+          await waitStartup(saveCurrent(), '保存恢复后的会话');
+        }
       }
     }
     application.reconcileIllustrations(state.conversation);

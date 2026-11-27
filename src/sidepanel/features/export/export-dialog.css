@@ -37,13 +37,22 @@
 .export-snapshot-note { margin: 12px 0 16px; color: var(--muted); font-size: 10px; line-height: 1.7; }
 .export-settings { padding: 14px 22px 0; border-top: 1px solid var(--line); flex: 0 0 auto; }
 .export-include { font-size: 12px; color: var(--ink-secondary); }
-.export-format { display: flex; gap: 8px; padding: 0; margin: 14px 0 8px; border: 0; min-width: 0; }
-.export-format label { display: flex; flex: 1; min-width: 0; cursor: pointer; position: relative; }
+.export-recommend { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 10px 0 0; padding: 6px 10px; border-radius: 8px; background: var(--surface-alt); border: 1px solid var(--line); font-size: 11px; line-height: 1.45; color: var(--ink-secondary); }
+.export-recommend[hidden] { display: none; }
+.export-recommend-tag { font-weight: 650; color: var(--teal); white-space: nowrap; }
+.export-recommend-reason { flex: 1; min-width: 140px; }
+.export-recommend-apply { border: 1px solid color-mix(in srgb, var(--teal) 35%, var(--line)); background: var(--surface); color: var(--teal); border-radius: 6px; padding: 2px 8px; font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.export-recommend-apply:hover:not(:disabled) { background: var(--teal-soft); }
+.export-recommend-apply[hidden] { display: none; }
+.export-format { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 0; margin: 12px 0 8px; border: 0; min-width: 0; }
+.export-format label { display: flex; min-width: 0; cursor: pointer; position: relative; }
 .export-format input { position: absolute; opacity: 0; }
-.export-format label > span { display: grid; grid-template-columns: 20px 1fr; gap: 2px 7px; align-items: center; flex: 1; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: 9px; }
-.export-format .icon { grid-row: span 2; width: 17px; height: 17px; color: var(--muted); }
-.export-format strong { font-size: 11px; font-weight: 550; }
-.export-format small { font-size: 10px; color: var(--muted); }
+.export-format label > span { display: grid; grid-template-columns: 18px 1fr; gap: 2px 6px; align-items: center; flex: 1; min-width: 0; padding: 10px 9px; border: 1px solid var(--line); border-radius: 9px; position: relative; }
+.export-format .icon { grid-row: span 2; width: 16px; height: 16px; color: var(--muted); }
+.export-format strong { font-size: 11px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.export-format small { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.export-rec-badge { position: absolute; top: -7px; right: 7px; padding: 1px 6px; border-radius: 999px; font-style: normal; font-size: 9px; font-weight: 650; line-height: 1.35; background: var(--teal); color: #fff; box-shadow: var(--shadow-xs); }
+.export-rec-badge[hidden] { display: none; }
 .export-format input:checked + span { background: var(--teal-soft); border-color: var(--teal); color: var(--teal); }
 .export-format input:checked + span .icon { color: var(--teal); }
 .export-format input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
@@ -74,6 +83,9 @@
   .export-tabs { margin: 0 14px 12px; }
   .export-dialog-body { padding: 0 14px; }
   .export-settings { padding: 12px 14px 0; }
+  .export-format { gap: 6px; }
+  .export-format label > span { grid-template-columns: 1fr; gap: 2px; padding: 8px 6px; text-align: center; }
+  .export-format .icon { display: none; }
   .export-dialog-footer { padding: 12px 14px 16px; }
 }
 @media (max-height: 540px) {

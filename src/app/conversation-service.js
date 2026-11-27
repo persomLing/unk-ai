@@ -21,6 +21,7 @@ import { selectedSkill } from '../sidepanel/features/skills/skill-context.js';
 import { selectedVideoTranscript } from '../sidepanel/features/video-notes/video-request.js';
 import { rewoundCommandForDraft } from '../sidepanel/features/messages/rewound-command.js';
 import { assertImageCommand, directImageForMessage, IMAGE_TURN_TIMEOUT_MS } from '../utils/image-generation-command.js';
+import { FUND_TURN_TIMEOUT_MS } from '../sidepanel/features/fund-mode/fund-answer-loop.js';
 import { createRetryPagePreparation } from './retry-page-preparation.js';
 import { createConversationQueue } from './conversation-queue.js';
 
@@ -299,8 +300,9 @@ export function createConversationService(deps) {
       return;
     }
 
+    const fundMode = Boolean(options.fundMode ?? (state.fundMode && !agentTask && !command));
     const submissionOwner = runner.begin({ commandId: options.commandId || options.id || makeId(), mode: agentTask ? 'agent' : 'chat',
-      ...(command ? { timeoutMs: command.executionTimeoutMs } : imageCommand ? { timeoutMs: IMAGE_TURN_TIMEOUT_MS } : {}) });
+      ...(command ? { timeoutMs: command.executionTimeoutMs } : imageCommand ? { timeoutMs: IMAGE_TURN_TIMEOUT_MS } : fundMode ? { timeoutMs: FUND_TURN_TIMEOUT_MS } : {}) });
     if (['completed', 'failed', 'cancelled'].includes(submissionOwner.status)) return;
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
     state.submissionController = submissionController;
@@ -379,7 +381,6 @@ export function createConversationService(deps) {
       if (earlyConversation) {
         conversationQueue.bindConversation(submissionOwner, earlyConversation.id);
       }
-      const fundMode = Boolean(options.fundMode ?? (state.fundMode && !agentTask && !command));
       const fundSkillId = fundMode ? String(options.fundSkillId ?? state.fundSkillId ?? '').trim() : '';
       if (earlyConversation && content && !agentTask) {
         earlyUserMessage = {
@@ -783,8 +784,9 @@ export function createConversationService(deps) {
     } else if (!profileFor(modelId, effort)) { requireModel(); return; }
     stopActiveReply();
     conversationQueue.clear();
+    const fundMode = Boolean(originalQuestion?.fundMode);
     const submissionOwner = runner.begin({ commandId: makeId(), mode: 'chat',
-      ...(command ? { timeoutMs: command.executionTimeoutMs } : imageCommand ? { timeoutMs: IMAGE_TURN_TIMEOUT_MS } : {}) });
+      ...(command ? { timeoutMs: command.executionTimeoutMs } : imageCommand ? { timeoutMs: IMAGE_TURN_TIMEOUT_MS } : fundMode ? { timeoutMs: FUND_TURN_TIMEOUT_MS } : {}) });
     const submissionController = { signal: submissionOwner.signal, abort: reason => submissionOwner.cancel(reason) };
     state.submissionOwner = submissionOwner;
     state.submissionController = submissionController;

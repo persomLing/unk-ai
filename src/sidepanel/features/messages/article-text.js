@@ -8,6 +8,9 @@ export function isArticleDecoration(node) {
     element?.closest?.('.message-illustrations')
     || element?.closest?.('.generated-image')
     || element?.closest?.('[data-fund-decoration="true"]')
+    || element?.closest?.('[data-mermaid-decoration="true"]')
+    || element?.closest?.('[data-chart-decoration="true"]')
+    || element?.closest?.('[data-reading-decoration="true"]')
     || element?.closest?.('[data-table-decoration="true"]'),
   );
 }

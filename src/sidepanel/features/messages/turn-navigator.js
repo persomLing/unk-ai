@@ -149,6 +149,7 @@ export function createTurnNavigator({
   let updateFrame = null;
   let hideTimer = null;
   let resizeObserver = null;
+  let directoryObserver = null;
   let disposed = false;
 
   function conversationCurrent() {
@@ -189,7 +190,8 @@ export function createTurnNavigator({
     const cardWidth = preview.offsetWidth;
     const maxTop = Math.max(8, stageRect.height - cardHeight - 8);
     const top = Math.max(8, Math.min(maxTop, itemRect.top - stageRect.top + itemRect.height / 2 - cardHeight / 2));
-    const left = Math.max(8, itemRect.left - stageRect.left - cardWidth - 7);
+    const anchorLeft = itemRect.right ? itemRect.right - 18 : itemRect.left;
+    const left = Math.max(8, anchorLeft - stageRect.left - cardWidth - 10);
     preview.style.top = `${Math.round(top)}px`;
     preview.style.left = `${Math.round(Math.max(0, left))}px`;
   }
@@ -273,7 +275,9 @@ export function createTurnNavigator({
     const stageRect = stage.getBoundingClientRect();
     const itemRect = firstRailItem.getBoundingClientRect();
     if (!stageRect.height || !itemRect.height) return;
-    const top = Math.max(12, Math.round(itemRect.top - stageRect.top - 16));
+    const trigger = directory.querySelector('.turn-directory-dash');
+    const triggerHeight = trigger?.offsetHeight || 22;
+    const top = Math.max(10, Math.round(itemRect.top - stageRect.top - triggerHeight - 10));
     directory.style.top = `${top}px`;
     const panel = directory.querySelector('.turn-directory-panel');
     if (panel) {
@@ -304,6 +308,11 @@ export function createTurnNavigator({
     trigger.setAttribute('aria-haspopup', 'dialog');
     trigger.setAttribute('aria-label', `展开本对话全部 ${turns.length} 轮目录`);
     trigger.title = `全部 ${turns.length} 轮对话目录`;
+    const iconWrap = doc.createElement('span');
+    iconWrap.className = 'turn-directory-icon';
+    iconWrap.setAttribute('aria-hidden', 'true');
+    iconWrap.innerHTML = icon('list-checks');
+    trigger.append(iconWrap);
     trigger.addEventListener('click', (event) => {
       event.stopPropagation();
       directoryOpen = !directoryOpen;
@@ -456,6 +465,8 @@ export function createTurnNavigator({
   if (typeof ResizeObserver === 'function') {
     resizeObserver = new ResizeObserver(() => { if (!preview.hidden) scheduleUpdate(); });
     resizeObserver.observe(messages);
+    directoryObserver = new ResizeObserver(() => { if (directory && !directory.hidden) requestFrame(positionDirectory); });
+    directoryObserver.observe(stage);
   }
 
   return Object.freeze({
@@ -468,6 +479,7 @@ export function createTurnNavigator({
       if (updateFrame !== null) cancelFrame(updateFrame);
       updateFrame = null;
       resizeObserver?.disconnect();
+      directoryObserver?.disconnect();
       rail.removeEventListener('pointerover', onPointerOver);
       rail.removeEventListener('pointerleave', scheduleWithdraw);
       rail.removeEventListener('focusin', onFocusIn);

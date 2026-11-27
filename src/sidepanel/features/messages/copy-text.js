@@ -1,8 +1,13 @@
 import MarkdownIt from 'markdown-it';
-import { formatMetricValue, parseFundChartSpec, parseFundKpiSpec } from '../fund-mode/fund-markdown-view.js';
+import { cjkFriendlyEmphasis, safeDetailsBlock } from '../../../utils/markdown.js';
+import { parseFundKpiSpec, parseFundStepsSpec } from '../fund-mode/fund-markdown-view.js';
+import { formatChartSpecPlainText, parseChartSpec } from '../charts/chart-spec.js';
+import { parseExampleSpec, parseQuizSpec, parseStepsSpec, READING_ALERT_LABELS } from './reading-enhancements.js';
 
 const markdown = new MarkdownIt({ html: false, linkify: true, breaks: false, typographer: false })
-  .enable(['table', 'strikethrough']);
+  .enable(['table', 'strikethrough'])
+  .use(cjkFriendlyEmphasis)
+  .use(safeDetailsBlock);
 
 // Keep TeX as readable source instead of letting Markdown consume its escapes
 // and underscores. Code spans/fences are already separate parser tokens.
@@ -100,33 +105,67 @@ function renderFundFencePlainText(info, content) {
     const rows = spec.items.map(item => `${item.label}：${item.value}${item.sub ? `（${item.sub}）` : ''}`);
     return head ? `${head}\n${rows.join('\n')}` : rows.join('\n');
   }
-  if (lang === 'fund-chart') {
-    const spec = parseFundChartSpec(content);
+  if (lang === 'fund-steps') {
+    const spec = parseFundStepsSpec(content);
     if (!spec) return null;
     const head = [spec.title, spec.subtitle].filter(Boolean).join(' · ');
-    if (spec.items) {
-      const rows = spec.items.map(item =>
-        `${item.label}：${formatMetricValue(item.value, { unit: spec.unit, signed: spec.colorBySign || spec.hasNegative })}${item.note ? `（${item.note}）` : ''}`);
-      return head ? `${head}\n${rows.join('\n')}` : rows.join('\n');
-    }
-    const rows = spec.labels.map((label, idx) => {
-      const vals = spec.series
-        .map(s => (s.values[idx] !== null ? `${spec.series.length > 1 ? `${s.name} ` : ''}${formatMetricValue(s.values[idx], { unit: spec.unit, signed: spec.colorBySign || spec.hasNegative || spec.unit === '%' })}` : null))
-        .filter(Boolean)
-        .join(' / ');
-      return `${label}：${vals}`;
-    });
+    const rows = spec.steps.map(step =>
+      `${step.badge} ${step.title}${step.summary ? `：${step.summary}` : ''}${step.meta ? `（${step.meta}）` : ''}`);
     return head ? `${head}\n${rows.join('\n')}` : rows.join('\n');
+  }
+  if (lang === 'chart' || lang === 'fund-chart') {
+    const spec = parseChartSpec(content);
+    return spec ? formatChartSpecPlainText(spec) : null;
   }
   return null;
 }
 
+function renderReadingFencePlainText(info, content) {
+  const lang = String(info || '').trim().split(/\s+/)[0].toLowerCase();
+  if (lang === 'steps') {
+    const spec = parseStepsSpec(content);
+    if (!spec) return null;
+    const head = [spec.title, spec.subtitle].filter(Boolean).join(' · ');
+    const rows = spec.steps.map(step =>
+      `${step.badge} ${step.title}${step.summary ? `：${step.summary}` : ''}${step.meta ? `（${step.meta}）` : ''}`);
+    return head ? `${head}\n${rows.join('\n')}` : rows.join('\n');
+  }
+  if (lang === 'quiz') {
+    const spec = parseQuizSpec(content);
+    if (!spec) return null;
+    const lines = [`【${spec.title}】`, spec.question];
+    if (spec.hint) lines.push(`提示：${spec.hint}`);
+    if (spec.options.length) lines.push(...spec.options);
+    lines.push(`参考答案：${spec.answer}`);
+    if (spec.explanation) lines.push(`解析：${spec.explanation}`);
+    return lines.join('\n');
+  }
+  if (lang === 'example') {
+    const spec = parseExampleSpec(content);
+    if (!spec) return null;
+    const lines = [`【${spec.title}】`, spec.body];
+    if (spec.takeaway) lines.push(`直观收获：${spec.takeaway}`);
+    return lines.join('\n');
+  }
+  return null;
+}
+
+function replaceAlertMarkerPlainText(text) {
+  return String(text || '').replace(/^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\][ \t]*(?:\r?\n)?/i, (_whole, rawType) => {
+    const label = READING_ALERT_LABELS[rawType.toLowerCase()];
+    return label ? `【${label}】\n` : '';
+  });
+}
+
 function renderBlock(node) {
   if (node.type === 'inline') return inlineText(node.token.children);
+  if (node.type === 'blockquote') return replaceAlertMarkerPlainText(renderBlocks(node.children));
   if (node.type === 'fence' || node.type === 'code_block') {
     if (node.type === 'fence') {
       const fundText = renderFundFencePlainText(node.token.info, node.token.content);
       if (fundText !== null) return fundText;
+      const readingText = renderReadingFencePlainText(node.token.info, node.token.content);
+      if (readingText !== null) return readingText;
     }
     // Markdown-it adds one terminal newline to code blocks. Keep all code
     // characters, indentation and interior blank lines, without a fence.

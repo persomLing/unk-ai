@@ -7,6 +7,7 @@
  */
 
 export const PORTFOLIO_MATH_TOOL_NAME = 'calculate_portfolio_math';
+export const FUND_METRICS_MATH_TOOL_NAME = 'analyze_fund_metrics';
 
 export const FUND_DISCLAIMERS = Object.freeze({
   research: '数据由盈米 MCP 提供；公募重仓与行业配置受法定季报披露周期限制存在滞后。历史业绩不预示未来表现，以上研究分析仅供参考，不构成投资建议。',
@@ -32,8 +33,8 @@ export const FUND_SKILLS = Object.freeze({
       '   - 债券基金：调 getBondIndicator（久期/杠杆/集中度）、getBondAllocationByFundCode（券种，assetType 用下划线如 bond_asset）、getBondFundCreditRatingLevel、getFundCampisiIndicator、getFundDiveCount。',
       '   - QDII 查 getQdFundAreaAllocation；指数基金查 getFundBenchmarkInfo；货币基金只看 7 日年化/万份收益/规模流动性，不跑股票归因。',
       '4. 多基金对比时必调 GetFundsCorrelation 评估相关性与重仓重叠度。',
-      '5. 口径防误读：managers[].periodReturn 是基金经理历史从业期回报，绝不能写成“本基金任职回报”；不编造无字段支撑的 Sortino 或自定义评分。',
-      '6. 研报输出结构：`> **核心结论**` → `fund-kpi` 核心指标卡 → `fund-chart` 阶段收益/回撤柱状图（或净值 `line` 走势图，基于真实工具返回数据）→ 关键指标对比表 → 持仓结构与归因（可用 `hbar` 展示前五大行业/重仓）→ `> **风险提示**`、申赎费率与条件式适配场景。',
+      '5. 口径防误读与四项质检：异常值先做「净值日新鲜度 / 成立时长样本完整度 / 接口降级或隐藏标记 / 净值与累计收益自洽性（排除分红拆分）」四项核查；managers[].periodReturn 是基金经理历史从业期回报，绝不能写成“本基金任职回报”；不编造无字段支撑的指标。缺少持仓穿透时，结论止步于“风险收益特征偏离”，不臆测具体操盘动作。',
+      '6. 研报节奏与可视化结构：按「`> **核心结论**` 与读图引导 → `fund-kpi` 核心指标卡 → `fund-chart`（多基横向对比优先配 `scatter` 散点象限图或 `bar` / `line` 走势图）→ 显式口径说明 → 关键指标对比表 → 持仓结构与归因（`hbar`）→ `fund-steps` 方法论总结（如适用）→ `> **风险提示**`、申赎费率与适配场景」组织。',
     ].join('\n'),
   },
   'fund-screener': {
@@ -47,8 +48,8 @@ export const FUND_SKILLS = Object.freeze({
       '【执行 Skill：fund-screener（基金筛选与排雷 SOP）】',
       '1. 候选池初筛：通用筛选用 SearchFunds（严禁同时传 keyword 与 category；page 从 0 开始；指数基金可按跟踪误差排序）；债基券种/信用硬条件用 filterBondFundByBondType / filterBondFundByCreditRating（assetType 必须用驼峰如 bondAsset/totalNetAsset）；换手率用 filterStockFundByStockTurnover；债基排雷用 getBondFundWithAlertRecord。',
       '2. 交集收敛与核验：多条件取交集收敛到 <=20 只，必须调 BatchGetFundsDetail 核对身份与申赎状态，再按需补 GetBatchFundPerformance、AnalyzeFundRisk、fund-recovery-ability、BatchGetFundTradeLimit。',
-      '3. 硬约束红线：若无完全匹配结果，先如实告知并列出瓶颈条件，严禁静默放宽硬约束。',
-      '4. 输出规范：默认精选 3–5 只候选基金，用结构化对比表呈现，并可配 1 张 `fund-chart` 柱状图对比收益/回撤，逐只写明「核心优势」与「需要接受的权衡/风险」；热门访问榜与跳水记录均不得直接作为买卖推荐。',
+      '3. 硬约束红线与本地统计：若无完全匹配结果，先如实告知并列出瓶颈条件，严禁静默放宽硬约束。多只候选横向比对时，优先调用本地 `analyze_fund_metrics` 一次算出分位正常带（P25–P75）、Tukey 偏离阈值、离散度、相对基准超额及净值陈旧标记，严禁口算或估算。',
+      '4. 输出规范：先给结论与读图引导，再配 `fund-chart`（有两项以上连续指标如收益 vs 回撤/波动/Beta 时优先用 `scatter` 散点图，或用 `bar` 对比）与显式口径说明，随后给出精选 3–5 只候选基金结构化对比表及「正常/偏离对照表」，逐只写明「核心优势」与「需要接受的权衡/风险」；热门访问榜与跳水记录均不得直接作为买卖推荐。',
     ].join('\n'),
   },
   'portfolio-analysis': {
@@ -327,5 +328,281 @@ export function computePortfolioMath({ holdings = [], nominalTotal = 100000 } = 
     notice: hasAmount
       ? '已按真实输入金额合并重复基金并归一化。'
       : `输入为纯权重，回测金额按名义金额 ${baseTotal} 元等比换算，报告中严禁表述为用户真实持有金额。`,
+  };
+}
+
+export function fundMetricsMathToolSchema() {
+  return {
+    type: 'function',
+    function: {
+      name: FUND_METRICS_MATH_TOOL_NAME,
+      description: '本地确定性多基金统计与偏离识别工具（不消耗盈米远程额度）：对批量基金指标计算样本数、均值、标准差、P25/中位数/P75 正常带、IQR 离散度、Tukey 异常偏离阈值、相对基准超额差值、排名及净值新鲜度核查。',
+      parameters: {
+        type: 'object',
+        properties: {
+          items: {
+            type: 'array',
+            description: '基金样本列表（最多 200 条），每项包含 name/id、可选 navDate(YYYY-MM-DD) 与 metrics 数值字典。',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: '基金代码或标识' },
+                name: { type: 'string', description: '基金名称' },
+                group: { type: 'string', description: '策略或分组标签（可选）' },
+                navDate: { type: 'string', description: '最新净值日期 YYYY-MM-DD（可选，用于陈旧度核查）' },
+                metrics: {
+                  type: 'object',
+                  description: '数值指标键值对，如 {"return1y": 18.5, "maxDrawdown1y": -11.2, "volatility1y": 14.3, "beta": 0.85}',
+                },
+              },
+              required: ['metrics'],
+            },
+          },
+          metricKeys: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '需要统计的指标键列表；不传则自动聚合所有数值指标。',
+          },
+          benchmark: {
+            type: 'object',
+            description: '可选基准对照对象，包含 name 与 metrics 字典。',
+            properties: {
+              name: { type: 'string' },
+              metrics: { type: 'object' },
+            },
+          },
+          sortBy: { type: 'string', description: '按哪个指标排序（可选）。' },
+          sortOrder: { type: 'string', enum: ['desc', 'asc'], description: '排序方向，默认 desc。' },
+          iqrMultiplier: { type: 'number', description: 'Tukey 异常偏离倍数 k，默认 1.5。' },
+        },
+        required: ['items'],
+        additionalProperties: false,
+      },
+    },
+  };
+}
+
+function roundStat(value, decimals = 4) {
+  if (!Number.isFinite(value)) return null;
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+}
+
+function parseStatNumber(raw) {
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
+  if (typeof raw === 'string') {
+    const cleaned = raw.trim().replace(/,/g, '').replace(/[%％]/g, '').replace(/[＋]/g, '+').replace(/[−]/g, '-');
+    if (!cleaned) return null;
+    const num = Number(cleaned);
+    return Number.isFinite(num) ? num : null;
+  }
+  return null;
+}
+
+function quantileSorted(sorted, q) {
+  if (!sorted.length) return null;
+  if (sorted.length === 1) return sorted[0];
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos);
+  const hi = Math.ceil(pos);
+  const frac = pos - lo;
+  return sorted[lo] * (1 - frac) + sorted[hi] * frac;
+}
+
+function parseIsoDayMs(raw) {
+  const m = String(raw || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Deterministic cross-sectional statistics, benchmark excess, outlier fencing,
+ * and NAV-freshness hygiene check for multi-fund due diligence.
+ */
+export function computeFundMetricsAnalysis({
+  items = [],
+  metricKeys = [],
+  benchmark = null,
+  sortBy = '',
+  sortOrder = 'desc',
+  iqrMultiplier = 1.5,
+} = {}) {
+  const rawList = Array.isArray(items) ? items.slice(0, 200) : [];
+  if (!rawList.length) {
+    return { ok: false, error: '样本列表为空，请至少提供一只基金的 metrics 数值数据。' };
+  }
+
+  const k = Number.isFinite(Number(iqrMultiplier)) && Number(iqrMultiplier) > 0 ? Number(iqrMultiplier) : 1.5;
+  const normalizedItems = rawList.map((entry, index) => {
+    const src = entry && typeof entry === 'object' ? entry : {};
+    const rawMetrics = src.metrics && typeof src.metrics === 'object' ? src.metrics : {};
+    const metrics = {};
+    for (const [key, val] of Object.entries(rawMetrics)) {
+      const parsed = parseStatNumber(val);
+      if (parsed !== null) metrics[key] = parsed;
+    }
+    return {
+      id: String(src.id || src.fundCode || src.code || `item-${index + 1}`).trim(),
+      name: String(src.name || src.fundName || src.id || `样本 ${index + 1}`).trim(),
+      group: src.group ? String(src.group).trim() : '',
+      navDate: src.navDate ? String(src.navDate).trim() : '',
+      metrics,
+    };
+  });
+
+  const explicitKeys = Array.isArray(metricKeys)
+    ? metricKeys.map(key => String(key || '').trim()).filter(Boolean)
+    : [];
+  const discoveredKeys = [];
+  const seenKeys = new Set();
+  for (const item of normalizedItems) {
+    for (const key of Object.keys(item.metrics)) {
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        discoveredKeys.push(key);
+      }
+    }
+  }
+  const keys = (explicitKeys.length ? explicitKeys : discoveredKeys).slice(0, 16);
+  if (!keys.length) {
+    return { ok: false, error: '未在样本中解析到有效的数值指标（metrics）。' };
+  }
+
+  const benchMetrics = {};
+  if (benchmark && typeof benchmark === 'object' && benchmark.metrics && typeof benchmark.metrics === 'object') {
+    for (const [key, val] of Object.entries(benchmark.metrics)) {
+      const parsed = parseStatNumber(val);
+      if (parsed !== null) benchMetrics[key] = parsed;
+    }
+  }
+
+  const stats = {};
+  for (const key of keys) {
+    const vals = normalizedItems
+      .map(item => item.metrics[key])
+      .filter(v => Number.isFinite(v))
+      .sort((a, b) => a - b);
+    if (!vals.length) {
+      stats[key] = { count: 0, missingCount: normalizedItems.length };
+      continue;
+    }
+    const sum = vals.reduce((acc, v) => acc + v, 0);
+    const mean = sum / vals.length;
+    const variance = vals.reduce((acc, v) => acc + (v - mean) ** 2, 0) / vals.length;
+    const p25 = quantileSorted(vals, 0.25);
+    const median = quantileSorted(vals, 0.5);
+    const p75 = quantileSorted(vals, 0.75);
+    const iqr = p75 - p25;
+    const min = vals[0];
+    const max = vals[vals.length - 1];
+    stats[key] = {
+      count: vals.length,
+      missingCount: normalizedItems.length - vals.length,
+      min: roundStat(min),
+      p25: roundStat(p25),
+      median: roundStat(median),
+      p75: roundStat(p75),
+      max: roundStat(max),
+      mean: roundStat(mean),
+      stdDev: roundStat(Math.sqrt(variance)),
+      iqr: roundStat(iqr),
+      dispersion: roundStat(max - min),
+      normalBand: [roundStat(p25), roundStat(p75)],
+      tukeyLow: roundStat(p25 - k * iqr),
+      tukeyHigh: roundStat(p75 + k * iqr),
+      ...(benchMetrics[key] !== undefined ? { benchmarkValue: roundStat(benchMetrics[key]) } : {}),
+    };
+  }
+
+  const analyzed = normalizedItems.map(item => {
+    const excessVsBenchmark = {};
+    const outlierFlags = [];
+    const missingMetrics = [];
+    for (const key of keys) {
+      const val = item.metrics[key];
+      if (!Number.isFinite(val)) {
+        missingMetrics.push(key);
+        continue;
+      }
+      if (benchMetrics[key] !== undefined) {
+        excessVsBenchmark[key] = roundStat(val - benchMetrics[key]);
+      }
+      const st = stats[key];
+      if (st && st.count >= 4 && Number.isFinite(st.iqr) && st.iqr > 0) {
+        if (val < st.tukeyLow) {
+          outlierFlags.push({ metric: key, direction: 'low', value: roundStat(val), fence: st.tukeyLow });
+        } else if (val > st.tukeyHigh) {
+          outlierFlags.push({ metric: key, direction: 'high', value: roundStat(val), fence: st.tukeyHigh });
+        }
+      }
+    }
+    return {
+      id: item.id,
+      name: item.name,
+      ...(item.group ? { group: item.group } : {}),
+      ...(item.navDate ? { navDate: item.navDate } : {}),
+      metrics: item.metrics,
+      ...(Object.keys(excessVsBenchmark).length ? { excessVsBenchmark } : {}),
+      outlierFlags,
+      missingMetrics,
+    };
+  });
+
+  const activeSortKey = sortBy && keys.includes(sortBy) ? sortBy : '';
+  const dir = sortOrder === 'asc' ? 1 : -1;
+  if (activeSortKey) {
+    analyzed.sort((a, b) => {
+      const av = a.metrics[activeSortKey];
+      const bv = b.metrics[activeSortKey];
+      const aValid = Number.isFinite(av);
+      const bValid = Number.isFinite(bv);
+      if (!aValid && !bValid) return 0;
+      if (!aValid) return 1;
+      if (!bValid) return -1;
+      return (av - bv) * dir;
+    });
+  }
+
+  const rankedItems = analyzed.map((item, idx) => ({
+    rank: idx + 1,
+    ...item,
+  }));
+
+  const dated = normalizedItems
+    .map(item => ({ item, ms: parseIsoDayMs(item.navDate) }))
+    .filter(entry => entry.ms !== null);
+  const latestMs = dated.length ? Math.max(...dated.map(d => d.ms)) : null;
+  const latestNavDate = latestMs !== null ? new Date(latestMs).toISOString().slice(0, 10) : '';
+  const staleItems = latestMs === null
+    ? []
+    : dated
+      .map(entry => ({
+        id: entry.item.id,
+        name: entry.item.name,
+        navDate: entry.item.navDate,
+        lagDays: Math.round((latestMs - entry.ms) / 86_400_000),
+      }))
+      .filter(entry => entry.lagDays > 7);
+
+  return {
+    ok: true,
+    sampleCount: normalizedItems.length,
+    metricKeys: keys,
+    ...(benchmark?.name ? { benchmarkName: String(benchmark.name) } : {}),
+    stats,
+    rankedItems,
+    outliers: rankedItems.filter(item => item.outlierFlags.length > 0).map(item => ({
+      id: item.id,
+      name: item.name,
+      flags: item.outlierFlags,
+    })),
+    dataHygiene: {
+      latestNavDate,
+      staleItems,
+      missingMetricItems: rankedItems
+        .filter(item => item.missingMetrics.length > 0)
+        .map(item => ({ id: item.id, name: item.name, missingMetrics: item.missingMetrics })),
+    },
   };
 }

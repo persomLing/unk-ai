@@ -21,11 +21,11 @@ export function exportCanvasSize(height, { format = 'png', signal } = {}) {
   if (!['png', 'pdf'].includes(format)) throw new TypeError('不支持的导出格式。');
   const cssHeight = Math.ceil(height);
   if (format === 'png' && cssHeight > EXPORT_LIMITS.pngHeight) {
-    throw new Error('内容过长，PNG 最多支持 16000 像素高度，请减少所选回合或改用 PDF。');
+    throw new Error('内容过长，PNG 最多支持 16000 像素高度，请减少所选回合或改用 PDF / HTML。');
   }
   const scale = Math.min(2, Math.sqrt(EXPORT_LIMITS.canvasPixels / (EXPORT_LIMITS.width * cssHeight)),
     EXPORT_LIMITS.canvasEdge / cssHeight);
-  if (scale < 1.5) throw new Error('内容超过清晰导出的画布上限，请减少所选回合或改用 PDF。');
+  if (scale < 1.5) throw new Error('内容超过清晰导出的画布上限，请减少所选回合或改用 PDF / HTML。');
   // Rounding down keeps the allocated canvas inside the pixel budget.
   const pixelWidth = Math.floor(EXPORT_LIMITS.width * scale);
   const pixelHeight = Math.floor(cssHeight * scale);

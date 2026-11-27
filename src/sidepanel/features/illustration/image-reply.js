@@ -25,8 +25,10 @@ export function createImageReply({ repository, getProfile, makeId = () => crypto
     assertCurrent();
     const dataUrl = safeAttachmentDataUrl(image?.dataUrl);
     if (!dataUrl) throw new Error('生图服务没有返回可显示的图片。');
-    return { content: referenceImage ? '已根据参考图生成新图片。' : '图片已生成。',
-      attachments: [{ id: makeId(), type: 'image', name: '生成图片', dataUrl, generated: true,
+    const briefPrompt = command.prompt.replace(/\s+/g, ' ').trim();
+    const shortDesc = briefPrompt.length > 80 ? `${briefPrompt.slice(0, 80)}…` : briefPrompt;
+    return { content: referenceImage ? `已根据参考图生成图片：${shortDesc}` : `已为你生成图片：${shortDesc}`,
+      attachments: [{ id: makeId(), type: 'image', name: shortDesc || '生成图片', dataUrl, generated: true,
         illustrationLayout: layout, ...illustrationDimensions(image) }] };
   });
 }

@@ -1,0 +1,242 @@
+/* Paper & Ink Mermaid Diagram Cards & Lightbox */
+.mermaid-vis-card {
+  margin: 12px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-xs);
+  overflow: hidden;
+}
+
+.mermaid-vis-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px;
+  background: var(--surface-alt);
+  border-bottom: 1px solid var(--line);
+}
+
+.mermaid-vis-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: var(--radius-pill);
+  background: var(--teal-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--teal);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.5;
+}
+
+.mermaid-vis-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mermaid-vis-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+
+.mermaid-vis-btn .icon {
+  width: 12px;
+  height: 12px;
+}
+
+.mermaid-vis-btn:hover,
+.mermaid-vis-btn[aria-pressed="true"] {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.mermaid-vis-stage {
+  padding: 10px 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+  background: var(--surface);
+}
+
+.mermaid-vis-stage[hidden],
+.mermaid-vis-source[hidden] {
+  display: none;
+}
+
+.mermaid-vis-svg {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  height: auto;
+}
+
+.mermaid-vis-source pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* Streaming skeleton */
+.mermaid-vis-skeleton {
+  margin: 12px 0;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--accent-line);
+  background: var(--surface-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mermaid-vis-skeleton-label {
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--teal);
+}
+
+.mermaid-vis-skeleton-nodes {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 36px;
+}
+
+.mermaid-vis-skeleton-nodes i {
+  flex: 1;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--surface-card) 25%, var(--teal-soft) 50%, var(--surface-card) 75%);
+  background-size: 200% 100%;
+  animation: mermaid-shimmer 1.4s ease infinite;
+}
+
+@keyframes mermaid-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* Lightbox dialog */
+.mermaid-preview-dialog {
+  width: min(94vw, 1080px);
+  max-width: min(94vw, 1080px);
+  max-height: 88vh;
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.mermaid-preview-dialog::backdrop {
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+.mermaid-preview-shell {
+  display: flex;
+  flex-direction: column;
+  max-height: 88vh;
+  min-width: 0;
+}
+
+.mermaid-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-alt);
+  flex-shrink: 0;
+}
+
+.mermaid-preview-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.mermaid-preview-title strong {
+  font-size: 13.5px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.mermaid-preview-title span {
+  font-family: var(--folio-font);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.mermaid-preview-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mermaid-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--ink-secondary);
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+
+.mermaid-preview-btn .icon {
+  width: 13px;
+  height: 13px;
+}
+
+.mermaid-preview-btn:hover {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+}
+
+.mermaid-preview-viewport {
+  padding: 18px;
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  background: var(--surface);
+}
+
+.mermaid-preview-canvas {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-width: min-content;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mermaid-vis-skeleton-nodes i {
+    animation: none;
+  }
+}

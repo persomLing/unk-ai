@@ -1,10 +1,16 @@
 import { icon } from '../../icons.js';
 import { markdownToPlainText } from '../messages/copy-text.js';
 import { awaitWithTimeout } from '../../../utils/abortable.js';
-import { createExportSnapshot, selectExportSnapshot, exportSelectionIssue, exportFilename } from './export-model.js';
+import { createExportSnapshot, selectExportSnapshot, exportSelectionIssue, exportFilename, recommendExportFormat } from './export-model.js';
 
 const compact = value => String(value || '').replace(/\s+/g, ' ').trim();
 const summary = (value, limit) => { const text = compact(value); return text.length > limit ? `${text.slice(0, limit)}…` : text; };
+const FORMAT_LABELS = Object.freeze({ png: '长图 PNG', pdf: '文档 PDF', html: '网页 HTML' });
+const FORMAT_NOTES = Object.freeze({
+  png: '浅色长图版式 · 宽表自动紧凑排版，仅包含选中的正文和来源',
+  pdf: 'PDF 按图片分页，文字不可选中；需要复制文字或宽表横滑可改用 HTML',
+  html: '单文件离线网页 · 支持亮暗主题切换、ECharts 交互图表、文字复制与宽表横滑',
+});
 
 /** UI-owned export sessions are snapshots, never owners of a live chat turn. */
 export function createExportController({ document = globalThis.document, download, notify = () => {},
@@ -35,11 +41,17 @@ export function createExportController({ document = globalThis.document, downloa
   </div>
   <div class="export-settings">
     <label class="export-include"><input type="checkbox" data-export-questions checked>包含我的提问</label>
+    <div class="export-recommend" data-export-recommend hidden>
+      <span class="export-recommend-tag" data-export-rec-tag></span>
+      <span class="export-recommend-reason" data-export-rec-reason></span>
+      <button type="button" class="export-recommend-apply" data-export-apply-rec hidden>改用推荐</button>
+    </div>
     <fieldset class="export-format"><legend class="sr-only">导出格式</legend>
-      <label><input type="radio" name="export-format" value="png" checked><span>${icon('image')}<strong>长图 PNG</strong><small>适合分享</small></span></label>
-      <label><input type="radio" name="export-format" value="pdf"><span>${icon('file')}<strong>文档 PDF</strong><small>自动分页</small></span></label>
+      <label><input type="radio" name="export-format" value="png" checked><span>${icon('image')}<strong>长图 PNG</strong><small>适合分享</small><em class="export-rec-badge" data-rec-badge="png" hidden>推荐</em></span></label>
+      <label><input type="radio" name="export-format" value="pdf"><span>${icon('file')}<strong>文档 PDF</strong><small>自动分页</small><em class="export-rec-badge" data-rec-badge="pdf" hidden>推荐</em></span></label>
+      <label><input type="radio" name="export-format" value="html"><span>${icon('globe')}<strong>网页 HTML</strong><small>宽表·可选字</small><em class="export-rec-badge" data-rec-badge="html" hidden>推荐</em></span></label>
     </fieldset>
-    <p class="export-format-note">浅色版式 · 仅包含选中的正文和来源</p>
+    <p class="export-format-note">${FORMAT_NOTES.png}</p>
     <p class="export-feedback" role="status" aria-live="polite" hidden></p>
   </div>
   <footer class="export-dialog-footer"><button type="button" class="button button-secondary" data-export-close>取消</button><button type="button" class="button button-primary" data-export-save>导出 PNG</button></footer>`;
@@ -50,6 +62,10 @@ export function createExportController({ document = globalThis.document, downloa
   const canvas = find('.export-preview-canvas');
   const all = find('[data-export-all]');
   const save = find('[data-export-save]');
+  const recBar = find('[data-export-recommend]');
+  const recTag = find('[data-export-rec-tag]');
+  const recReason = find('[data-export-rec-reason]');
+  const recApply = find('[data-export-apply-rec]');
   let current = null;
   let disposed = false;
   let previewVersion = 0;
@@ -81,18 +97,36 @@ export function createExportController({ document = globalThis.document, downloa
     const session = current;
     if (!session) return;
     const issue = exportSelectionIssue(session.snapshot, session.selected, session);
+    const rec = recommendExportFormat(session.snapshot, session.selected, { includeQuestions: session.includeQuestions });
+    session.recommendedFormat = rec?.format || '';
+    if (rec && !session.formatManual && session.format !== rec.format) {
+      session.format = rec.format;
+    }
     all.checked = session.selected.size === session.snapshot.turns.length && session.selected.size > 0;
     all.indeterminate = session.selected.size > 0 && !all.checked;
     find('[data-export-count]').textContent = `已选 ${session.selected.size} / ${session.snapshot.turns.length} 轮`;
     for (const input of list.querySelectorAll('input')) input.checked = session.selected.has(input.value);
+    for (const input of dialog.querySelectorAll('input[name="export-format"]')) input.checked = input.value === session.format;
+    for (const badge of dialog.querySelectorAll('[data-rec-badge]')) {
+      badge.hidden = !rec || badge.dataset.recBadge !== rec.format;
+    }
+    if (recBar) {
+      recBar.hidden = !rec;
+      if (rec) {
+        recTag.textContent = `推荐 ${FORMAT_LABELS[rec.format] || rec.format.toUpperCase()}`;
+        recReason.textContent = rec.reason;
+        recApply.hidden = session.format === rec.format;
+      } else {
+        recApply.hidden = true;
+      }
+    }
     for (const control of dialog.querySelectorAll('input, [data-export-view]')) control.disabled = session.busy;
+    if (recApply) recApply.disabled = session.busy;
     save.disabled = session.busy || Boolean(issue);
     save.classList?.toggle('is-exporting', Boolean(session.busy));
     save.textContent = session.busy ? '正在生成…' : `导出 ${session.format.toUpperCase()}`;
     dialog.setAttribute('aria-busy', String(session.busy));
-    find('.export-format-note').textContent = session.format === 'pdf'
-      ? 'PDF 按图片分页，文字不可选中；需要文本可使用复制功能。'
-      : '浅色版式 · 仅包含选中的正文和来源';
+    find('.export-format-note').textContent = FORMAT_NOTES[session.format] || FORMAT_NOTES.png;
     if (!session.busy) status(issue, Boolean(issue));
   }
   function close({ restoreFocus = true } = {}) {
@@ -113,11 +147,14 @@ export function createExportController({ document = globalThis.document, downloa
     try { snapshot = createExportSnapshot(conversation); }
     catch (error) { notify(error.message, 'error'); return; }
     if (!snapshot.turns.length) { notify('当前没有可导出的问答回合。'); return; }
-    current = { snapshot, selected: new Set(snapshot.turns.map(turn => turn.id)), trigger,
-      controller: new AbortController(), includeQuestions: true, format: 'png', busy: false, view: 'selection' };
+    const selected = new Set(snapshot.turns.map(turn => turn.id));
+    const rec = recommendExportFormat(snapshot, selected, { includeQuestions: true });
+    const initialFormat = rec?.format || 'png';
+    current = { snapshot, selected, trigger,
+      controller: new AbortController(), includeQuestions: true, format: initialFormat,
+      formatManual: false, recommendedFormat: initialFormat, busy: false, view: 'selection' };
     find('.export-conversation-title').textContent = snapshot.title;
     find('[data-export-questions]').checked = true;
-    find('input[value="png"]').checked = true;
     for (const turn of snapshot.turns) {
       const label = document.createElement('label');
       label.className = 'export-turn-option';
@@ -153,13 +190,13 @@ export function createExportController({ document = globalThis.document, downloa
       if (!active(session) || version !== previewVersion) return;
       const paper = renderer.buildExportDocument(selectExportSnapshot(session.snapshot, session.selected), { document, includeQuestions: session.includeQuestions });
       canvas.replaceChildren(paper);
-      renderer.fitExportDocument?.(paper);
+      renderer.fitExportDocument?.(paper, { format: session.format });
       layoutPreview();
       status();
       // Images and bundled math fonts can alter line heights after first layout.
       paper.addEventListener('load', layoutPreview, true);
       if (document.fonts) void awaitWithTimeout(document.fonts.ready, { signal: session.controller.signal, timeoutMs: 8000 })
-        .then(() => { if (active(session) && version === previewVersion) { renderer.fitExportDocument?.(paper); layoutPreview(); } })
+        .then(() => { if (active(session) && version === previewVersion) { renderer.fitExportDocument?.(paper, { format: session.format }); layoutPreview(); } })
         .catch(() => {});
     } catch (error) {
       if (active(session) && version === previewVersion) status(error.message || '预览失败，请重试。', true);
@@ -224,7 +261,14 @@ export function createExportController({ document = globalThis.document, downloa
   function onClick(event) {
     if (event.target.closest('[data-export-close]')) close();
     else if (event.target.closest('[data-export-save]')) void saveExport();
-    else {
+    else if (event.target.closest('[data-export-apply-rec]')) {
+      if (current && !current.busy && current.recommendedFormat) {
+        current.format = current.recommendedFormat;
+        current.formatManual = false;
+        refresh();
+        if (current.view === 'preview') void preview();
+      }
+    } else {
       const tab = event.target.closest('[data-export-view]');
       if (tab && !current?.busy) showView(tab.dataset.exportView);
     }
@@ -236,7 +280,10 @@ export function createExportController({ document = globalThis.document, downloa
     else if (input.matches('.export-turn-list input')) {
       if (input.checked) current.selected.add(input.value); else current.selected.delete(input.value);
     } else if (input.matches('[data-export-questions]')) current.includeQuestions = input.checked;
-    else if (input.name === 'export-format') current.format = input.value;
+    else if (input.name === 'export-format') {
+      current.format = input.value;
+      current.formatManual = true;
+    }
     refresh();
     if (current.view === 'preview') void preview();
   }

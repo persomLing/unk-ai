@@ -25,7 +25,10 @@ import {
 } from './fund-tool-registry.js';
 import { buildFundModeSystemPrompt } from './fund-mode-prompt.js';
 import {
+  computeFundMetricsAnalysis,
   computePortfolioMath,
+  FUND_METRICS_MATH_TOOL_NAME,
+  fundMetricsMathToolSchema,
   getFundSkill,
   inferFundSkillId,
   PORTFOLIO_MATH_TOOL_NAME,
@@ -33,13 +36,17 @@ import {
   sanitizeFundToolArgs,
 } from './fund-skills.js';
 
-const MAX_TOOL_ROUNDS = 5;
-const MAX_REMOTE_CALLS = 8;
-const MAX_BATCH_CALLS = 10;
-const MAX_BATCH_CONCURRENCY = 3;
+export const FUND_TURN_TIMEOUT_MS = 30 * 60 * 1000;
+
+const DEFAULT_MAX_TOOL_ROUNDS = Infinity;
+const DEFAULT_MAX_REMOTE_CALLS = Infinity;
+const DEFAULT_TOOL_BUDGET_MS = Infinity;
+const MAX_BATCH_CALLS = 32;
+const MAX_BATCH_CONCURRENCY = 5;
 const MAX_PROTOCOL_RETRIES = 5;
-const TOOL_BUDGET_MS = 60000;
-const SINGLE_TOOL_TIMEOUT_MS = 18000;
+const MAX_STALLED_ROUNDS = 3;
+const SINGLE_TOOL_TIMEOUT_MS = 45000;
+const MODEL_REQUEST_TIMEOUT_MS = 180000;
 const DSML_ARTIFACT_RE = /<\/?\s*[|｜]\s*[|｜]?\s*DSML\s*[|｜]\s*[|｜]?\s*[^>]*>/gi;
 
 const sharedFundCache = createFundToolCache();
@@ -70,11 +77,19 @@ function requestCost(messages, tools) {
   return estimateRequestTokens({ messages, tools }).used;
 }
 
-function budgetInstructions(remoteCallsUsed = 0, round = 0, exhausted = false) {
-  return `本轮盈米 MCP 工具剩余预算：远程调用 ${Math.max(0, MAX_REMOTE_CALLS - remoteCallsUsed)} 次，工具轮 ${Math.max(0, MAX_TOOL_ROUNDS - round)} 轮。本地 discover_fund_tools 与命中缓存的重复调用不扣远程额度。`
-    + (exhausted
-      ? '本轮工具预算已结束，请基于已返回的数据完成结构化研报回答，明确标注数据缺口与未核实部分，绝不编造数字。'
-      : '优先使用批量工具减少调用次数；数据足够时直接完成研报回答。');
+function budgetInstructions(remoteCallsUsed = 0, round = 0, exhausted = false, { maxToolRounds = DEFAULT_MAX_TOOL_ROUNDS, maxRemoteCalls = DEFAULT_MAX_REMOTE_CALLS } = {}) {
+  const unbounded = !Number.isFinite(maxToolRounds) && !Number.isFinite(maxRemoteCalls);
+  if (exhausted) {
+    return `本轮已调用远程盈米 MCP ${remoteCallsUsed} 次（共 ${round} 轮工具）。`
+      + '请立即基于已返回的数据完成结构化研报回答，明确标注数据口径、截止日期与未核实部分，绝不编造数字。';
+  }
+  if (unbounded) {
+    return `本轮已调用远程盈米 MCP ${remoteCallsUsed} 次，当前第 ${round + 1} 轮；不限工具轮次与调用次数，请充分交叉核验后再作答。`
+      + '本地 discover_fund_tools（支持传 "all" 一次解锁全部工具）、calculate_portfolio_math 与 analyze_fund_metrics 均不消耗远程配额。';
+  }
+  const remCalls = Math.max(0, maxRemoteCalls - remoteCallsUsed);
+  const remRounds = Math.max(0, maxToolRounds - round);
+  return `本轮盈米 MCP 工具剩余预算：远程调用 ${remCalls} 次，工具轮 ${remRounds} 轮。本地工具与命中缓存不扣远程额度；数据足够时直接完成研报回答。`;
 }
 
 export function fundContextReserve({ now = Date.now() } = {}) {
@@ -112,15 +127,17 @@ function fitFundToolContext(messages, tools, budget) {
   }
 }
 
-function budgetResult(reason, remoteCallsUsed) {
+function budgetResult(reason, remoteCallsUsed, maxRemoteCalls = DEFAULT_MAX_REMOTE_CALLS) {
   return {
     kind: 'budget',
     ok: false,
     executed: false,
     code: 'ERR_FUND_TOOL_LIMIT',
     reason,
-    remaining: { remoteCalls: Math.max(0, MAX_REMOTE_CALLS - remoteCallsUsed) },
-    notice: '本次远程工具未执行。本轮工具预算已结束，请依据已返回数据完成回答并注明未核实项。',
+    remaining: {
+      remoteCalls: Number.isFinite(maxRemoteCalls) ? Math.max(0, maxRemoteCalls - remoteCallsUsed) : null,
+    },
+    notice: '本次远程工具未执行。请依据已返回数据完成回答并注明未核实项。',
   };
 }
 
@@ -171,6 +188,7 @@ export async function createFundToolSession({
   const mcpClient = client || createYingmiMcpClient({
     endpoint: resolvedConfig.endpoint,
     apiKey: resolvedConfig.apiKey,
+    authMode: resolvedConfig.authMode,
     transport,
   });
 
@@ -195,24 +213,28 @@ export async function createFundToolSession({
   const hasMoreTools = allTools.length > activeSchemas.size;
 
   function getTools() {
-    const list = [...activeSchemas.values(), portfolioMathToolSchema()];
+    const list = [...activeSchemas.values(), portfolioMathToolSchema(), fundMetricsMathToolSchema()];
     if (hasMoreTools) list.push(discoverToolsSchema());
     return list;
   }
 
   function isAllowed(name) {
-    return name === DISCOVER_TOOLS_NAME || name === PORTFOLIO_MATH_TOOL_NAME || activeSchemas.has(name);
+    return name === DISCOVER_TOOLS_NAME
+      || name === PORTFOLIO_MATH_TOOL_NAME
+      || name === FUND_METRICS_MATH_TOOL_NAME
+      || activeSchemas.has(name);
   }
 
   function fingerprint(name, args) {
-    const cleanArgs = name === DISCOVER_TOOLS_NAME || name === PORTFOLIO_MATH_TOOL_NAME
-      ? args
-      : sanitizeFundToolArgs(name, args);
+    const isLocal = name === DISCOVER_TOOLS_NAME
+      || name === PORTFOLIO_MATH_TOOL_NAME
+      || name === FUND_METRICS_MATH_TOOL_NAME;
+    const cleanArgs = isLocal ? args : sanitizeFundToolArgs(name, args);
     return canonicalToolKey(mcpClient.endpoint, name, cleanArgs);
   }
 
   function isCached(name, args) {
-    if (name === DISCOVER_TOOLS_NAME || name === PORTFOLIO_MATH_TOOL_NAME) return true;
+    if (name === DISCOVER_TOOLS_NAME || name === PORTFOLIO_MATH_TOOL_NAME || name === FUND_METRICS_MATH_TOOL_NAME) return true;
     const ttl = fundToolCacheTtl(name);
     if (ttl <= 0) return false;
     return cache.get(fingerprint(name, args)) !== null;
@@ -227,6 +249,20 @@ export async function createFundToolSession({
         cached: true,
         toolName: PORTFOLIO_MATH_TOOL_NAME,
         label: fundToolLabel(PORTFOLIO_MATH_TOOL_NAME),
+        durationMs: 0,
+        charts: [],
+        payload: outcome,
+      };
+    }
+
+    if (name === FUND_METRICS_MATH_TOOL_NAME) {
+      const outcome = computeFundMetricsAnalysis(args || {});
+      return {
+        ok: outcome.ok === true,
+        local: true,
+        cached: true,
+        toolName: FUND_METRICS_MATH_TOOL_NAME,
+        label: fundToolLabel(FUND_METRICS_MATH_TOOL_NAME),
         durationMs: 0,
         charts: [],
         payload: outcome,
@@ -386,6 +422,9 @@ export async function runFundResearchAnswer({
   question = '',
   contextWindow,
   maxTokens = 0,
+  maxToolRounds = DEFAULT_MAX_TOOL_ROUNDS,
+  maxRemoteCalls = DEFAULT_MAX_REMOTE_CALLS,
+  toolBudgetMs = DEFAULT_TOOL_BUDGET_MS,
   now = Date.now,
   onDelta,
   onReasoning,
@@ -423,21 +462,28 @@ export async function runFundResearchAnswer({
   let content = '';
   let reasoning = '';
   let remoteCallsUsed = 0;
-  let remainingToolMs = TOOL_BUDGET_MS;
+  let remainingToolMs = toolBudgetMs;
   let forceFinal = false;
   let protocolRetries = 0;
+  let stalledRounds = 0;
   const fundSources = [];
   const fundCharts = [];
   const seenCharts = new Set();
   const roundResults = new Map();
+  const executedFingerprints = new Set();
 
   try {
-    for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    for (let round = 0; round <= maxToolRounds; round++) {
       run.assertCurrent();
       const available = session.getTools();
-      const exhausted = forceFinal || round === MAX_TOOL_ROUNDS || remoteCallsUsed >= MAX_REMOTE_CALLS || remainingToolMs <= 0 || !available.length;
+      const timeExhausted = Number.isFinite(remainingToolMs) && remainingToolMs <= 0;
+      const exhausted = forceFinal
+        || round === maxToolRounds
+        || (Number.isFinite(maxRemoteCalls) && remoteCallsUsed >= maxRemoteCalls)
+        || timeExhausted
+        || !available.length;
       const tools = exhausted ? [] : available;
-      budgetStatus.content = budgetInstructions(remoteCallsUsed, round, exhausted);
+      budgetStatus.content = budgetInstructions(remoteCallsUsed, round, exhausted, { maxToolRounds, maxRemoteCalls });
       fitFundToolContext(history, tools, budget);
 
       run.phase('waiting-model');
@@ -450,7 +496,7 @@ export async function runFundResearchAnswer({
         const retryForceFinal = attempt > 0 && (exhausted || fundSources.length > 0);
         const attemptTools = retryForceFinal ? [] : tools;
         if (retryForceFinal) {
-          budgetStatus.content = budgetInstructions(remoteCallsUsed, round, true);
+          budgetStatus.content = budgetInstructions(remoteCallsUsed, round, true, { maxToolRounds, maxRemoteCalls });
           fitFundToolContext(history, attemptTools, budget);
         }
         let attemptContent = '';
@@ -462,16 +508,17 @@ export async function runFundResearchAnswer({
             messages: history,
             tools: attemptTools,
             toolChoice: (exhausted || retryForceFinal) ? 'none' : 'auto',
-            timeoutMs: 120000,
+            timeoutMs: MODEL_REQUEST_TIMEOUT_MS,
             onDelta: (delta, full) => { run.assertCurrent(); attemptContent = full; onDelta?.(delta, joined(prefix, full)); },
             onReasoning: (delta, full) => { run.assertCurrent(); attemptReasoning = full; onReasoning?.(delta, joined(reasoningPrefix, full)); },
           }), run.signal);
         } catch (error) {
           run.assertCurrent();
+          const deadlineRemaining = Number.isFinite(run.deadlineAt) ? run.deadlineAt - now() : Infinity;
           if (!isRetryableToolProtocolError(error)
             || hasSubstantiveContent(attemptContent)
             || protocolRetries >= MAX_PROTOCOL_RETRIES
-            || run.deadlineAt - now() <= 5000) {
+            || deadlineRemaining <= 5000) {
             throw error;
           }
           protocolRetries++;
@@ -487,7 +534,8 @@ export async function runFundResearchAnswer({
         const calls = result.toolCalls;
         const protocolInvalid = calls.length > 0 && (exhausted || retryForceFinal || calls.length > MAX_BATCH_CALLS || result.finishReason !== 'tool_calls');
         if (!protocolInvalid) break;
-        if (hasSubstantiveContent(result.content) || protocolRetries >= MAX_PROTOCOL_RETRIES || run.deadlineAt - now() <= 5000) {
+        const deadlineRemaining = Number.isFinite(run.deadlineAt) ? run.deadlineAt - now() : Infinity;
+        if (hasSubstantiveContent(result.content) || protocolRetries >= MAX_PROTOCOL_RETRIES || deadlineRemaining <= 5000) {
           throw new Error('模型在基金数据收尾时仍请求工具或响应异常中断，请重试。');
         }
         protocolRetries++;
@@ -526,10 +574,11 @@ export async function runFundResearchAnswer({
       for (const entry of validated) {
         const isFree = entry.name === DISCOVER_TOOLS_NAME
           || entry.name === PORTFOLIO_MATH_TOOL_NAME
+          || entry.name === FUND_METRICS_MATH_TOOL_NAME
           || plannedFingerprints.has(entry.fingerprint)
           || session.isCached(entry.name, entry.args);
         if (isFree) continue;
-        if (plannedRemote >= MAX_REMOTE_CALLS) {
+        if (Number.isFinite(maxRemoteCalls) && plannedRemote >= maxRemoteCalls) {
           entry.budgetReason = 'call-limit';
           forceFinal = true;
           continue;
@@ -546,6 +595,7 @@ export async function runFundResearchAnswer({
       });
 
       const executable = validated.filter(entry => !entry.budgetReason);
+      const hasNewWork = executable.some(entry => !executedFingerprints.has(entry.fingerprint));
       if (executable.length) {
         onToolStart?.();
         const progressLabel = executable.length === 1
@@ -557,17 +607,20 @@ export async function runFundResearchAnswer({
       for (let index = 0; index < validated.length; index += MAX_BATCH_CONCURRENCY) {
         run.assertCurrent();
         const batch = validated.slice(index, index + MAX_BATCH_CONCURRENCY);
-        if (remainingToolMs <= 0) {
+        if (Number.isFinite(remainingToolMs) && remainingToolMs <= 0) {
           for (const entry of batch) {
             if (!entry.budgetReason && entry.name !== DISCOVER_TOOLS_NAME) entry.budgetReason = 'time-limit';
           }
           forceFinal = true;
         }
         const startedAt = now();
-        const timer = batch.some(entry => !entry.budgetReason)
+        const runRemaining = Number.isFinite(run.deadlineAt) ? Math.max(1, run.deadlineAt - startedAt) : Infinity;
+        const batchCap = Number.isFinite(remainingToolMs) ? Math.min(remainingToolMs, runRemaining) : runRemaining;
+        const timerDelay = Number.isFinite(batchCap) ? Math.min(2_147_483_647, Math.max(1, batchCap)) : null;
+        const timer = timerDelay !== null && batch.some(entry => !entry.budgetReason)
           ? setTimeout(
             () => toolController.abort(new DOMException('本轮基金数据查询已超过时间预算。', 'TimeoutError')),
-            Math.max(1, Math.min(remainingToolMs, run.deadlineAt - now())),
+            timerDelay,
           )
           : null;
 
@@ -580,6 +633,7 @@ export async function runFundResearchAnswer({
               return roundResults.get(entry.fingerprint);
             }
             const outcome = await session.execute(entry.name, entry.args, { signal: toolController.signal });
+            executedFingerprints.add(entry.fingerprint);
             if (!outcome.local && !outcome.cached) {
               remoteCallsUsed++;
             }
@@ -590,7 +644,9 @@ export async function runFundResearchAnswer({
           })), toolController.signal);
         } finally {
           if (timer !== null) clearTimeout(timer);
-          remainingToolMs -= Math.max(0, now() - startedAt);
+          if (Number.isFinite(remainingToolMs)) {
+            remainingToolMs -= Math.max(0, now() - startedAt);
+          }
         }
 
         run.assertCurrent();
@@ -601,7 +657,7 @@ export async function runFundResearchAnswer({
             history.push({
               role: 'tool',
               tool_call_id: entry.call.id,
-              content: JSON.stringify(budgetResult(entry.budgetReason || 'time-limit', remoteCallsUsed)),
+              content: JSON.stringify(budgetResult(entry.budgetReason || 'time-limit', remoteCallsUsed, maxRemoteCalls)),
             });
             continue;
           }
@@ -629,6 +685,12 @@ export async function runFundResearchAnswer({
         if (fundSources.length || fundCharts.length) {
           onFundMeta?.({ fundSources: [...fundSources], fundCharts: [...fundCharts], fundSkillId: resolvedSkillId });
         }
+      }
+      if (!hasNewWork && executable.length) {
+        stalledRounds++;
+        if (stalledRounds >= MAX_STALLED_ROUNDS) forceFinal = true;
+      } else {
+        stalledRounds = 0;
       }
     }
     throw new Error('基金研究工具循环未返回完整回答，请重试。');

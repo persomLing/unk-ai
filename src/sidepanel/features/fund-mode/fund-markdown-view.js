@@ -14,6 +14,8 @@
  * createElementNS and textContent with strict schema validation.
  */
 
+import { buildChartCardElement } from '../charts/chart-blocks.js';
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const CHART_SERIES_COLORS = Object.freeze([
   'var(--fund-chart-1)',
@@ -26,11 +28,13 @@ const CHART_SERIES_COLORS = Object.freeze([
 
 const MAX_SERIES = 6;
 const MAX_POINTS = 60;
+const MAX_SCATTER_POINTS = 120;
 const MAX_ITEMS = 16;
 const MAX_KPI_ITEMS = 8;
+const MAX_STEPS = 5;
 
 const SKIP_TEXT_TAGS = new Set(['CODE', 'PRE', 'A', 'SVG', 'SCRIPT', 'STYLE', 'BUTTON', 'KBD']);
-const SKIP_TEXT_ANCESTOR_SELECTOR = 'code, pre, a, svg, .katex, .fund-vis-card, .fund-kpi-card, .fund-metric, .fund-badge, .fund-risk-badge';
+const SKIP_TEXT_ANCESTOR_SELECTOR = 'code, pre, a, svg, .katex, .unk-chart-card, .fund-vis-card, .fund-kpi-card, .fund-steps-card, .fund-metric, .fund-badge, .fund-risk-badge';
 
 // Signed percentage or basis-point token:
 // Must NOT be preceded by a digit, decimal point, or `%` so ranges like `10%-20%`
@@ -91,6 +95,23 @@ const CALLOUT_PATTERNS = Object.freeze([
     re: /^(?:适配场景|观察要点|配置建议|优化建议|操作提示|持有建议|适用人群)[：:\s]/,
   },
 ]);
+
+const STRONG_NON_DIRECTIONAL_RE = /费率|申购费|赎回费|管理费|托管费|服务费|销售服务|运作费|占比|权重|仓位|比例|集中度|换手率|波动率|跟踪误差|杠杆|久期|分位|排名|胜率|盈利概率|限额|起购|持有期|温度|修复天数|天数|\bPE\b|\bPB\b|\bROE\b|\bBeta\b|夏普|卡玛|R方|R²/i;
+const SNAPSHOT_NON_DIRECTIONAL_RE = /代码|日期|规模|净值|份额|人数/i;
+const DIRECTIONAL_ACTION_RE = /收益|回报|涨跌|涨幅|跌幅|超额|alpha|回撤|贡献|择时|选股|配置效应|利差效应|收入效应|国债效应|变动|变化|差值|盈亏/i;
+
+/**
+ * Determine whether signed values under the given financial labels represent
+ * directional return/drawdown/attribution metrics suitable for red-up / green-down coloring.
+ */
+export function shouldColorDirectionalMetric({ label = '', colHeader = '', rowLabel = '' } = {}) {
+  const contexts = [label, colHeader, rowLabel].map(v => String(v ?? '').trim()).filter(Boolean);
+  for (const ctx of contexts) {
+    if (STRONG_NON_DIRECTIONAL_RE.test(ctx)) return false;
+    if (SNAPSHOT_NON_DIRECTIONAL_RE.test(ctx) && !DIRECTIONAL_ACTION_RE.test(ctx)) return false;
+  }
+  return true;
+}
 
 let svgGradientSeq = 0;
 
@@ -205,8 +226,10 @@ export function parseFundChartSpec(rawText) {
     allocation: 'donut',
     temperature: 'gauge',
     meter: 'gauge',
+    quadrant: 'scatter',
+    bubble: 'scatter',
   };
-  const type = ['line', 'bar', 'hbar', 'donut', 'gauge'].includes(rawType)
+  const type = ['line', 'bar', 'hbar', 'donut', 'gauge', 'scatter'].includes(rawType)
     ? rawType
     : typeAlias[rawType] || '';
   if (!type) return null;
@@ -263,6 +286,99 @@ export function parseFundChartSpec(rawText) {
       centerLabel,
       centerValue,
       items,
+    };
+  }
+
+  if (type === 'scatter') {
+    const xLabel = clampString(parsed.xLabel || parsed.xTitle || 'X 轴', 32);
+    const yLabel = clampString(parsed.yLabel || parsed.yTitle || 'Y 轴', 32);
+    const inferAxisUnit = (label, explicit) => clampString(
+      explicit ?? (/%|％|收益|回撤|波动|超额|胜率/.test(label) ? '%' : ''),
+      10,
+    );
+    const xUnit = inferAxisUnit(xLabel, parsed.xUnit);
+    const yUnit = inferAxisUnit(yLabel, parsed.yUnit);
+    const includeZero = parsed.includeZero === true;
+
+    const rawRefLines = Array.isArray(parsed.refLines) ? parsed.refLines.slice(0, 4) : [];
+    const refLines = [];
+    for (const ref of rawRefLines) {
+      if (!ref || typeof ref !== 'object') continue;
+      const axis = String(ref.axis || '').trim().toLowerCase();
+      const value = parseNumericValue(ref.value);
+      if ((axis !== 'x' && axis !== 'y') || value === null) continue;
+      refLines.push({
+        axis,
+        value,
+        label: clampString(ref.label, 24),
+      });
+    }
+
+    let rawSeries = Array.isArray(parsed.series) ? parsed.series : null;
+    if (!rawSeries && Array.isArray(parsed.points)) {
+      rawSeries = [{ name: clampString(parsed.seriesName || title || '样本', 28), points: parsed.points }];
+    }
+    if (!Array.isArray(rawSeries) || !rawSeries.length) return null;
+
+    const validShapes = new Set(['circle', 'diamond', 'hollow', 'hollow-diamond', 'square']);
+    const series = [];
+    let totalPoints = 0;
+
+    for (const entry of rawSeries.slice(0, MAX_SERIES)) {
+      if (!entry || typeof entry !== 'object') continue;
+      const rawPoints = Array.isArray(entry.points) ? entry.points : Array.isArray(entry.data) ? entry.data : null;
+      if (!rawPoints || !rawPoints.length) continue;
+      const points = [];
+      for (const pt of rawPoints) {
+        if (totalPoints >= MAX_SCATTER_POINTS) break;
+        if (!pt || typeof pt !== 'object') continue;
+        const x = parseNumericValue(pt.x);
+        const y = parseNumericValue(pt.y);
+        if (x === null || y === null) continue;
+        points.push({
+          x,
+          y,
+          label: clampString(pt.label ?? pt.name ?? pt.code, 24),
+          note: clampString(pt.note ?? pt.sub ?? pt.desc, 48),
+          annotate: pt.annotate === true,
+        });
+        totalPoints++;
+      }
+      if (!points.length) continue;
+      const rawShape = String(entry.shape || 'circle').trim().toLowerCase();
+      series.push({
+        name: clampString(entry.name || entry.label || `系列 ${series.length + 1}`, 28),
+        shape: validShapes.has(rawShape) ? rawShape : 'circle',
+        highlight: entry.highlight === true,
+        points,
+      });
+    }
+    if (!series.length) return null;
+
+    const xs = series.flatMap(s => s.points.map(p => p.x));
+    const ys = series.flatMap(s => s.points.map(p => p.y));
+    for (const ref of refLines) {
+      if (ref.axis === 'x') xs.push(ref.value);
+      else ys.push(ref.value);
+    }
+
+    return {
+      type,
+      title,
+      subtitle,
+      source,
+      xLabel,
+      yLabel,
+      xUnit,
+      yUnit,
+      includeZero,
+      refLines,
+      series,
+      totalPoints,
+      xMin: Math.min(...xs),
+      xMax: Math.max(...xs),
+      yMin: Math.min(...ys),
+      yMax: Math.max(...ys),
     };
   }
 
@@ -339,14 +455,15 @@ export function parseFundKpiSpec(rawText) {
     if (!label || !value) continue;
     const sub = clampString(entry.sub ?? entry.note ?? entry.desc, 42);
     const explicitTrend = String(entry.trend || entry.tone || '').trim().toLowerCase();
+    const directional = shouldColorDirectionalMetric({ label });
     let trend = ['up', 'down', 'flat', 'neutral', 'cold', 'cool', 'mid', 'warm', 'hot'].includes(explicitTrend)
       ? explicitTrend
-      : (classifySignedMetric(value) || 'neutral');
+      : ((directional ? classifySignedMetric(value) : null) || 'neutral');
     if (trend === 'neutral') {
       const valTone = VALUATION_TOKENS.find(t => value.includes(t.label))?.tone;
       if (valTone) trend = valTone;
     }
-    items.push({ label, value, sub, trend });
+    items.push({ label, value, sub, trend, directional });
   }
   if (!items.length) return null;
 
@@ -354,6 +471,40 @@ export function parseFundKpiSpec(rawText) {
     title: Array.isArray(parsed) ? '' : clampString(parsed.title, 48),
     asOf: Array.isArray(parsed) ? '' : clampString(parsed.asOf || parsed.subtitle || parsed.date, 48),
     items,
+  };
+}
+
+/**
+ * Validate and normalize a `fund-steps` horizontal methodology/SOP card JSON specification.
+ */
+export function parseFundStepsSpec(rawText) {
+  const parsed = typeof rawText === 'string' ? tryParseSpecJson(rawText) : rawText;
+  if (!parsed || typeof parsed !== 'object') return null;
+  const rawSteps = Array.isArray(parsed) ? parsed : Array.isArray(parsed.steps) ? parsed.steps : null;
+  if (!rawSteps || rawSteps.length < 2) return null;
+
+  const validTones = new Set(['neutral', 'accent', 'warm', 'risk']);
+  const steps = [];
+  for (const entry of rawSteps.slice(0, MAX_STEPS)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const title = clampString(entry.title ?? entry.label ?? entry.name, 26);
+    if (!title) continue;
+    const rawTone = String(entry.tone || '').trim().toLowerCase();
+    steps.push({
+      badge: clampString(entry.badge ?? entry.step ?? String(steps.length + 1), 8),
+      title,
+      summary: clampString(entry.summary ?? entry.desc ?? entry.subtitle, 44),
+      meta: clampString(entry.meta ?? entry.tools ?? entry.note, 56),
+      tone: validTones.has(rawTone) ? rawTone : 'neutral',
+    });
+  }
+  if (steps.length < 2) return null;
+
+  return {
+    title: Array.isArray(parsed) ? '' : clampString(parsed.title, 64),
+    subtitle: Array.isArray(parsed) ? '' : clampString(parsed.subtitle, 80),
+    source: Array.isArray(parsed) ? '' : clampString(parsed.source, 48),
+    steps,
   };
 }
 
@@ -463,6 +614,32 @@ function buildLegend(doc, series, { unit = '', colorBySign = false } = {}) {
   return legend;
 }
 
+/**
+ * Select evenly spaced X-axis label indices that guarantee pixel clearance
+ * between adjacent labels and before the pinned last label.
+ */
+function selectVisibleTickIndices(labels, xFor, { maxLabels = 6, minGapPx = 62 } = {}) {
+  const n = labels.length;
+  if (n <= 2) return labels.map((_, i) => i);
+  const maxChars = Math.max(...labels.map(l => String(l || '').length), 4);
+  const gap = Math.max(minGapPx, Math.min(92, maxChars * 6.6 + 14));
+  const last = n - 1;
+  const lastX = xFor(last);
+  const chosen = [0];
+  let prevX = xFor(0);
+
+  const step = Math.max(1, Math.ceil(last / Math.max(1, maxLabels - 1)));
+  for (let i = step; i < last; i += step) {
+    const x = xFor(i);
+    if (x - prevX >= gap && lastX - x >= gap) {
+      chosen.push(i);
+      prevX = x;
+    }
+  }
+  chosen.push(last);
+  return chosen;
+}
+
 /* ---------- 1. Line Chart ---------- */
 
 function buildLineChart(doc, spec) {
@@ -528,12 +705,8 @@ function buildLineChart(doc, spec) {
     svg.append(label);
   }
 
-  // X ticks (auto-thin to <= 6 labels)
-  const maxXLabels = Math.min(6, spec.labels.length);
-  const stepX = spec.labels.length <= maxXLabels ? 1 : Math.ceil((spec.labels.length - 1) / (maxXLabels - 1));
-  const xIndices = new Set([0, spec.labels.length - 1]);
-  for (let i = 0; i < spec.labels.length; i += stepX) xIndices.add(i);
-  for (const i of [...xIndices].sort((a, b) => a - b)) {
+  // X ticks (pixel-aware thinning so penultimate ticks never collide with the pinned end label)
+  for (const i of selectVisibleTickIndices(spec.labels, xFor, { maxLabels: 6 })) {
     const x = xFor(i);
     const anchor = i === 0 ? 'start' : i === spec.labels.length - 1 ? 'end' : 'middle';
     const text = svgEl(doc, 'text', {
@@ -670,7 +843,10 @@ function buildBarChart(doc, spec) {
 
   const W = 560;
   const H = 224;
-  const pad = { top: 22, right: 16, bottom: 32, left: 48 };
+  const groupCount = spec.labels.length;
+  const seriesCount = spec.series.length;
+  const showDirectLabels = seriesCount === 1 ? groupCount <= 7 : (seriesCount <= 2 && groupCount <= 4);
+  const pad = { top: 22, right: 16, bottom: spec.hasNegative && showDirectLabels ? 38 : 32, left: 48 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
 
@@ -711,15 +887,12 @@ function buildBarChart(doc, spec) {
     svg.append(label);
   }
 
-  const groupCount = spec.labels.length;
-  const seriesCount = spec.series.length;
   const slotW = plotW / Math.max(1, groupCount);
   const groupPad = Math.min(18, slotW * 0.22);
   const innerW = Math.max(10, slotW - groupPad);
   const barGap = seriesCount > 1 ? 3 : 0;
   const barW = Math.min(40, Math.max(6, (innerW - barGap * (seriesCount - 1)) / seriesCount));
   const totalBarsW = barW * seriesCount + barGap * (seriesCount - 1);
-  const showDirectLabels = seriesCount === 1 ? groupCount <= 7 : groupCount <= 2;
   const signedFmt = spec.colorBySign || spec.hasNegative || spec.unit === '%';
 
   const hoverBand = svgEl(doc, 'rect', {
@@ -770,7 +943,7 @@ function buildBarChart(doc, spec) {
       svg.append(bar);
 
       if (showDirectLabels) {
-        const textY = val >= 0 ? Math.max(pad.top - 4, y - 5) : Math.min(H - pad.bottom + 12, y + h + 12);
+        const textY = val >= 0 ? Math.max(pad.top - 4, y - 5) : Math.min(H - 22, y + h + 12);
         const valText = svgEl(doc, 'text', {
           x: (x + barW / 2).toFixed(1),
           y: textY.toFixed(1),
@@ -1055,6 +1228,570 @@ function buildGaugeChart(doc, spec) {
   return figure;
 }
 
+/* ---------- 5b. 2D Scatter / Quadrant Chart ---------- */
+
+function buildScatterLegend(doc, spec) {
+  const legend = doc.createElement('div');
+  legend.className = 'fund-vis-legend';
+  spec.series.forEach((s, idx) => {
+    const color = CHART_SERIES_COLORS[idx % CHART_SERIES_COLORS.length];
+    const item = doc.createElement('span');
+    item.className = 'fund-vis-legend-item';
+    const swatch = doc.createElement('i');
+    swatch.className = `fund-vis-swatch-shape shape-${s.shape}`;
+    swatch.style.setProperty('--swatch-color', color);
+    const name = doc.createElement('span');
+    name.className = 'fund-vis-legend-name';
+    name.textContent = s.name;
+    item.append(swatch, name);
+    legend.append(item);
+  });
+  if (spec.refLines.length > 0) {
+    const item = doc.createElement('span');
+    item.className = 'fund-vis-legend-item';
+    const swatch = doc.createElement('i');
+    swatch.className = 'fund-vis-swatch is-dashed';
+    swatch.style.setProperty('--swatch-color', 'var(--muted)');
+    const name = doc.createElement('span');
+    name.className = 'fund-vis-legend-name';
+    name.textContent = spec.refLines[0].label || '参考分界线';
+    item.append(swatch, name);
+    legend.append(item);
+  }
+  return legend;
+}
+
+function createScatterPointShape(doc, { shape, cx, cy, r, color }) {
+  const isHollow = shape === 'hollow' || shape === 'hollow-diamond';
+  const isDiamond = shape === 'diamond' || shape === 'hollow-diamond';
+  const fill = isHollow ? 'var(--surface)' : color;
+  const stroke = isHollow ? color : 'var(--surface)';
+  const strokeWidth = isHollow ? '2' : '1.4';
+
+  if (isDiamond) {
+    const d = r + 1.1;
+    const pts = `${cx.toFixed(1)},${(cy - d).toFixed(1)} ${(cx + d).toFixed(1)},${cy.toFixed(1)} ${cx.toFixed(1)},${(cy + d).toFixed(1)} ${(cx - d).toFixed(1)},${cy.toFixed(1)}`;
+    return svgEl(doc, 'polygon', {
+      points: pts,
+      fill,
+      stroke,
+      'stroke-width': strokeWidth,
+      class: 'fund-svg-scatter-pt',
+    });
+  }
+  if (shape === 'square') {
+    const side = r * 1.7;
+    return svgEl(doc, 'rect', {
+      x: (cx - side / 2).toFixed(1),
+      y: (cy - side / 2).toFixed(1),
+      width: side.toFixed(1),
+      height: side.toFixed(1),
+      rx: '1.5',
+      fill,
+      stroke,
+      'stroke-width': strokeWidth,
+      class: 'fund-svg-scatter-pt',
+    });
+  }
+  return svgEl(doc, 'circle', {
+    cx: cx.toFixed(1),
+    cy: cy.toFixed(1),
+    r: r.toFixed(1),
+    fill,
+    stroke,
+    'stroke-width': strokeWidth,
+    class: 'fund-svg-scatter-pt',
+  });
+}
+
+export function estimateSvgLabelWidth(text, fontSize = 9.5) {
+  let width = 0;
+  for (const ch of String(text || '')) {
+    const code = ch.codePointAt(0) || 0;
+    if (code > 0x2E7F) width += fontSize * 1.02;
+    else if (/[A-Z0-9%]/.test(ch)) width += fontSize * 0.62;
+    else if (/[().…\-\s]/.test(ch)) width += fontSize * 0.36;
+    else width += fontSize * 0.54;
+  }
+  return Math.ceil(width + 6);
+}
+
+function rectsOverlap(a, b, pad = 0) {
+  return a.left - pad < b.right + pad
+    && a.right + pad > b.left - pad
+    && a.top - pad < b.bottom + pad
+    && a.bottom + pad > b.top - pad;
+}
+
+function overlapArea(a, b) {
+  const w = Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+  const h = Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top));
+  return w * h;
+}
+
+function clampVal(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function labelRectForAnchor(x, y, width, anchor, height = 12) {
+  const top = y - 9.2;
+  const bottom = top + height;
+  if (anchor === 'end') return { left: x - width, top, right: x + 1, bottom };
+  if (anchor === 'middle') return { left: x - width / 2, top, right: x + width / 2, bottom };
+  return { left: x - 1, top, right: x + width, bottom };
+}
+
+function leaderLineSegment(cx, cy, r, rect) {
+  const ex = clampVal(cx, rect.left - 1, rect.right + 1);
+  const ey = clampVal(cy, rect.top + 1, rect.bottom - 1);
+  const vx = ex - cx;
+  const vy = ey - cy;
+  const dist = Math.hypot(vx, vy);
+  if (dist < r + 9) return null;
+  const startOffset = r + 2.2;
+  const sx = cx + (vx / dist) * startOffset;
+  const sy = cy + (vy / dist) * startOffset;
+  return { x1: sx, y1: sy, x2: ex, y2: ey };
+}
+
+/**
+ * Compute non-overlapping SVG label coordinates and optional leader lines for 2D scatter plots.
+ * Prioritizes highlighted series first, then spreads clustered peers across open whitespace.
+ */
+export function layoutScatterLabels(items, { bounds, obstacles = [], points = [] } = {}) {
+  const list = Array.isArray(items) ? items : [];
+  if (!list.length || !bounds) return { placements: [], hiddenCount: 0 };
+
+  const refPts = points.length ? points : list;
+  const meanX = refPts.reduce((sum, p) => sum + p.cx, 0) / refPts.length;
+  const meanY = refPts.reduce((sum, p) => sum + p.cy, 0) / refPts.length;
+
+  const placedRects = obstacles.map(o => ({ ...o }));
+  const placedMap = new Map();
+  let hiddenCount = 0;
+
+  const sorted = [...list].sort((a, b) => {
+    const hiDiff = Number(Boolean(b.highlight)) - Number(Boolean(a.highlight));
+    if (hiDiff !== 0) return hiDiff;
+    const annDiff = Number(Boolean(b.annotate)) - Number(Boolean(a.annotate));
+    if (annDiff !== 0) return annDiff;
+    const distA = Math.hypot(a.cx - meanX, a.cy - meanY);
+    const distB = Math.hypot(b.cx - meanX, b.cy - meanY);
+    return distB - distA;
+  });
+
+  const angles16 = Array.from({ length: 16 }, (_, i) => (i * Math.PI * 2) / 16);
+  const ringRadii = [18, 34, 52, 74, 98, 126];
+  const innerLimitX = bounds.left + 2;
+  const innerLimitRight = bounds.right - 2;
+  const innerLimitTop = bounds.top + 2;
+  const innerLimitBottom = bounds.bottom - 2;
+
+  for (const item of sorted) {
+    const width = estimateSvgLabelWidth(item.text, item.fontSize || 9.5);
+    const height = 12;
+    const { cx, cy, r = 4.5 } = item;
+    const candidates = [];
+
+    const ring1 = [
+      { dx: r + 5, dy: 3.5, anchor: 'start' },
+      { dx: -(r + 5), dy: 3.5, anchor: 'end' },
+      { dx: r + 4, dy: -(r + 3), anchor: 'start' },
+      { dx: -(r + 4), dy: -(r + 3), anchor: 'end' },
+      { dx: r + 4, dy: r + 11, anchor: 'start' },
+      { dx: -(r + 4), dy: r + 11, anchor: 'end' },
+      { dx: 0, dy: -(r + 5), anchor: 'middle' },
+      { dx: 0, dy: r + 12, anchor: 'middle' },
+    ];
+    for (const opt of ring1) {
+      candidates.push({
+        x: cx + opt.dx,
+        y: cy + opt.dy,
+        anchor: opt.anchor,
+        dist: Math.hypot(opt.dx, opt.dy),
+        needsLeader: false,
+      });
+    }
+
+    for (const rad of ringRadii) {
+      const dist = r + rad;
+      for (const theta of angles16) {
+        const cos = Math.cos(theta);
+        const sin = Math.sin(theta);
+        const ax = cx + cos * dist;
+        const ay = cy + sin * dist;
+        const anchor = cos > 0.25 ? 'start' : cos < -0.25 ? 'end' : 'middle';
+        candidates.push({ x: ax, y: ay + 3.2, anchor, dist, needsLeader: true });
+      }
+      for (const dyOff of [-28, -14, 0, 14, 28, 44, -44]) {
+        const horizDist = dist + 14;
+        candidates.push({ x: cx + horizDist, y: cy + dyOff, anchor: 'start', dist: Math.hypot(horizDist, dyOff), needsLeader: true });
+        candidates.push({ x: cx - horizDist, y: cy + dyOff, anchor: 'end', dist: Math.hypot(horizDist, dyOff), needsLeader: true });
+      }
+    }
+
+    let bestClean = null;
+    let bestCleanScore = Infinity;
+    let bestFallback = null;
+    let bestFallbackScore = Infinity;
+
+    for (const cand of candidates) {
+      const rect = labelRectForAnchor(cand.x, cand.y, width, cand.anchor, height);
+      if (rect.left < innerLimitX || rect.right > innerLimitRight || rect.top < innerLimitTop || rect.bottom > innerLimitBottom) {
+        continue;
+      }
+      let dotHits = 0;
+      for (const pt of refPts) {
+        if (Math.abs(pt.cx - cx) < 0.1 && Math.abs(pt.cy - cy) < 0.1) continue;
+        if (pt.cx >= rect.left - 5 && pt.cx <= rect.right + 5 && pt.cy >= rect.top - 5 && pt.cy <= rect.bottom + 5) {
+          dotHits++;
+        }
+      }
+      const rectCenterX = (rect.left + rect.right) / 2;
+      const sidePenalty = ((cx < meanX && rectCenterX > cx + 22) || (cx > meanX && rectCenterX < cx - 22)) ? 24 : 0;
+      const baseScore = cand.dist * 1.15 + dotHits * 160 + sidePenalty + (cand.needsLeader ? 0 : -6);
+
+      const collides = placedRects.some(other => rectsOverlap(rect, other, 2.2));
+      if (!collides) {
+        if (baseScore < bestCleanScore) {
+          bestCleanScore = baseScore;
+          bestClean = { ...cand, rect };
+        }
+      } else if (item.highlight) {
+        const overlap = placedRects.reduce((sum, other) => sum + overlapArea(rect, other), 0);
+        const fbScore = overlap * 20 + baseScore;
+        if (fbScore < bestFallbackScore) {
+          bestFallbackScore = fbScore;
+          bestFallback = { ...cand, rect };
+        }
+      }
+    }
+
+    const chosen = bestClean || bestFallback;
+    if (chosen) {
+      placedRects.push(chosen.rect);
+      const leader = chosen.needsLeader ? leaderLineSegment(cx, cy, r, chosen.rect) : null;
+      placedMap.set(item.id, {
+        id: item.id,
+        visible: true,
+        x: chosen.x,
+        y: chosen.y,
+        anchor: chosen.anchor,
+        rect: chosen.rect,
+        needsLeader: Boolean(leader),
+        leader,
+      });
+    } else {
+      hiddenCount++;
+      placedMap.set(item.id, { id: item.id, visible: false, needsLeader: false, leader: null });
+    }
+  }
+
+  return {
+    placements: list.map(item => placedMap.get(item.id)),
+    hiddenCount,
+  };
+}
+
+function buildScatterChart(doc, spec) {
+  const { figure, addFooter } = createCardFrame(doc, {
+    kind: 'scatter',
+    title: spec.title,
+    subtitle: spec.subtitle,
+    source: spec.source,
+  });
+
+  figure.append(buildScatterLegend(doc, spec));
+
+  const stage = doc.createElement('div');
+  stage.className = 'fund-vis-stage';
+
+  const W = 560;
+  const H = spec.totalPoints >= 6 ? 320 : 280;
+  const xScale = computeNiceScale(spec.xMin, spec.xMax, { includeZero: spec.includeZero, tickCount: 5 });
+  const yScale = computeNiceScale(spec.yMin, spec.yMax, { includeZero: spec.includeZero, tickCount: 4 });
+  const formatYTick = (tick) => formatMetricValue(tick, {
+    unit: spec.yUnit,
+    signed: spec.yMin < 0 && (spec.yUnit === '%' || spec.yUnit === '％'),
+    decimals: Number.isInteger(tick) ? 0 : 1,
+  });
+  const formatXTick = (tick) => formatMetricValue(tick, {
+    unit: spec.xUnit,
+    signed: spec.xMin < 0 && (spec.xUnit === '%' || spec.xUnit === '％'),
+    decimals: Number.isInteger(tick) ? 0 : 1,
+  });
+  const maxYTickChars = Math.max(...yScale.ticks.map(t => formatYTick(t).length), 4);
+  const maxXTickChars = Math.max(...xScale.ticks.map(t => formatXTick(t).length), 3);
+  const pad = { top: spec.refLines.length ? 22 : 20, right: 24, bottom: 44, left: Math.max(62, Math.round(maxYTickChars * 6.5 + 24)) };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  const xRange = xScale.max - xScale.min || 1;
+  const yRange = yScale.max - yScale.min || 1;
+  const xFor = (v) => pad.left + ((v - xScale.min) / xRange) * plotW;
+  const yFor = (v) => pad.top + ((yScale.max - v) / yRange) * plotH;
+
+  const svg = svgEl(doc, 'svg', {
+    class: 'fund-vis-svg',
+    viewBox: `0 0 ${W} ${H}`,
+    role: 'img',
+    'aria-label': spec.title || '二维散点分布图',
+  });
+
+  // Y grid + ticks
+  for (const tick of yScale.ticks) {
+    const y = yFor(tick);
+    if (y < pad.top - 4 || y > pad.top + plotH + 4) continue;
+    const isZero = Math.abs(tick) < 1e-9;
+    svg.append(svgEl(doc, 'line', {
+      x1: pad.left,
+      y1: y.toFixed(1),
+      x2: W - pad.right,
+      y2: y.toFixed(1),
+      class: isZero ? 'fund-svg-zero' : 'fund-svg-grid',
+    }));
+    const label = svgEl(doc, 'text', {
+      x: pad.left - 8,
+      y: (y + 3.5).toFixed(1),
+      'text-anchor': 'end',
+      class: 'fund-svg-axis-label',
+    });
+    label.textContent = formatYTick(tick);
+    svg.append(label);
+  }
+
+  // X grid + ticks (guard horizontal pixel spacing between tick labels)
+  const minScatterXGap = Math.max(46, Math.round(maxXTickChars * 6.5 + 10));
+  let lastScatterXLabel = -Infinity;
+  for (const tick of xScale.ticks) {
+    const x = xFor(tick);
+    if (x < pad.left - 4 || x > pad.left + plotW + 4) continue;
+    const isZero = Math.abs(tick) < 1e-9;
+    svg.append(svgEl(doc, 'line', {
+      x1: x.toFixed(1),
+      y1: pad.top,
+      x2: x.toFixed(1),
+      y2: pad.top + plotH,
+      class: isZero ? 'fund-svg-zero' : 'fund-svg-grid',
+    }));
+    if (x - lastScatterXLabel < minScatterXGap) continue;
+    lastScatterXLabel = x;
+    const label = svgEl(doc, 'text', {
+      x: x.toFixed(1),
+      y: H - 24,
+      'text-anchor': 'middle',
+      class: 'fund-svg-axis-label',
+    });
+    label.textContent = formatXTick(tick);
+    svg.append(label);
+  }
+
+  // Axis titles
+  const xTitle = svgEl(doc, 'text', {
+    x: (pad.left + plotW / 2).toFixed(1),
+    y: H - 6,
+    'text-anchor': 'middle',
+    class: 'fund-svg-axis-title',
+  });
+  xTitle.textContent = spec.xLabel;
+  svg.append(xTitle);
+
+  const yTitleX = 12;
+  const yTitleY = pad.top + plotH / 2;
+  const yTitle = svgEl(doc, 'text', {
+    x: yTitleX,
+    y: yTitleY.toFixed(1),
+    'text-anchor': 'middle',
+    transform: `rotate(-90 ${yTitleX} ${yTitleY.toFixed(1)})`,
+    class: 'fund-svg-axis-title',
+  });
+  yTitle.textContent = spec.yLabel;
+  svg.append(yTitle);
+
+  // Dashed reference / threshold lines + collect obstacle boxes for label placement
+  const refObstacles = [];
+  for (const ref of spec.refLines) {
+    if (ref.axis === 'x') {
+      const rx = xFor(ref.value);
+      svg.append(svgEl(doc, 'line', {
+        x1: rx.toFixed(1),
+        y1: pad.top,
+        x2: rx.toFixed(1),
+        y2: pad.top + plotH,
+        class: 'fund-svg-refline',
+      }));
+      if (ref.label) {
+        const nearRight = rx > W - pad.right - 72;
+        const anchor = nearRight ? 'end' : 'start';
+        const lx = nearRight ? rx - 5 : rx + 5;
+        const ly = pad.top + 11;
+        const txt = svgEl(doc, 'text', {
+          x: lx.toFixed(1),
+          y: String(ly),
+          'text-anchor': anchor,
+          class: 'fund-svg-refline-label',
+        });
+        txt.textContent = ref.label;
+        svg.append(txt);
+        refObstacles.push(labelRectForAnchor(lx, ly, estimateSvgLabelWidth(ref.label, 9.5), anchor, 12));
+      }
+    } else {
+      const ry = yFor(ref.value);
+      svg.append(svgEl(doc, 'line', {
+        x1: pad.left,
+        y1: ry.toFixed(1),
+        x2: W - pad.right,
+        y2: ry.toFixed(1),
+        class: 'fund-svg-refline',
+      }));
+      if (ref.label) {
+        const lx = W - pad.right - 4;
+        const ly = Math.max(pad.top + 10, ry - 4);
+        const txt = svgEl(doc, 'text', {
+          x: lx.toFixed(1),
+          y: ly.toFixed(1),
+          'text-anchor': 'end',
+          class: 'fund-svg-refline-label',
+        });
+        txt.textContent = ref.label;
+        svg.append(txt);
+        refObstacles.push(labelRectForAnchor(lx, ly, estimateSvgLabelWidth(ref.label, 9.5), 'end', 12));
+      }
+    }
+  }
+
+  // Draw non-highlighted series first, highlighted series on top
+  const orderedSeries = spec.series
+    .map((s, idx) => ({ s, idx }))
+    .sort((a, b) => Number(a.s.highlight) - Number(b.s.highlight));
+
+  const hitTargets = [];
+  const allPointCoords = [];
+  const labelRequests = [];
+  const leaderGroup = svgEl(doc, 'g', { class: 'fund-svg-leaders' });
+  svg.append(leaderGroup);
+
+  for (const { s, idx } of orderedSeries) {
+    const color = CHART_SERIES_COLORS[idx % CHART_SERIES_COLORS.length];
+    const r = s.highlight ? 5.4 : 4.1;
+    const autoAnnotateSeries = s.highlight || s.points.length === 1 || spec.totalPoints <= 12;
+
+    for (const pt of s.points) {
+      const cx = xFor(pt.x);
+      const cy = yFor(pt.y);
+      allPointCoords.push({ cx, cy });
+      svg.append(createScatterPointShape(doc, { shape: s.shape, cx, cy, r, color }));
+
+      if (pt.label && (pt.annotate || autoAnnotateSeries)) {
+        const shortText = pt.label.length > 14 ? `${pt.label.slice(0, 13)}…` : pt.label;
+        labelRequests.push({
+          id: `${idx}-${labelRequests.length}`,
+          cx,
+          cy,
+          r,
+          text: shortText,
+          fullText: pt.label,
+          highlight: Boolean(s.highlight),
+          annotate: Boolean(pt.annotate),
+        });
+      }
+
+      hitTargets.push({
+        cx,
+        cy,
+        color,
+        seriesName: s.name,
+        label: pt.label || s.name,
+        xVal: formatMetricValue(pt.x, { unit: spec.xUnit, signed: spec.xMin < 0 && spec.xUnit === '%' }),
+        yVal: formatMetricValue(pt.y, { unit: spec.yUnit, signed: spec.yMin < 0 && spec.yUnit === '%' }),
+        note: pt.note || '',
+      });
+    }
+  }
+
+  const { placements, hiddenCount } = layoutScatterLabels(labelRequests, {
+    bounds: { left: pad.left, right: W - pad.right, top: pad.top, bottom: pad.top + plotH },
+    obstacles: refObstacles,
+    points: allPointCoords,
+  });
+
+  const labelGroup = svgEl(doc, 'g', { class: 'fund-svg-labels' });
+  placements.forEach((placed, idx) => {
+    if (!placed?.visible) return;
+    const req = labelRequests[idx];
+    if (placed.needsLeader && placed.leader) {
+      leaderGroup.append(svgEl(doc, 'line', {
+        x1: placed.leader.x1.toFixed(1),
+        y1: placed.leader.y1.toFixed(1),
+        x2: placed.leader.x2.toFixed(1),
+        y2: placed.leader.y2.toFixed(1),
+        class: 'fund-svg-leader-line',
+      }));
+    }
+    const lbl = svgEl(doc, 'text', {
+      x: placed.x.toFixed(1),
+      y: placed.y.toFixed(1),
+      'text-anchor': placed.anchor,
+      class: `fund-svg-point-label${req.highlight ? ' is-highlight' : ''}`,
+    });
+    if (req.fullText && req.fullText !== req.text) {
+      const nativeTitle = doc.createElementNS(SVG_NS, 'title');
+      nativeTitle.textContent = req.fullText;
+      lbl.append(nativeTitle);
+    }
+    lbl.append(doc.createTextNode(req.text));
+    labelGroup.append(lbl);
+  });
+  svg.append(labelGroup);
+
+  const activeRing = svgEl(doc, 'circle', {
+    cx: '0',
+    cy: '0',
+    r: '7.5',
+    visibility: 'hidden',
+    class: 'fund-svg-scatter-active',
+  });
+  svg.append(activeRing);
+
+  const hitGroup = svgEl(doc, 'g', { class: 'fund-svg-hits' });
+  for (const h of hitTargets) {
+    hitGroup.append(svgEl(doc, 'circle', {
+      cx: h.cx.toFixed(1),
+      cy: h.cy.toFixed(1),
+      r: '10',
+      fill: 'transparent',
+      class: 'fund-svg-scatter-hit',
+      'data-scatter-label': h.label,
+      'data-scatter-series': h.seriesName,
+      'data-scatter-x': h.xVal,
+      'data-scatter-y': h.yVal,
+      'data-scatter-note': h.note,
+      'data-scatter-cx': h.cx.toFixed(1),
+      'data-scatter-cy': h.cy.toFixed(1),
+      'data-scatter-color': h.color,
+    }));
+  }
+  svg.append(hitGroup);
+
+  const tooltip = doc.createElement('div');
+  tooltip.className = 'fund-vis-tooltip';
+  tooltip.hidden = true;
+  tooltip.dataset.fundXLabel = spec.xLabel;
+  tooltip.dataset.fundYLabel = spec.yLabel;
+
+  stage.append(svg, tooltip);
+  figure.append(stage);
+  if (hiddenCount > 0) {
+    const cap = doc.createElement('figcaption');
+    cap.className = 'fund-vis-footer';
+    cap.textContent = `${spec.source ? `${spec.source} · ` : ''}另有 ${hiddenCount} 个密集点可悬停查看`;
+    figure.append(cap);
+  } else {
+    addFooter();
+  }
+  return figure;
+}
+
 /* ---------- 6. Executive KPI Ledger Card ---------- */
 
 function buildKpiCard(doc, spec) {
@@ -1096,6 +1833,9 @@ function buildKpiCard(doc, spec) {
     const value = doc.createElement('strong');
     value.className = 'fund-kpi-value';
     value.textContent = item.value;
+    if (item.trend === 'neutral' && item.directional !== false && value.firstChild?.nodeType === 3) {
+      decorateSignedMetricsInTextNode(doc, value.firstChild);
+    }
 
     cell.append(label, value);
     if (item.sub) {
@@ -1111,14 +1851,112 @@ function buildKpiCard(doc, spec) {
   return section;
 }
 
+/* ---------- 7. Horizontal Methodology / SOP Steps Card ---------- */
+
+function buildStepsCard(doc, spec) {
+  const figure = doc.createElement('figure');
+  figure.className = 'fund-steps-card';
+  figure.dataset.fundDecoration = 'true';
+  figure.setAttribute('aria-label', spec.title || '研究步骤框架');
+
+  if (spec.title || spec.subtitle) {
+    const header = doc.createElement('div');
+    header.className = 'fund-vis-header';
+    const copy = doc.createElement('div');
+    copy.className = 'fund-vis-titles';
+    if (spec.title) {
+      const h = doc.createElement('div');
+      h.className = 'fund-vis-title';
+      h.textContent = spec.title;
+      copy.append(h);
+    }
+    if (spec.subtitle) {
+      const sub = doc.createElement('div');
+      sub.className = 'fund-vis-subtitle';
+      sub.textContent = spec.subtitle;
+      copy.append(sub);
+    }
+    header.append(copy);
+    figure.append(header);
+  }
+
+  const track = doc.createElement('div');
+  track.className = 'fund-steps-track';
+
+  spec.steps.forEach((step, idx) => {
+    const col = doc.createElement('div');
+    col.className = 'fund-step-col';
+
+    const box = doc.createElement('div');
+    box.className = `fund-step-box tone-${step.tone}`;
+
+    const badge = doc.createElement('span');
+    badge.className = 'fund-step-badge';
+    badge.textContent = step.badge;
+
+    const title = doc.createElement('strong');
+    title.className = 'fund-step-title';
+    title.textContent = step.title;
+
+    box.append(badge, title);
+    if (step.summary) {
+      const summary = doc.createElement('p');
+      summary.className = 'fund-step-summary';
+      summary.textContent = step.summary;
+      box.append(summary);
+    }
+    col.append(box);
+
+    if (step.meta) {
+      const meta = doc.createElement('div');
+      meta.className = 'fund-step-meta';
+      meta.textContent = step.meta;
+      col.append(meta);
+    }
+
+    track.append(col);
+
+    if (idx < spec.steps.length - 1) {
+      const arrow = doc.createElement('span');
+      arrow.className = 'fund-step-arrow';
+      arrow.setAttribute('aria-hidden', 'true');
+      const arrowSvg = svgEl(doc, 'svg', { viewBox: '0 0 20 14', width: '16', height: '12' });
+      arrowSvg.append(svgEl(doc, 'path', {
+        d: 'M2 7h14m-4-4 4 4-4 4',
+        fill: 'none',
+        stroke: 'currentColor',
+        'stroke-width': '1.6',
+        'stroke-linecap': 'round',
+        'stroke-linejoin': 'round',
+      }));
+      arrow.append(arrowSvg);
+      track.append(arrow);
+    }
+  });
+
+  figure.append(track);
+  if (spec.source) {
+    const cap = doc.createElement('figcaption');
+    cap.className = 'fund-vis-footer';
+    cap.textContent = spec.source;
+    figure.append(cap);
+  }
+  return figure;
+}
+
 function buildStreamingSkeleton(doc, kind) {
   const box = doc.createElement('div');
   box.className = `fund-vis-skeleton fund-vis-skeleton-${kind}`;
   box.dataset.fundDecoration = 'true';
-  box.setAttribute('aria-label', kind === 'kpi' ? '正在整理核心指标卡' : '正在绘制基金数据图表');
+  const labelText = kind === 'kpi'
+    ? '正在整理核心指标卡'
+    : kind === 'steps'
+      ? '正在整理分析步骤框架'
+      : '正在绘制基金数据图表';
+  box.setAttribute('aria-label', labelText);
   const label = doc.createElement('span');
   label.className = 'fund-vis-skeleton-label';
-  label.textContent = kind === 'kpi' ? '正在整理核心指标卡…' : '正在绘制基金数据图表…';
+  label.textContent = `${labelText}…`;
   const bars = doc.createElement('div');
   bars.className = 'fund-vis-skeleton-bars';
   for (let i = 0; i < 4; i++) bars.append(doc.createElement('i'));
@@ -1200,20 +2038,26 @@ function enhanceTables(root) {
 
     for (const row of rows) {
       const cells = [...row.children].filter(el => el.tagName === 'TD');
+      const rowLabel = (cells[0]?.textContent || '').trim();
       cells.forEach((cell, colIdx) => {
         const raw = (cell.textContent || '').trim();
         if (!raw || raw === '-' || raw === '—' || raw === '--' || raw === 'N/A') return;
         colNonEmptyCounts[colIdx]++;
         if (NUMERIC_CELL_RE.test(raw)) colNumericCounts[colIdx]++;
 
-        // Pure signed % cell (keeps backward compatibility with .fund-pct-up/.fund-pct-down)
+        const colHeader = headers[colIdx] || '';
         const dir = classifySignedMetric(raw);
-        if (dir === 'up') cell.classList.add('fund-pct-up');
-        else if (dir === 'down') cell.classList.add('fund-pct-down');
-        else if (dir === 'flat') cell.classList.add('fund-pct-flat');
+        if (dir && shouldColorDirectionalMetric({ colHeader, rowLabel })) {
+          if (dir === 'up') cell.classList.add('fund-pct-up');
+          else if (dir === 'down') cell.classList.add('fund-pct-down');
+          else if (dir === 'flat') cell.classList.add('fund-pct-flat');
+        }
 
-        // Valuation rating badge in table cell (only when cell has no complex child markup)
-        if (!cell.children.length) {
+        const singleInline = !cell.children.length
+          || (cell.children.length === 1 && (cell.children[0].tagName === 'CODE' || cell.children[0].tagName === 'STRONG'));
+
+        // Valuation rating badge in table cell
+        if (singleInline) {
           const valMatch = raw.match(VALUATION_EXACT_RE);
           if (valMatch) {
             const token = VALUATION_TOKENS.find(t => t.label === valMatch[1]);
@@ -1293,6 +2137,12 @@ function enhanceBlockquotes(root) {
     const tone = classifyBlockquoteTone(text);
     if (tone) {
       quote.classList.add('fund-callout', `tone-${tone}`);
+      for (const code of quote.querySelectorAll('code')) {
+        if (code.closest?.('pre')) continue;
+        const codeText = (code.textContent || '').trim();
+        const dir = classifySignedMetric(codeText);
+        if (dir) code.classList.add('fund-code-metric', `is-${dir}`);
+      }
     }
   }
 }
@@ -1303,7 +2153,8 @@ function enhanceStructuredFences(root, { streaming = false } = {}) {
     const cls = code.className || '';
     const isChart = /\blanguage-fund-chart\b/i.test(cls);
     const isKpi = /\blanguage-fund-kpi\b/i.test(cls);
-    if (!isChart && !isKpi) continue;
+    const isSteps = /\blanguage-fund-steps\b/i.test(cls);
+    if (!isChart && !isKpi && !isSteps) continue;
 
     const pre = code.parentElement;
     const raw = code.textContent || '';
@@ -1318,14 +2169,19 @@ function enhanceStructuredFences(root, { streaming = false } = {}) {
       continue;
     }
 
+    if (isSteps) {
+      const spec = parseFundStepsSpec(raw);
+      if (spec) {
+        pre.replaceWith(buildStepsCard(doc, spec));
+      } else if (streaming) {
+        pre.replaceWith(buildStreamingSkeleton(doc, 'steps'));
+      }
+      continue;
+    }
+
     const spec = parseFundChartSpec(raw);
     if (spec) {
-      let card = null;
-      if (spec.type === 'line') card = buildLineChart(doc, spec);
-      else if (spec.type === 'bar') card = buildBarChart(doc, spec);
-      else if (spec.type === 'hbar') card = buildHbarChart(doc, spec);
-      else if (spec.type === 'donut') card = buildDonutChart(doc, spec);
-      else if (spec.type === 'gauge') card = buildGaugeChart(doc, spec);
+      const card = renderChartSpec(doc, spec);
       if (card) pre.replaceWith(card);
     } else if (streaming) {
       pre.replaceWith(buildStreamingSkeleton(doc, 'chart'));
@@ -1467,17 +2323,22 @@ function renderChartSpec(doc, spec) {
   if (spec.type === 'hbar') return buildHbarChart(doc, spec);
   if (spec.type === 'donut') return buildDonutChart(doc, spec);
   if (spec.type === 'gauge') return buildGaugeChart(doc, spec);
+  if (spec.type === 'scatter') return buildScatterChart(doc, spec);
   return null;
 }
 
-function synthesizeChartsFromTables(root) {
-  if (root.querySelector('.fund-vis-card')) return;
+function synthesizeChartsFromTables(root, { useECharts = false, exportMode = false, renderStaticChartSvg = null } = {}) {
+  if (root.querySelector('.fund-vis-card, .unk-chart-card')) return;
   const doc = root.ownerDocument || globalThis.document;
   let created = 0;
   for (const table of [...root.querySelectorAll('table')]) {
     if (created >= 2) break;
     const spec = inferChartSpecFromTable(table);
-    const card = renderChartSpec(doc, spec);
+    const card = spec
+      ? (useECharts
+          ? buildChartCardElement(doc, spec, { exportMode, renderStaticSvg: renderStaticChartSvg })
+          : renderChartSpec(doc, spec))
+      : null;
     if (!card) continue;
     const anchor = table.closest('.md-table-scroll') || table;
     if (anchor.parentNode) {
@@ -1492,10 +2353,15 @@ function synthesizeChartsFromTables(root) {
  * Main entry point: enhance a rendered Fund Mode DOM fragment/container.
  * Safe to run both during streaming and after completion.
  */
-export function enhanceFundMarkdown(root, { streaming = false } = {}) {
+export function enhanceFundMarkdown(root, {
+  streaming = false,
+  useECharts = false,
+  exportMode = false,
+  renderStaticChartSvg = null,
+} = {}) {
   if (!root?.querySelectorAll) return;
   enhanceStructuredFences(root, { streaming });
-  if (!streaming) synthesizeChartsFromTables(root);
+  if (!streaming) synthesizeChartsFromTables(root, { useECharts, exportMode, renderStaticChartSvg });
   enhanceTables(root);
   enhanceBlockquotes(root);
   enhanceInlineSignedMetrics(root);
@@ -1504,6 +2370,105 @@ export function enhanceFundMarkdown(root, { streaming = false } = {}) {
 /* ==================== Lightweight Delegated Chart Interactivity ==================== */
 
 const boundContainers = new WeakSet();
+const ELLIPSIS_TARGET_SELECTOR = '.fund-kpi-cell, .fund-hbar-label, .fund-hbar-note, .fund-donut-name, .fund-vis-legend-name, .fund-vis-title, .fund-vis-subtitle';
+let sharedEllipsisTip = null;
+let sharedEllipsisTarget = null;
+let sharedEllipsisTimer = null;
+
+export function isElementTruncated(el) {
+  if (!el) return false;
+  return (el.scrollWidth > el.clientWidth + 1) || (el.scrollHeight > el.clientHeight + 2);
+}
+
+function hideEllipsisTip() {
+  if (sharedEllipsisTimer !== null) {
+    clearTimeout(sharedEllipsisTimer);
+    sharedEllipsisTimer = null;
+  }
+  sharedEllipsisTarget = null;
+  if (sharedEllipsisTip) sharedEllipsisTip.hidden = true;
+}
+
+function populateEllipsisTipContent(doc, tip, target) {
+  tip.textContent = '';
+  if (target.classList?.contains('fund-kpi-cell')) {
+    const labelEl = target.querySelector('.fund-kpi-label');
+    const valueEl = target.querySelector('.fund-kpi-value');
+    const subEl = target.querySelector('.fund-kpi-sub');
+    const anyClipped = [labelEl, valueEl, subEl].some(isElementTruncated);
+    if (!anyClipped) return false;
+
+    if (labelEl?.textContent) {
+      const l = doc.createElement('div');
+      l.className = 'fund-ellipsis-tip-label';
+      l.textContent = labelEl.textContent;
+      tip.append(l);
+    }
+    if (valueEl?.textContent) {
+      const v = doc.createElement('div');
+      v.className = 'fund-ellipsis-tip-value';
+      for (const t of ['up', 'down', 'flat', 'cold', 'cool', 'mid', 'warm', 'hot']) {
+        if (target.classList.contains(`trend-${t}`)) v.classList.add(`trend-${t}`);
+      }
+      v.textContent = valueEl.textContent;
+      if (target.classList.contains('trend-neutral') && shouldColorDirectionalMetric({ label: labelEl?.textContent || '' })
+        && v.firstChild?.nodeType === 3) {
+        decorateSignedMetricsInTextNode(doc, v.firstChild);
+      }
+      tip.append(v);
+    }
+    if (subEl?.textContent) {
+      const s = doc.createElement('div');
+      s.className = 'fund-ellipsis-tip-sub';
+      s.textContent = subEl.textContent;
+      tip.append(s);
+    }
+    return tip.childNodes.length > 0;
+  }
+
+  if (!isElementTruncated(target)) return false;
+  const text = (target.textContent || '').trim();
+  if (!text) return false;
+  const line = doc.createElement('div');
+  line.className = 'fund-ellipsis-tip-sub';
+  line.textContent = text;
+  tip.append(line);
+  return true;
+}
+
+function showEllipsisTip(target) {
+  if (!target?.isConnected) return;
+  const doc = target.ownerDocument || globalThis.document;
+  if (!sharedEllipsisTip || sharedEllipsisTip.ownerDocument !== doc) {
+    sharedEllipsisTip?.remove();
+    sharedEllipsisTip = doc.createElement('div');
+    sharedEllipsisTip.className = 'fund-ellipsis-tip';
+    sharedEllipsisTip.setAttribute('role', 'tooltip');
+    sharedEllipsisTip.hidden = true;
+    doc.body?.append(sharedEllipsisTip);
+  }
+  if (!populateEllipsisTipContent(doc, sharedEllipsisTip, target)) {
+    hideEllipsisTip();
+    return;
+  }
+  sharedEllipsisTip.hidden = false;
+
+  const win = doc.defaultView;
+  const vw = win?.innerWidth || 440;
+  const vh = win?.innerHeight || 720;
+  const rect = target.getBoundingClientRect();
+  const tipRect = sharedEllipsisTip.getBoundingClientRect();
+  const pad = 10;
+
+  let left = rect.left + rect.width / 2 - tipRect.width / 2;
+  left = Math.max(pad, Math.min(vw - tipRect.width - pad, left));
+  let top = rect.top - tipRect.height - 8;
+  if (top < pad) top = rect.bottom + 8;
+  if (top + tipRect.height > vh - pad) top = Math.max(pad, vh - tipRect.height - pad);
+
+  sharedEllipsisTip.style.left = `${Math.round(left)}px`;
+  sharedEllipsisTip.style.top = `${Math.round(top)}px`;
+}
 
 function renderTooltip(tooltip, { label, vals, stage, pointX, viewBoxWidth }) {
   const doc = tooltip.ownerDocument;
@@ -1576,6 +2541,71 @@ export function bindFundMarkdownInteractions(container) {
     if (band) band.setAttribute('visibility', 'hidden');
     const dots = stage?.querySelector('.fund-svg-hover-dots');
     if (dots) dots.setAttribute('visibility', 'hidden');
+    const ring = stage?.querySelector('.fund-svg-scatter-active');
+    if (ring) ring.setAttribute('visibility', 'hidden');
+  };
+
+  const showScatterPointTooltip = (stage, scatterHit) => {
+    const tooltip = stage?.querySelector('.fund-vis-tooltip');
+    if (!stage || !tooltip || !scatterHit) return;
+    const doc = tooltip.ownerDocument;
+    tooltip.textContent = '';
+
+    const head = doc.createElement('div');
+    head.className = 'fund-vis-tooltip-head';
+    head.textContent = scatterHit.getAttribute('data-scatter-label') || '';
+    tooltip.append(head);
+
+    const sRow = doc.createElement('div');
+    sRow.className = 'fund-vis-tooltip-row';
+    const dot = doc.createElement('i');
+    dot.className = 'fund-vis-tooltip-dot';
+    dot.style.backgroundColor = scatterHit.getAttribute('data-scatter-color') || 'var(--teal)';
+    const sName = doc.createElement('span');
+    sName.textContent = scatterHit.getAttribute('data-scatter-series') || '样本';
+    sRow.append(dot, sName);
+    tooltip.append(sRow);
+
+    const addMetricRow = (axisLabel, valText) => {
+      const row = doc.createElement('div');
+      row.className = 'fund-vis-tooltip-row';
+      const name = doc.createElement('span');
+      name.textContent = axisLabel;
+      const val = doc.createElement('strong');
+      val.textContent = valText;
+      row.append(name, val);
+      tooltip.append(row);
+    };
+    addMetricRow(tooltip.dataset.fundXLabel || 'X', scatterHit.getAttribute('data-scatter-x') || '');
+    addMetricRow(tooltip.dataset.fundYLabel || 'Y', scatterHit.getAttribute('data-scatter-y') || '');
+
+    const note = scatterHit.getAttribute('data-scatter-note');
+    if (note) {
+      const noteEl = doc.createElement('div');
+      noteEl.className = 'fund-vis-tooltip-note';
+      noteEl.textContent = note;
+      tooltip.append(noteEl);
+    }
+
+    const pointX = Number(scatterHit.getAttribute('data-scatter-cx') || 0);
+    const pointY = Number(scatterHit.getAttribute('data-scatter-cy') || 0);
+    const ring = stage.querySelector('.fund-svg-scatter-active');
+    if (ring) {
+      ring.setAttribute('cx', String(pointX));
+      ring.setAttribute('cy', String(pointY));
+      ring.setAttribute('stroke', scatterHit.getAttribute('data-scatter-color') || 'var(--teal)');
+      ring.setAttribute('visibility', 'visible');
+    }
+
+    tooltip.hidden = false;
+    const pctX = Math.max(0, Math.min(1, pointX / 560));
+    const stageRect = stage.getBoundingClientRect?.();
+    if (stageRect && stageRect.width > 0) {
+      const px = pctX * stageRect.width;
+      const flip = pctX > 0.62;
+      tooltip.style.left = flip ? 'auto' : `${Math.min(stageRect.width - 150, Math.max(8, px + 10))}px`;
+      tooltip.style.right = flip ? `${Math.min(stageRect.width - 150, Math.max(8, stageRect.width - px + 10))}px` : 'auto';
+    }
   };
 
   const clearDonut = (card) => {
@@ -1633,6 +2663,12 @@ export function bindFundMarkdownInteractions(container) {
       return;
     }
 
+    const scatterHit = target?.closest?.('.fund-svg-scatter-hit');
+    if (scatterHit) {
+      showScatterPointTooltip(scatterHit.closest('.fund-vis-stage'), scatterHit);
+      return;
+    }
+
     const donutTarget = target?.closest?.('[data-donut-index]');
     if (donutTarget) {
       const card = donutTarget.closest('.fund-vis-donut');
@@ -1649,7 +2685,46 @@ export function bindFundMarkdownInteractions(container) {
         if (strong) strong.textContent = row.dataset.donutVal || '';
         if (span) span.textContent = row.dataset.donutLabel || '';
       }
+      return;
     }
+
+    const ellipsisTarget = target?.closest?.(ELLIPSIS_TARGET_SELECTOR);
+    if (!ellipsisTarget) {
+      if (sharedEllipsisTarget) hideEllipsisTip();
+      return;
+    }
+    if (ellipsisTarget === sharedEllipsisTarget) return;
+    if (sharedEllipsisTimer !== null) clearTimeout(sharedEllipsisTimer);
+    sharedEllipsisTarget = ellipsisTarget;
+    sharedEllipsisTimer = setTimeout(() => {
+      sharedEllipsisTimer = null;
+      if (sharedEllipsisTarget === ellipsisTarget && ellipsisTarget.isConnected) {
+        showEllipsisTip(ellipsisTarget);
+      }
+    }, 160);
+  });
+
+  container.addEventListener('pointermove', (event) => {
+    const scatterStage = event.target?.closest?.('.fund-vis-scatter .fund-vis-stage');
+    if (!scatterStage) return;
+    const svg = scatterStage.querySelector('.fund-vis-svg');
+    const rect = svg?.getBoundingClientRect?.();
+    if (!svg || !rect || rect.width <= 0 || rect.height <= 0) return;
+    const vb = (svg.getAttribute('viewBox') || '').trim().split(/\s+/).map(Number);
+    const vbW = vb[2] > 0 ? vb[2] : 560;
+    const vbH = vb[3] > 0 ? vb[3] : 320;
+    const vx = ((event.clientX - rect.left) / rect.width) * vbW;
+    const vy = ((event.clientY - rect.top) / rect.height) * vbH;
+    let nearest = null;
+    let minDist = 18;
+    for (const hit of svg.querySelectorAll('.fund-svg-scatter-hit')) {
+      const cx = Number(hit.getAttribute('data-scatter-cx') || 0);
+      const cy = Number(hit.getAttribute('data-scatter-cy') || 0);
+      const d = Math.hypot(vx - cx, vy - cy);
+      if (d <= minDist) { minDist = d; nearest = hit; }
+    }
+    if (nearest) showScatterPointTooltip(scatterStage, nearest);
+    else clearStage(scatterStage);
   });
 
   container.addEventListener('pointerout', (event) => {
@@ -1661,5 +2736,15 @@ export function bindFundMarkdownInteractions(container) {
     if (donut && (!event.relatedTarget || !donut.contains(event.relatedTarget))) {
       clearDonut(donut);
     }
+    if (sharedEllipsisTarget) {
+      const next = event.relatedTarget?.closest?.(ELLIPSIS_TARGET_SELECTOR);
+      if (next !== sharedEllipsisTarget) hideEllipsisTip();
+    }
+  });
+
+  container.addEventListener('scroll', hideEllipsisTip, { capture: true, passive: true });
+  container.addEventListener('pointerdown', hideEllipsisTip, { capture: true });
+  container.ownerDocument?.addEventListener?.('keydown', (event) => {
+    if (event.key === 'Escape') hideEllipsisTip();
   });
 }

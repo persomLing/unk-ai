@@ -851,7 +851,7 @@ export function createFundModeController({
     tempController?.abort();
     tempController = new AbortController();
     try {
-      const client = createYingmiMcpClient({ endpoint: config.endpoint, apiKey: config.apiKey });
+      const client = createYingmiMcpClient({ endpoint: config.endpoint, apiKey: config.apiKey, authMode: config.authMode });
       const result = await client.callTool('GetLatestQuotations', {}, { signal: tempController.signal, timeoutMs: 18000 });
       if (client.lastQuota) await saveRemoteFundQuota(client.lastQuota, { storage, now });
       usage = await incrementDailyFundUsage(1, { storage, now });
@@ -898,7 +898,7 @@ export function createFundModeController({
     const controller = new AbortController();
     feedControllers[targetTab] = controller;
     try {
-      const client = createYingmiMcpClient({ endpoint: config.endpoint, apiKey: config.apiKey });
+      const client = createYingmiMcpClient({ endpoint: config.endpoint, apiKey: config.apiKey, authMode: config.authMode });
       const toolName = targetTab === 'topics' ? 'SearchHotTopic' : 'GetPopularFund';
       const cachedTools = await loadCachedMcpTools(client.endpoint, { storage, now });
       const toolDef = Array.isArray(cachedTools) ? cachedTools.find(t => t?.name === toolName) : null;
@@ -1205,7 +1205,7 @@ export function createFundModeController({
 
   const onStorageChange = (changes, area) => {
     if (area !== 'local' || disposed) return;
-    if (changes.fundModeConfig || changes.fundModeDailyUsage || changes.fundModeRemoteQuota || changes.fundModeDailyMarketTemp || changes.fundModeDailyFeed) {
+    if (changes.fundModeConfig || changes.accountSession || changes.fundModeDailyUsage || changes.fundModeRemoteQuota || changes.fundModeDailyMarketTemp || changes.fundModeDailyFeed) {
       void refreshState(lastHasMessages);
     }
   };

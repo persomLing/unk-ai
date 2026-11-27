@@ -18,7 +18,7 @@ import { replyElapsedLabel } from './reply-progress.js';
 import { replyActivityMarkup, updateReplyActivity } from './reply-activity-view.js';
 import { finishReplyMotion, revealGeneratedImage, revealSuggestions } from './reply-motion.js';
 import { allowsMotion, reveal } from '../../core/motion.js';
-import { messageErrorMarkup, messageModeBadgeMarkup, syncMessageDecorations } from './message-decorations.js';
+import { assistantRetryActionsMarkup, messageErrorMarkup, messageModeBadgeMarkup, syncMessageDecorations } from './message-decorations.js';
 import { syncChildren } from './dom-reconcile.js';
 import { parseSuggestionResponse, suggestedReadingQuestions, suggestedVideoQuestions } from './model-suggestions.js';
 import { articleQuotes } from './article-quote-draft.js';
@@ -27,6 +27,12 @@ import { videoAttachmentName } from '../video-notes/video-notes-presentation.js'
 import { videoNotesDetailsMarkup } from '../video-notes/transcript-context.js';
 import { directImageForMessage } from '../../../utils/image-generation-command.js';
 import { decorateCodeBlocks } from './code-blocks.js';
+import { decorateChartBlocks, mountChartBlocks, preserveMountedCharts } from '../charts/chart-blocks.js';
+import '../charts/chart-blocks.css';
+import { decorateMermaidBlocks } from './mermaid-blocks.js';
+import './mermaid-blocks.css';
+import { bindReadingInteractions, enhanceReadingBlocks } from './reading-enhancements.js';
+import './reading-enhancements.css';
 import { bindTableCellTooltips, decorateTableBlocks } from './table-blocks.js';
 import { detachMessageIllustrations, generatedImagesMarkup, illustrationNote, imageReplyPlaceholder, replaceMessageIllustrations, restoreMessageIllustrations, videoIllustrationNote } from '../illustration/illustration-view.js';
 import '../illustration/illustration-inline.css';
@@ -96,26 +102,38 @@ function renderedContent(content, streaming, ownerDocument) {
   return fragment;
 }
 
-export function renderMessageContent(container, content, streaming = false, { textOnly = false, fundMode = false } = {}) {
+export function renderMessageContent(container, content, streaming = false, { textOnly = false, fundMode = false, exportMode = false, renderStaticChartSvg = null } = {}) {
   if (!container) return;
   const fragment = renderedContent(content, streaming, container.ownerDocument);
   if (textOnly) fragment.querySelectorAll('picture, img, audio, video').forEach(node => node.remove());
-  if (fundMode) enhanceFundMarkdown(fragment, { streaming });
+  decorateChartBlocks(fragment, { streaming, exportMode, renderStaticSvg: renderStaticChartSvg });
+  if (fundMode) enhanceFundMarkdown(fragment, { streaming, useECharts: true, exportMode, renderStaticChartSvg });
+  decorateMermaidBlocks(fragment, { streaming, exportMode });
+  enhanceReadingBlocks(fragment, { streaming, exportMode });
   if (!streaming && container.hasAttribute('data-message-content')) {
     decorateCodeBlocks(fragment);
     decorateTableBlocks(fragment);
   }
   detachMessageIllustrations(container);
+  if (!exportMode) preserveMountedCharts(container, fragment);
   syncChildren(container, fragment);
   restoreMessageIllustrations(container);
   if (fundMode) bindFundMarkdownInteractions(container);
+  if (!exportMode) {
+    bindReadingInteractions(container);
+    void mountChartBlocks(container);
+  }
   if (!streaming && container.hasAttribute('data-message-content')) bindTableCellTooltips(container);
   container.querySelectorAll('a').forEach((link) => {
     link.target = '_blank';
     link.rel = 'noopener noreferrer nofollow';
   });
   if (!streaming) {
-    container.querySelectorAll('pre code').forEach((block) => hljs.highlightElement(block));
+    container.querySelectorAll('pre code').forEach((block) => {
+      if (!block.closest?.('.unk-chart-source, .mermaid-vis-source')) {
+        hljs.highlightElement(block);
+      }
+    });
   }
   syncMessageDecorations(container.closest('.assistant-message'));
 }
@@ -284,9 +302,6 @@ function assistantParts(message, { showSuggestions = false, frameActions, allowI
     ? `<div class="message-state">${icon('stop')}已停止，已保留当前回答</div>`
     : '';
   const error = messageErrorMarkup(message);
-  const retry = !message.agent && !frameActions?.hideRetry && ['stopped', 'error'].includes(status)
-    ? `<button class="action-text" data-action="retry" type="button">${icon('regenerate')}重试</button>`
-    : '';
   const activity = `<div class="message-activity">${live ? '' : replyActivityMarkup(message)}</div>`;
   const elapsed = live ? '' : replyElapsedLabel(message);
   const elapsedTitle = message.agent ? '从任务开始到结束，含暂停和人工处理时间'
@@ -313,7 +328,7 @@ function assistantParts(message, { showSuggestions = false, frameActions, allowI
     sources, fundCharts, fundMeta, tryNext, stopped, error,
     actions: `<div class="message-actions"${status === 'streaming' ? ' inert' : ''}>
       <button class="icon-button" data-action="copy" type="button" aria-label="复制回答" title="选择复制格式" aria-haspopup="menu" aria-expanded="false">${icon('copy')}</button>
-      ${message.agent ? (['failed', 'cancelled'].includes(message.agent.status) ? `<button class="action-text" data-action="restart-agent" type="button">${icon('regenerate')}重新开始任务</button>` : '') : frameActions?.hideRetry ? '' : `<button class="icon-button" data-action="regenerate" type="button" aria-label="重新生成回答" title="重新生成回答">${icon('regenerate')}</button>`}${retry}
+      ${assistantRetryActionsMarkup(message, { frameActions })}
     </div>`,
   };
 }

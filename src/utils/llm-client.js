@@ -126,13 +126,16 @@ function researchResults(payload) {
         : Array.isArray(payload?.sources) ? payload.sources
           : Array.isArray(data?.results) ? data.results
             : Array.isArray(data?.items) ? data.items
-              : [];
-  return value.filter(item => item && typeof item.url === 'string' && /^https?:/i.test(item.url))
-    .map(item => {
+              : Array.isArray(data?.sources) ? data.sources
+                : Array.isArray(payload?.webPages?.value) ? payload.webPages.value
+                  : [];
+  return value.map(item => ({ item, rawUrl: item?.url || item?.link || item?.href }))
+    .filter(({ rawUrl }) => typeof rawUrl === 'string' && /^https?:/i.test(rawUrl))
+    .map(({ item, rawUrl }) => {
       const result = {
-        title: String(item.title || item.name || item.site_name || item.site || item.url).slice(0, 300),
-        url: String(item.url),
-        snippet: String(item.summary || item.snippet || item.description || item.content || '').slice(0, 6000),
+        title: String(item.title || item.name || item.site_name || item.site || rawUrl).slice(0, 300),
+        url: String(rawUrl),
+        snippet: String(item.summary || item.snippet || item.description || item.abstract || item.content || '').slice(0, 6000),
         site: String(item.site_name || item.site || '').slice(0, 200),
         favicon: String(item.site_icon || item.favicon || '').slice(0, 2000),
       };

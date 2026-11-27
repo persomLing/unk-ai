@@ -1,11 +1,12 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'node:path';
 import { copyFileSync, cpSync, mkdirSync } from 'node:fs';
+import { build as esbuild } from 'esbuild';
 
 function copyExtensionAssets() {
   return {
     name: 'copy-extension-assets',
-    closeBundle() {
+    async closeBundle() {
       const files = [
         ['manifest.json', 'manifest.json'],
         ['src/content/extractor.js', 'content/extractor.js'],
@@ -17,6 +18,7 @@ function copyExtensionAssets() {
         ['_locales/zh_CN/messages.json', '_locales/zh_CN/messages.json'],
         ['node_modules/mp4box/LICENSE', 'third-party/mp4box.LICENSE'],
         ['node_modules/fflate/LICENSE', 'third-party/fflate.LICENSE'],
+        ['node_modules/echarts/LICENSE', 'third-party/echarts.LICENSE'],
       ];
       for (const size of [16, 32, 48, 128]) {
         files.push([`icons/icon-${size}.png`, `icons/icon-${size}.png`]);
@@ -37,6 +39,17 @@ function copyExtensionAssets() {
         resolve(import.meta.dirname, 'node_modules/pdfjs-dist/LICENSE'),
         resolve(import.meta.dirname, 'dist/pdfjs/LICENSE'),
       );
+      mkdirSync(resolve(import.meta.dirname, 'dist/assets'), { recursive: true });
+      await esbuild({
+        entryPoints: [resolve(import.meta.dirname, 'src/sidepanel/features/export/export-charts-bundle-entry.js')],
+        outfile: resolve(import.meta.dirname, 'dist/assets/export-charts-runtime.js'),
+        bundle: true,
+        format: 'iife',
+        platform: 'browser',
+        target: ['chrome120'],
+        minify: true,
+        legalComments: 'none',
+      });
     },
   };
 }

@@ -7,6 +7,8 @@ import { createFloatingChatActivity } from './floating-chat-activity.js';
 import { createPastedTextDraft } from './pasted-text-draft.js';
 import { copyCodeBlock } from './code-blocks.js';
 import { openTablePreview } from './table-blocks.js';
+import { disposeChartsIn, handleChartAction } from '../charts/chart-blocks.js';
+import { handleMermaidAction } from './mermaid-blocks.js';
 
 /** A separate presenter for the existing conversation runtime. */
 export function createSelectionChatView({ document = globalThis.document, runtime, selection, anchorRect,
@@ -138,6 +140,7 @@ export function createSelectionChatView({ document = globalThis.document, runtim
   }
   function paint() {
     if (closed) return;
+    disposeChartsIn(messages);
     const atBottom = messages.scrollHeight - messages.clientHeight - messages.scrollTop < 48;
     const previousTop = messages.scrollTop;
     const conversation = runtime.state.conversation;
@@ -188,6 +191,7 @@ export function createSelectionChatView({ document = globalThis.document, runtim
     geometry.dispose();
     pastedText.dispose();
     removers.forEach(remove => remove());
+    disposeChartsIn(messages);
     element.remove();
     Promise.resolve(runtime.close()).catch(() => {});
     onClose();
@@ -262,6 +266,10 @@ export function createSelectionChatView({ document = globalThis.document, runtim
       void copyCodeBlock(button, { writeText: text => view.navigator.clipboard.writeText(text), notify: notice });
     } else if (action === 'expand-table') {
       openTablePreview(button, { writeText: text => view.navigator.clipboard.writeText(text), notify: notice });
+    } else if (['toggle-mermaid-source', 'copy-mermaid-source', 'expand-mermaid'].includes(action)) {
+      void handleMermaidAction(button, { writeText: text => view.navigator.clipboard.writeText(text), notify: notice });
+    } else if (['toggle-chart-source', 'copy-chart-source', 'expand-chart'].includes(action)) {
+      void handleChartAction(button, { writeText: text => view.navigator.clipboard.writeText(text), notify: notice });
     } else if (action === 'toggle-thinking') {
       message.userToggledThinking = true;
       message.thinkingExpanded = button.getAttribute('aria-expanded') !== 'true';

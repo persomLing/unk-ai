@@ -375,7 +375,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   width: 31px;
   height: 28px;
   padding: 0 4px 0 11px;
-  border: 1px solid color-mix(in srgb, var(--teal) 26%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--teal) 26%, var(--line-strong));
   border-left: none;
   border-radius: 0 999px 999px 0;
   background: color-mix(in srgb, var(--surface) 92%, transparent);
@@ -459,7 +459,7 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   overflow: hidden;
 }
 
-/* Long-conversation Turn Directory: special accent dash right above the turn rail (9+ turns) */
+/* Long-conversation Turn Directory: refined icon trigger right above the turn rail (9+ turns) */
 .turn-directory {
   position: absolute;
   top: 72px;
@@ -478,44 +478,63 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 .turn-directory-dash {
   pointer-events: auto;
   position: relative;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: flex-end;
-  width: 22px;
-  height: 14px;
-  padding: 0 2px 0 0;
-  border: 0;
-  background: transparent;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--muted);
+  box-shadow: var(--shadow-xs);
   cursor: pointer;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 140ms var(--ease-out);
 }
 
-.turn-directory-dash::before {
-  content: '';
-  display: block;
-  width: 14px;
-  height: 3px;
-  border-radius: 999px;
-  background: var(--teal);
-  opacity: 0.85;
-  transition: width 160ms var(--ease-out), opacity 140ms ease, background-color 140ms ease;
+.turn-directory-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
 }
 
-.turn-directory-dash:hover::before,
-.turn-directory-dash:focus-visible::before,
-.turn-directory-dash.is-open::before {
-  width: 22px;
-  opacity: 1;
-  background: var(--teal-dark);
+.turn-directory-icon .icon {
+  width: 12px;
+  height: 12px;
+  stroke-width: 1.85;
+}
+
+.turn-directory-dash:hover,
+.turn-directory-dash:focus-visible,
+.turn-directory-dash.is-open {
+  border-color: var(--accent-line);
+  background: var(--teal-soft);
+  color: var(--teal);
+  box-shadow: var(--shadow-sm);
+}
+
+.turn-directory-dash.is-open {
+  color: var(--teal-dark);
 }
 
 .turn-directory-panel {
   pointer-events: auto;
   position: absolute;
   top: -4px;
-  right: 24px;
+  right: 32px;
   z-index: 30;
-  width: min(332px, calc(100vw - 38px));
+  width: min(332px, calc(100vw - 44px));
+  border: 1px solid var(--line-strong);
   border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 97%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -523,24 +542,31 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
 
 .turn-directory-header {
   flex: 0 0 auto;
-  padding: 11px 14px 9px;
+  padding: 10px 14px 9px;
   border-bottom: 1px solid var(--line);
   background: var(--surface-alt);
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
 }
 
 .turn-directory-header strong {
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 680;
   color: var(--ink);
   line-height: 1.35;
+  min-width: 0;
 }
 
 .turn-directory-header span {
-  font-size: 11px;
-  color: var(--muted);
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--teal-soft);
+  color: var(--teal);
+  font-size: 10.5px;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -631,9 +657,9 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   justify-content: flex-end;
   /* Only the gutter mark is interactive. The transparent rail must not cover
      message copy/edit buttons beneath it. */
-  width: 11px;
-  height: 7px;
-  flex: 0 0 7px;
+  width: 18px;
+  height: 10px;
+  flex: 0 0 10px;
   padding: 0 2px 0 0;
   border: 0;
   background: transparent;
@@ -648,17 +674,22 @@ button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-
   flex: 0 0 auto;
   width: 9px;
   height: 2px;
-  border-radius: 1px;
-  background: var(--line-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink-secondary) 28%, transparent);
   /* The expanded line is visual feedback, not a wider hit region. */
   pointer-events: none;
   transform-origin: right center;
-  transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1), background 0.2s ease;
+  transition: width 180ms cubic-bezier(0.16, 1, 0.3, 1), height 180ms cubic-bezier(0.16, 1, 0.3, 1), background-color 160ms ease;
+}
+
+.turn-navigator:hover .turn-navigator-item::before {
+  background: color-mix(in srgb, var(--ink-secondary) 44%, transparent);
 }
 
 .turn-navigator-item:hover::before,
 .turn-navigator-item:focus-visible::before {
-  width: 32px;
+  width: 18px;
+  height: 2.5px;
   background: var(--teal);
 }
 
@@ -4796,6 +4827,7 @@ img[data-image-preview]:focus-visible {
   height: 11px;
 }
 
+
 /* ==========================================================================
    Toast & Dialogs
    ========================================================================== */
@@ -4916,12 +4948,21 @@ img[data-image-preview]:focus-visible {
    ========================================================================== */
 @media (min-width: 650px) {
   .page-toolbar { margin-left: 24px; margin-right: 24px; }
+  .turn-directory,
   .turn-navigator { right: 16px; }
 }
 
 @media (max-width: 480px) {
+  .turn-directory { right: 1px; }
   .turn-navigator { right: 1px; width: 48px; }
   .turn-preview { width: min(305px, calc(100% - 34px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-directory-dash,
+  .turn-navigator-item::before {
+    transition: none;
+  }
 }
 
 @media (max-width: 410px) {
@@ -4949,6 +4990,37 @@ img[data-image-preview]:focus-visible {
 [data-theme="dark"] .page-toolbar {
   background: var(--surface);
   border-color: var(--line);
+}
+
+[data-theme="dark"] .previous-chat-btn {
+  background: var(--surface-card);
+  border-color: color-mix(in srgb, var(--teal) 45%, var(--line-strong));
+  color: var(--ink);
+  opacity: 0.96;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.36);
+}
+
+[data-theme="dark"] .previous-chat-wrap:hover .previous-chat-btn,
+[data-theme="dark"] .previous-chat-wrap:focus-within .previous-chat-btn {
+  background: var(--surface-card);
+  border-color: var(--teal);
+  color: var(--teal);
+  opacity: 1;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="dark"] .turn-directory-dash {
+  background: var(--surface-card);
+  border-color: var(--line-strong);
+  color: var(--ink-secondary);
+}
+
+[data-theme="dark"] .turn-navigator-item::before {
+  background: color-mix(in srgb, var(--ink-secondary) 52%, transparent);
+}
+
+[data-theme="dark"] .turn-navigator:hover .turn-navigator-item::before {
+  background: color-mix(in srgb, var(--ink) 70%, transparent);
 }
 
 [data-theme="dark"] .message-content {

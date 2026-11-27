@@ -27,8 +27,8 @@ export const RESEARCH_TOOL_CONTRACTS = freeze({
 
 const TOOL_SCHEMAS = freeze([
   { type: 'function', function: { name: 'web_search',
-    description: '搜索公开网页以获得当前或需要核实的事实。返回带来源标识的搜索摘要或正文，不自动读取每个网页。问题需要近期资料或明确要求联网时使用；查询需简洁，随后根据资料缺口决定是否读取来源。',
-    strict: true, parameters: { type: 'object', properties: { query: { type: 'string', minLength: 1, maxLength: MAX_QUERY_CHARS, description: '具体搜索查询，保留所需日期或赛事等范围。' } }, required: ['query'], additionalProperties: false } } },
+    description: '搜索公开网页以获得当前或需要核实的事实。返回带来源标识的搜索摘要或正文，不自动读取每个网页。问题需要近期资料或明确要求联网时使用；请构造 2 至 5 个核心关键词的简洁查询（避免整句或多余精确引号），若某次查询返回 0 条结果，可精简/换词或切换中英文名称重试，随后根据资料缺口决定是否读取来源。',
+    strict: true, parameters: { type: 'object', properties: { query: { type: 'string', minLength: 1, maxLength: MAX_QUERY_CHARS, description: '具体搜索查询，优先 2 至 5 个核心关键词，保留所需日期或赛事等范围。' } }, required: ['query'], additionalProperties: false } } },
   { type: 'function', function: { name: 'read_webpage',
     description: '读取本轮搜索返回的一个公开来源。只接受已有 sourceId；已有完整正文时复用，不重复抓取。摘要足以说明的内容无需重复读取。',
     strict: true, parameters: { type: 'object', properties: { sourceId: { type: 'string', minLength: 1, maxLength: 80, description: '本轮 web_search 返回的 sourceId。' } }, required: ['sourceId'], additionalProperties: false } } },
@@ -76,13 +76,14 @@ function cleanText(value) {
 }
 
 function normalizedSource(item, sourceId, capturedAt) {
-  const url = publicResearchUrl(item?.url);
+  const url = publicResearchUrl(item?.url || item?.link || item?.href);
   if (!url) return null;
+  const title = cleanText(item.title || item.name).slice(0, 200);
   const content = cleanText(item.content);
   const hasBody = content.length >= 80;
-  const text = hasBody ? content : cleanText(item.snippet || item.summary || content);
+  const text = hasBody ? content : cleanText(item.snippet || item.summary || item.description || item.abstract || content || title);
   if (!text) return null;
-  return { sourceId, url, title: cleanText(item.title || item.name).slice(0, 200) || url,
+  return { sourceId, url, title: title || url,
     text: text.slice(0, MAX_BODY_CHARS), readStatus: hasBody ? 'body' : 'search-summary',
     capturedAt, truncated: item.truncated === true || text.length > MAX_BODY_CHARS,
     ...(typeof item.publishedAt === 'string' ? { publishedAt: item.publishedAt.slice(0, 100) } : {}) };
@@ -206,12 +207,12 @@ export function createResearchToolSession({ connection, signal, deadlineAt,
   async function search(query) {
     const payload = await request('web-search', { query, maxResults: MAX_SEARCH_RESULTS });
     assertLive();
-    if (payload?.ok === false || !Array.isArray(payload?.results)) throw error('ERR_RESEARCH_TOOL_EMPTY', '搜索没有返回可核实的公开来源。');
+    if (payload?.ok === false || !Array.isArray(payload?.results)) throw error('ERR_RESEARCH_TOOL_EMPTY', '搜索服务返回了无效结果。');
     const entries = [], seen = new Set();
     const capturedAt = new Date(now()).toISOString();
     let truncated = payload.truncated === true || payload.results.length > MAX_SEARCH_RESULTS;
     for (const item of payload.results.slice(0, 60)) {
-      const url = publicResearchUrl(item?.url);
+      const url = publicResearchUrl(item?.url || item?.link || item?.href);
       if (!url || seen.has(url)) continue;
       seen.add(url);
       let record = byUrl.get(url);
@@ -229,7 +230,18 @@ export function createResearchToolSession({ connection, signal, deadlineAt,
       entries.push({ record, isNew: !byUrl.has(url) });
       if (entries.length >= MAX_SEARCH_RESULTS) break;
     }
-    if (!entries.length && byUrl.size < MAX_SOURCE_COUNT) throw error('ERR_RESEARCH_TOOL_EMPTY', '搜索没有返回可核实的公开来源。');
+    if (!entries.length) {
+      return {
+        kind: 'search',
+        untrusted: true,
+        empty: true,
+        query,
+        capturedAt,
+        sources: [],
+        truncated,
+        notice: `${NOTICE} 本次查询未命中可核实的公开来源（0 条结果）。请精简为 2 至 5 个核心关键词、去掉多余引号或切换中英文名称重试；若仍无结果，请依据本轮已返回来源作答并明确说明未检索到的部分，不要编造来源。`,
+      };
+    }
     const result = { kind: 'search', untrusted: true, notice: NOTICE, query, capturedAt,
       sources: entries.map(entry => sourceOutput(entry.record, 1200)), truncated };
     while (JSON.stringify(result).length > MAX_RESULT_CHARS && result.sources.length) {
