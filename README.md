@@ -7,7 +7,7 @@
 **Paper & Ink 温润纸感 Chrome 侧栏 AI 助手**  
 边看网页边提问、多页对比、B 站视频笔记、基金研究工作台与本地化对话管理
 
-[![Version](https://img.shields.io/badge/version-v0.20.2-2f6b55?style=flat-square)](https://github.com/persomLing/unk-ai/releases)
+[![Version](https://img.shields.io/badge/version-v0.20.3-2f6b55?style=flat-square)](https://github.com/persomLing/unk-ai/releases)
 [![Platform](https://img.shields.io/badge/Chrome-Manifest%20V3-4a5568?style=flat-square)](#开始使用)
 [![API](https://img.shields.io/badge/Model-OpenAI%20Compatible-7a5a44?style=flat-square)](#模型与数据)
 [![Storage](https://img.shields.io/badge/Data-Local--First-5c6b73?style=flat-square)](#模型与数据)
@@ -20,7 +20,7 @@
 
 UNK AI 是一个基于 Chrome 侧栏的本地优先 AI 助手，用于边看网页边提问、整理资料与沉淀长对话。支持接入自选的 OpenAI 兼容模型服务，会话与图片可自动同步保存到你的本地文件夹。
 
-当前源码版本：**0.20.2**。已发布版本安装包与说明见 [GitHub Releases](https://github.com/persomLing/unk-ai/releases)。
+当前源码版本为 **0.20.3**。安装包与更新说明见 [GitHub Releases](https://github.com/persomLing/unk-ai/releases)。
 
 ## 界面预览
 
@@ -54,17 +54,18 @@ UNK AI 是一个基于 Chrome 侧栏的本地优先 AI 助手，用于边看网�
 - **快捷输入与右键直达**：在输入框键入 `/` 可选快捷指令；在网页选中文字后，可从右键菜单解释、中英互译或提炼要点。
 - **图片、文档与生图**：支持上传与粘贴资料；图片可滚轮缩放、拖动查看、单击关闭预览，长文本可预览和编辑；支持聊天生图与参考图引用生图。
 - **引用追问与 Skill 指南**：选中回答添加引用注释，或在可收起的独立窗口继续讨论；可导入单文件 `SKILL.md`，检查兼容性后用于本次提问。
+- **图表与流程图**：在回答中查看 ECharts 图表和 Mermaid 图形，可放大或复制源码。
 
 ### 视觉体验与本地会话管理
 - **Paper & Ink 界面外观**：温润纸感视觉与独立单字 Logo，提供 6 套低疲劳护眼主题色与 6 种画布纹理；支持调整正文字号、字体、间距与阅读搭子小笺（含轻语互动）。
-- **会话管理与回合导航**：分组、搜索历史，为每段对话记住模型，长对话提供右侧回合进度条与带序号/时间的预览卡片；支持导出 Markdown、图片或 PDF。
+- **会话管理与回合导航**：分组、搜索历史，为每段对话记住模型，长对话提供右侧轮次预览。可导出 Markdown、图片、PDF 或保留交互图表的离线 HTML。
 - **容量提示与自动整理**：查看下一次提问预估和最近请求的 Token 分类与环形容量圈，按输入预算自动整理较早记录。
 
 ## 开始使用
 
 ### 方式一：下载安装包（推荐）
 
-需要支持侧栏的 Chrome。前往 [GitHub Releases](https://github.com/persomLing/unk-ai/releases/latest) 下载最新安装包（或使用本地打包生成的 `unk-ai-v0.20.2.zip`）：
+需要支持侧栏的 Chrome。前往 [GitHub Releases](https://github.com/persomLing/unk-ai/releases/latest) 下载安装包，也可使用本地生成的 `unk-ai-v0.20.3.zip`。
 
 1. 解压安装包，确认目录根部直接包含 `manifest.json`（包内附更新说明与离线操作手册）。
 2. 在浏览器地址栏打开 `chrome://extensions`，开启右上角 **开发者模式**。
@@ -86,7 +87,7 @@ npm run build
 ### 第一次使用
 
 1. 点击工具栏图标或按 **Alt + U** 打开侧栏，从历史区底部进入 **设置**。
-2. 选择本地数据文件夹，填写 OpenAI 兼容模型服务地址与 API Key，添加模型；测试连接后点击 **保存设置**。
+2. 在「本地数据」选择保存文件夹，再到「账号与接入」选择使用自配 API 或登录 UNK AI 账户。API 接入要填写服务地址与密钥、添加模型、测试并保存。账户登录使用管理员提供的服务地址、账号与密码，登录后自动同步模型。
 3. 普通知识或独立附件问题先关闭 **基于当前页**，阅读网页时开启；B 站视频先选好分 P，再点击「＋ → 视频笔记」，无需再按发送。
 
 需要分享时使用顶栏下载菜单；需要围绕某段回答继续讨论时，选中正文使用引用或单独追问。
